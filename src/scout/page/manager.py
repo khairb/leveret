@@ -78,6 +78,9 @@ class PageState:
     interactive_elements: list[DetectionElement] = field(repr=False)
     """Interactive elements detected on this page."""
 
+    capture_timings: dict[str, float] = field(default_factory=dict, repr=False)
+    """Per-stage timing breakdown (ms) from the capture pipeline."""
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Bridge: detection elements → converter elements
@@ -191,34 +194,49 @@ class PageStateManager:
         Pipeline:
             1. Detect interactive elements (stamps DOM with data-iid)
             2. Capture stamped HTML
-            3. Bridge detection elements to converter format
-            4. Convert HTML to text (full page)
-            5. Section the page
-            6. Build and store PageState
+            3. Sanitize HTML
+            4. Bridge detection elements to converter format
+            5. Convert HTML to text (full page)
+            6. Section the page
+            7. Build and store PageState
 
         Returns:
             The newly created :class:`PageState`.
         """
+        timings: dict[str, float] = {}
+
+        def _ms_since(t: float) -> float:
+            return (time.monotonic() - t) * 1000
+
         # 1. Detect interactive elements.
+        t = time.monotonic()
         detection_elements = await detect_interactive_elements(self._page)
+        timings["detect"] = _ms_since(t)
 
         # 2. Get stamped HTML.
+        t = time.monotonic()
         raw_html = await self._page.content()
+        timings["get_html"] = _ms_since(t)
 
-        # 2.5 Sanitize HTML — remove scripts, styles, event handlers,
-        #     unstable CSS classes, framework attributes.  Preserves
-        #     data-iid / data-hidden attributes stamped by detection.
-        #     truncate_repeating=False because the sectioner handles
-        #     repeated patterns itself.
+        # 3. Sanitize HTML — remove scripts, styles, event handlers,
+        #    unstable CSS classes, framework attributes.  Preserves
+        #    data-iid / data-hidden attributes stamped by detection.
+        #    truncate_repeating=False because the sectioner handles
+        #    repeated patterns itself.
+        t = time.monotonic()
         html = format_html_conservative(raw_html, truncate_repeating=False)
+        timings["sanitize"] = _ms_since(t)
 
-        # 3. Bridge to converter format.
+        # 4. Bridge to converter format.
         converter_elements = _bridge_elements(detection_elements)
 
-        # 4. Full-page text representation.
+        # 5. Full-page text representation.
+        t = time.monotonic()
         full_text = html_to_text(html, converter_elements)
+        timings["html_to_text"] = _ms_since(t)
 
-        # 5. Section the page.
+        # 6. Section the page.
+        t = time.monotonic()
         sections = section_page(
             html,
             converter_elements,
@@ -226,8 +244,9 @@ class PageStateManager:
             preferred_max=self._preferred_max,
             hard_max=self._hard_max,
         )
+        timings["section"] = _ms_since(t)
 
-        # 6. Build state.
+        # 7. Build state.
         state = PageState(
             index=len(self._states),
             url=self._page.url,
@@ -238,6 +257,7 @@ class PageStateManager:
             sections=sections,
             section_map={s.id: s for s in sections},
             interactive_elements=detection_elements,
+            capture_timings=timings,
         )
         self._states.append(state)
         return state

@@ -167,6 +167,11 @@ class AgentLoop:
                 model=self._llm_config.model,
                 system_prompt=system_prompt,
             )
+
+            # Wire diagnostics directory so timeout dumps are saved
+            # alongside the trace.
+            if tracer.run_dir:
+                runtime.diagnostics_dir = tracer.run_dir / "timeout_diagnostics"
             state = psm.current_state
             tracer.log_initial_page_view(
                 page_view=initial_page_view,
@@ -441,6 +446,37 @@ class AgentLoop:
                         is_error=tool_result.is_error,
                         duration_ms=tool_duration_ms,
                     )
+
+                    # Log and print timeout diagnostics if present.
+                    if (
+                        runtime.history.last
+                        and runtime.history.last.diagnostics
+                    ):
+                        diag = runtime.history.last.diagnostics
+                        tracer.log_system_event(
+                            "timeout_diagnostics",
+                            step=runtime.history.last.step,
+                            page_url=diag.page_url,
+                            pending_requests=len(diag.pending_requests),
+                            failed_requests=len(diag.failed_requests),
+                            console_errors=len(
+                                [l for l in diag.console_logs
+                                 if l.get("level") in ("error", "warning")]
+                            ),
+                            partial_stdout_len=len(diag.partial_stdout),
+                            diagnostics_summary=diag.summary()[:2000],
+                        )
+                        saved_path = ""
+                        if runtime.diagnostics_dir:
+                            saved_path = str(
+                                runtime.diagnostics_dir
+                                / f"timeout_step_{runtime.history.last.step}"
+                            )
+                        console.print_timeout_diagnostics(
+                            step=runtime.history.last.step,
+                            diag_summary=diag.summary(),
+                            saved_path=saved_path,
+                        )
                     console.print_tool_result(
                         block.name,
                         tool_result.is_error,
@@ -544,6 +580,7 @@ class AgentLoop:
                 include_screenshot=False,
             ),
             post_exec_hook=hook,
+            # diagnostics_dir is set later once tracer creates run_dir.
         )
 
         await runtime.start()

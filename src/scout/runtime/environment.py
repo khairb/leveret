@@ -30,23 +30,32 @@ import abc
 import asyncio
 import base64
 import io
+import json
+import logging
 import shutil
 import sys
 import tempfile
 import textwrap
+import time
 import traceback
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
 from patchright.async_api import (
     Browser,
     BrowserContext,
+    ConsoleMessage,
     Page,
     Playwright,
+    Request,
+    Response,
     async_playwright,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════
@@ -92,6 +101,277 @@ class ExecutionResult:
     hook_data: Any = None
     duration_ms: float = 0
     step: int = 0
+    diagnostics: Optional[TimeoutDiagnostics] = None
+
+
+@dataclass
+class TimeoutDiagnostics:
+    """Diagnostic data collected when a timeout occurs.
+
+    Captures everything needed to understand *why* execution timed out:
+    browser console logs, pending network requests, partial stdout, and
+    a snapshot of the page state at the moment the timeout was detected.
+    """
+
+    partial_stdout: str = ""
+    """Any stdout captured before the timeout killed execution."""
+
+    console_logs: list[dict] = field(default_factory=list)
+    """Browser console messages collected during execution.
+    Each dict: {level, text, url, line_number, timestamp}."""
+
+    pending_requests: list[dict] = field(default_factory=list)
+    """Network requests that were still in-flight when timeout hit.
+    Each dict: {url, method, resource_type, started_at}."""
+
+    completed_requests: list[dict] = field(default_factory=list)
+    """Network requests completed during this execution step.
+    Each dict: {url, method, status, resource_type, duration_ms}."""
+
+    failed_requests: list[dict] = field(default_factory=list)
+    """Network requests that failed during execution.
+    Each dict: {url, method, resource_type, error}."""
+
+    page_url: str = ""
+    """Page URL at the time the timeout was detected."""
+
+    page_title: str = ""
+    """Page title at timeout detection time."""
+
+    screenshot_b64: str = ""
+    """Base64-encoded PNG screenshot at timeout detection time."""
+
+    elapsed_ms: float = 0
+    """Wall-clock time elapsed before timeout."""
+
+    timeout_limit_s: float = 0
+    """The timeout limit that was exceeded."""
+
+    code_executed: str = ""
+    """The code that was being executed when timeout occurred."""
+
+    def summary(self) -> str:
+        """Human-readable summary for quick debugging."""
+        parts = [
+            f"=== TIMEOUT DIAGNOSTICS (limit={self.timeout_limit_s}s, "
+            f"elapsed={self.elapsed_ms:.0f}ms) ===",
+            f"Page URL: {self.page_url}",
+            f"Page title: {self.page_title}",
+        ]
+        if self.partial_stdout:
+            parts.append(f"\n-- Partial stdout ({len(self.partial_stdout)} chars) --")
+            parts.append(self.partial_stdout[:2000])
+        if self.console_logs:
+            parts.append(f"\n-- Console logs ({len(self.console_logs)} entries) --")
+            for log in self.console_logs[-20:]:
+                parts.append(f"  [{log.get('level', '?')}] {log.get('text', '')[:200]}")
+        if self.pending_requests:
+            parts.append(
+                f"\n-- Pending network requests ({len(self.pending_requests)}) --"
+            )
+            for req in self.pending_requests:
+                parts.append(
+                    f"  {req.get('method', '?')} {req.get('url', '?')[:120]} "
+                    f"[{req.get('resource_type', '?')}]"
+                )
+        if self.failed_requests:
+            parts.append(
+                f"\n-- Failed network requests ({len(self.failed_requests)}) --"
+            )
+            for req in self.failed_requests:
+                parts.append(
+                    f"  {req.get('method', '?')} {req.get('url', '?')[:120]} "
+                    f"err={req.get('error', '?')}"
+                )
+        return "\n".join(parts)
+
+    def to_dict(self) -> dict:
+        """Serialize to a JSON-safe dictionary."""
+        return {
+            "partial_stdout": self.partial_stdout,
+            "console_logs": self.console_logs,
+            "pending_requests": self.pending_requests,
+            "completed_requests": self.completed_requests,
+            "failed_requests": self.failed_requests,
+            "page_url": self.page_url,
+            "page_title": self.page_title,
+            "has_screenshot": bool(self.screenshot_b64),
+            "elapsed_ms": self.elapsed_ms,
+            "timeout_limit_s": self.timeout_limit_s,
+            "code_executed": self.code_executed,
+        }
+
+    def save(self, path: str | Path) -> Path:
+        """Write full diagnostics to a JSON file (+ screenshot as separate PNG).
+
+        Returns the path to the JSON file.
+        """
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Save JSON (everything except screenshot blob).
+        json_path = path.with_suffix(".json")
+        json_path.write_text(
+            json.dumps(self.to_dict(), indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        # Save screenshot separately if present.
+        if self.screenshot_b64:
+            png_path = path.with_suffix(".png")
+            png_path.write_bytes(base64.b64decode(self.screenshot_b64))
+
+        return json_path
+
+
+# ═══════════════════════════════════════════════
+#  Browser Instrumentation — Console & Network
+# ═══════════════════════════════════════════════
+
+
+class PageInstrumentation:
+    """Collects browser console logs and network request data from a Page.
+
+    Attaches event listeners on ``start()`` and detaches on ``stop()``.
+    Between those calls, all console messages and network events are
+    buffered.  Call ``drain_since(step_start)`` to get only the events
+    that occurred during the current execution step.
+    """
+
+    def __init__(self) -> None:
+        self._console_logs: list[dict] = []
+        self._inflight: dict[str, dict] = {}  # url+method → request info
+        self._completed: list[dict] = []
+        self._failed: list[dict] = []
+        self._page: Optional[Page] = None
+        self._attached = False
+
+    def attach(self, page: Page) -> None:
+        """Start listening to page events."""
+        if self._attached:
+            return
+        self._page = page
+        page.on("console", self._on_console)
+        page.on("request", self._on_request)
+        page.on("requestfinished", self._on_request_finished)
+        page.on("requestfailed", self._on_request_failed)
+        page.on("response", self._on_response)
+        self._attached = True
+
+    def detach(self) -> None:
+        """Stop listening to page events."""
+        if not self._attached or not self._page:
+            return
+        try:
+            self._page.remove_listener("console", self._on_console)
+            self._page.remove_listener("request", self._on_request)
+            self._page.remove_listener("requestfinished", self._on_request_finished)
+            self._page.remove_listener("requestfailed", self._on_request_failed)
+            self._page.remove_listener("response", self._on_response)
+        except Exception:
+            pass  # Page may already be closed.
+        self._attached = False
+
+    def mark_step_start(self) -> float:
+        """Return a timestamp marking the start of an execution step."""
+        return time.monotonic()
+
+    def drain_since(self, step_start: float) -> tuple[list[dict], list[dict], list[dict], list[dict]]:
+        """Return (console_logs, pending, completed, failed) since step_start.
+
+        Also returns still-inflight requests as "pending".
+        """
+        console = [l for l in self._console_logs if l.get("_mono", 0) >= step_start]
+        completed = [r for r in self._completed if r.get("_mono", 0) >= step_start]
+        failed = [r for r in self._failed if r.get("_mono", 0) >= step_start]
+
+        # Anything still in _inflight that started after step_start is pending.
+        pending = [
+            r for r in self._inflight.values()
+            if r.get("_mono", 0) >= step_start
+        ]
+
+        # Strip internal monotonic timestamps from output copies.
+        def _clean(items: list[dict]) -> list[dict]:
+            return [{k: v for k, v in d.items() if k != "_mono"} for d in items]
+
+        return _clean(console), _clean(pending), _clean(completed), _clean(failed)
+
+    def clear(self) -> None:
+        """Clear all accumulated data."""
+        self._console_logs.clear()
+        self._inflight.clear()
+        self._completed.clear()
+        self._failed.clear()
+
+    # ── Event handlers ────────────────────────────────────────
+
+    def _on_console(self, msg: ConsoleMessage) -> None:
+        try:
+            location = msg.location
+            self._console_logs.append({
+                "level": msg.type,
+                "text": msg.text,
+                "url": location.get("url", "") if location else "",
+                "line_number": location.get("lineNumber", 0) if location else 0,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "_mono": time.monotonic(),
+            })
+        except Exception:
+            pass
+
+    def _on_request(self, request: Request) -> None:
+        try:
+            key = f"{request.method}:{request.url}"
+            self._inflight[key] = {
+                "url": request.url,
+                "method": request.method,
+                "resource_type": request.resource_type,
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "_mono": time.monotonic(),
+            }
+        except Exception:
+            pass
+
+    def _on_request_finished(self, request: Request) -> None:
+        try:
+            key = f"{request.method}:{request.url}"
+            info = self._inflight.pop(key, None)
+            if info:
+                info["duration_ms"] = (time.monotonic() - info["_mono"]) * 1000
+                response = request.response
+                info["status"] = None
+                # response is a coroutine in some cases — skip if so
+                self._completed.append(info)
+        except Exception:
+            pass
+
+    def _on_request_failed(self, request: Request) -> None:
+        try:
+            key = f"{request.method}:{request.url}"
+            info = self._inflight.pop(key, {})
+            info.update({
+                "url": request.url,
+                "method": request.method,
+                "resource_type": request.resource_type,
+                "error": request.failure or "unknown",
+                "_mono": time.monotonic(),
+            })
+            self._failed.append(info)
+        except Exception:
+            pass
+
+    def _on_response(self, response: Response) -> None:
+        """Update completed requests with status code when response arrives."""
+        try:
+            key = f"{response.request.method}:{response.request.url}"
+            # Check completed list (most recent first).
+            for entry in reversed(self._completed):
+                if f"{entry.get('method')}:{entry.get('url')}" == key:
+                    entry["status"] = response.status
+                    break
+        except Exception:
+            pass
 
 
 # ═══════════════════════════════════════════════
@@ -136,6 +416,7 @@ class LocalREPL(BaseREPL):
 
     def __init__(self) -> None:
         self._globals: dict[str, Any] = {"__builtins__": __builtins__}
+        self._active_stdout_buffer: Optional[io.StringIO] = None
 
     # ── Public interface ──
 
@@ -149,6 +430,18 @@ class LocalREPL(BaseREPL):
         self._globals.clear()
         self._globals["__builtins__"] = __builtins__
 
+    @property
+    def partial_stdout(self) -> str:
+        """Retrieve whatever has been captured so far in the active buffer.
+
+        This is crucial for timeout debugging — when asyncio.wait_for
+        cancels the coroutine, _run() never returns, so its captured
+        output is lost. This property lets us recover it.
+        """
+        if self._active_stdout_buffer is not None:
+            return self._active_stdout_buffer.getvalue()
+        return ""
+
     async def execute(self, code: str, timeout: float | None = None) -> tuple[str, str]:
         coro = self._run(code)
         if timeout is not None:
@@ -156,7 +449,17 @@ class LocalREPL(BaseREPL):
         try:
             return await coro
         except asyncio.TimeoutError:
-            return "", f"TimeoutError: Execution exceeded {timeout}s limit."
+            # Recover any partial stdout that was captured before timeout.
+            partial = self.partial_stdout
+            # Restore sys.stdout — _capture_stdout's finally block won't run
+            # because the coroutine was cancelled.
+            if self._active_stdout_buffer is not None:
+                sys.stdout = sys.__stdout__
+                self._active_stdout_buffer = None
+            error_msg = f"TimeoutError: Execution exceeded {timeout}s limit."
+            if partial:
+                error_msg += f"\n\n[Partial stdout captured before timeout ({len(partial)} chars)]:\n{partial}"
+            return partial, error_msg
 
     # ── Internals ──
 
@@ -229,14 +532,20 @@ class LocalREPL(BaseREPL):
         """
         Temporarily redirect stdout to a StringIO buffer.
         Uses a contextmanager for guaranteed cleanup.
+
+        Also stores a reference to the buffer in ``_active_stdout_buffer``
+        so that :attr:`partial_stdout` can recover output if the coroutine
+        is cancelled by a timeout.
         """
         buffer = io.StringIO()
         old_stdout = sys.stdout
         sys.stdout = buffer
+        self._active_stdout_buffer = buffer
         try:
             yield buffer
         finally:
             sys.stdout = old_stdout
+            self._active_stdout_buffer = None
 
 
 # ═══════════════════════════════════════════════
@@ -477,6 +786,8 @@ class ScrapingRuntime:
         post_exec_hook: PostExecHook | None = None,
         # REPL implementation — swap this to upgrade later
         repl: BaseREPL | None = None,
+        # Diagnostics
+        diagnostics_dir: str | Path | None = None,
     ) -> None:
         self._browser_mgr = BrowserManager(
             headless=headless,
@@ -492,6 +803,8 @@ class ScrapingRuntime:
         self._history = ExecutionHistory(max_size=max_history)
         self._step_counter = 0
         self._started = False
+        self._instrumentation = PageInstrumentation()
+        self._diagnostics_dir = Path(diagnostics_dir) if diagnostics_dir else None
 
     # ── Properties ──
 
@@ -520,11 +833,27 @@ class ScrapingRuntime:
     def is_running(self) -> bool:
         return self._started
 
+    @property
+    def instrumentation(self) -> PageInstrumentation:
+        """Access the page instrumentation (console logs, network data)."""
+        return self._instrumentation
+
+    @property
+    def diagnostics_dir(self) -> Path | None:
+        return self._diagnostics_dir
+
+    @diagnostics_dir.setter
+    def diagnostics_dir(self, path: str | Path | None) -> None:
+        self._diagnostics_dir = Path(path) if path else None
+
     # ── Lifecycle ──
 
     async def start(self) -> None:
         """Launch browser and wire up the REPL namespace."""
         page = await self._browser_mgr.start()
+
+        # Attach instrumentation to collect console logs and network data.
+        self._instrumentation.attach(page)
 
         self._repl.inject(
             page=page,
@@ -537,6 +866,7 @@ class ScrapingRuntime:
 
     async def stop(self) -> None:
         """Shut down browser. REPL state and history are preserved."""
+        self._instrumentation.detach()
         await self._browser_mgr.stop()
         self._started = False
 
@@ -556,10 +886,11 @@ class ScrapingRuntime:
 
         Flow:
             1. Run code in the stateful REPL
-            2. Capture page snapshot
-            3. Call post_exec_hook (your system processing)
-            4. Log to history
-            5. Return bundled result
+            2. If timeout → collect diagnostics
+            3. Capture page snapshot
+            4. Call post_exec_hook (your system processing)
+            5. Log to history
+            6. Return bundled result
 
         Args:
             code: Python code from the agent. Supports top-level await.
@@ -571,10 +902,15 @@ class ScrapingRuntime:
         self._step_counter += 1
         effective_timeout = timeout if timeout is not None else self._default_timeout
 
+        # Mark step start for instrumentation.
+        step_start = self._instrumentation.mark_step_start()
+
         # 1. Execute
         t0 = asyncio.get_event_loop().time()
         output, error = await self._repl.execute(code, timeout=effective_timeout)
         duration_ms = (asyncio.get_event_loop().time() - t0) * 1000
+
+        is_timeout = "TimeoutError: Execution exceeded" in error
 
         result = ExecutionResult(
             code=code,
@@ -585,19 +921,101 @@ class ScrapingRuntime:
             step=self._step_counter,
         )
 
-        # 2. Snapshot — only if page is still alive
+        # 2. If timeout → collect and save diagnostics
+        if is_timeout:
+            result.diagnostics = await self._collect_timeout_diagnostics(
+                code=code,
+                partial_stdout=output,
+                step_start=step_start,
+                elapsed_ms=duration_ms,
+                timeout_limit=effective_timeout,
+            )
+            if self._diagnostics_dir:
+                diag_path = (
+                    self._diagnostics_dir
+                    / f"timeout_step_{self._step_counter}"
+                )
+                try:
+                    saved = result.diagnostics.save(diag_path)
+                    logger.info("Timeout diagnostics saved to %s", saved)
+                except Exception:
+                    logger.exception("Failed to save timeout diagnostics")
+
+        # 3. Snapshot — only if page is still alive
         page = self._get_live_page()
         if page:
             result.snapshot = await capture_snapshot(page, self._snap_config)
 
-        # 3. Hook — your system's processing of the page
+        # 4. Hook — your system's processing of the page
         if self._hook and page:
             result.hook_data = await self._run_hook(page, result)
 
-        # 4. History
+        # 5. History
         self._history.append(result)
 
         return result
+
+    async def _collect_timeout_diagnostics(
+        self,
+        code: str,
+        partial_stdout: str,
+        step_start: float,
+        elapsed_ms: float,
+        timeout_limit: float,
+    ) -> TimeoutDiagnostics:
+        """Gather all available diagnostic data after a timeout.
+
+        This runs *after* the timeout has already occurred, so we need
+        to be careful not to block forever on Playwright calls. Each
+        piece of data is collected independently with its own try/except.
+        """
+        diag = TimeoutDiagnostics(
+            partial_stdout=partial_stdout,
+            elapsed_ms=elapsed_ms,
+            timeout_limit_s=timeout_limit,
+            code_executed=code,
+        )
+
+        # Drain instrumentation data for this step.
+        console, pending, completed, failed = self._instrumentation.drain_since(
+            step_start
+        )
+        diag.console_logs = console
+        diag.pending_requests = pending
+        diag.completed_requests = completed
+        diag.failed_requests = failed
+
+        # Try to get page state (with a short timeout to avoid blocking).
+        page = self._get_live_page()
+        if page:
+            try:
+                diag.page_url = page.url
+            except Exception:
+                pass
+
+            try:
+                diag.page_title = await asyncio.wait_for(
+                    page.title(), timeout=3.0
+                )
+            except Exception:
+                pass
+
+            try:
+                screenshot_bytes = await asyncio.wait_for(
+                    page.screenshot(type="png", full_page=False),
+                    timeout=5.0,
+                )
+                diag.screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
+            except Exception:
+                pass
+
+        logger.warning(
+            "Timeout diagnostics collected for step %d:\n%s",
+            self._step_counter,
+            diag.summary(),
+        )
+
+        return diag
 
     # ── Helpers ──
 

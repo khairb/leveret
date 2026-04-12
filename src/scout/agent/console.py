@@ -261,6 +261,16 @@ def print_checkpoints_summary(checkpoints: list[dict]) -> None:
         print(f"    {_c(_DIM, f'{cp_id}: {label}')}")
 
 
+def print_timeout_diagnostics(step: int, diag_summary: str, saved_path: str = "") -> None:
+    """Print a brief summary of timeout diagnostics."""
+    print(f"\n  {_c(_YELLOW, f'Timeout diagnostics (step {step}):')}")
+    # Show a condensed version — just the key facts.
+    for line in diag_summary.split("\n")[:15]:
+        print(f"    {_DIM}{line}{_RESET}")
+    if saved_path:
+        print(f"    {_DIM}Full diagnostics: {saved_path}{_RESET}")
+
+
 def print_script_rejected(attempt: int, max_attempts: int) -> None:
     print(
         f"\n  {_c(_RED, 'Script rejected')} "

@@ -55,10 +55,30 @@ def create_show_page_function(psm_ref: list[Any]) -> callable:
             print("[show_page] Page state manager not initialized yet.")
             return None
 
-        await asyncio.sleep(5)
+        import time as _time
+        t0 = _time.monotonic()
 
-        await psm.capture()
+        await asyncio.sleep(5)
+        t_sleep = _time.monotonic()
+
+        state = await psm.capture()
+        t_capture = _time.monotonic()
+
         page_view = psm.get_page_view()
+        t_format = _time.monotonic()
+
+        # Print timing breakdown so it appears in captured stdout.
+        timings = state.capture_timings if hasattr(state, "capture_timings") else {}
+        print("__SHOW_PAGE_TIMING__")
+        print(f"  sleep:          {(t_sleep - t0) * 1000:7.0f}ms")
+        if timings:
+            for label, ms in timings.items():
+                print(f"  {label + ':':16s}{ms:7.0f}ms")
+        print(f"  capture (total):{(t_capture - t_sleep) * 1000:7.0f}ms")
+        print(f"  format_view:    {(t_format - t_capture) * 1000:7.0f}ms")
+        print(f"  show_page total:{(t_format - t0) * 1000:7.0f}ms")
+        print("__SHOW_PAGE_TIMING_END__")
+
         print("__PAGE_VIEW_START__")
         print(page_view)
         print("__PAGE_VIEW_END__")

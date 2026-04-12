@@ -132,6 +132,31 @@ async def _exec_python(
     if result.error:
         parts.append(f"\nError:\n{result.error}")
 
+    # If timeout diagnostics were collected, include a summary for the agent.
+    if result.diagnostics:
+        diag = result.diagnostics
+        diag_parts = ["\n--- Timeout Diagnostics ---"]
+        diag_parts.append(f"Page URL at timeout: {diag.page_url}")
+        if diag.pending_requests:
+            diag_parts.append(
+                f"Pending network requests ({len(diag.pending_requests)}):"
+            )
+            for req in diag.pending_requests[:5]:
+                diag_parts.append(
+                    f"  {req.get('method', '?')} {req.get('url', '?')[:100]}"
+                )
+        if diag.console_logs:
+            errors = [l for l in diag.console_logs if l.get("level") in ("error", "warning")]
+            if errors:
+                diag_parts.append(f"Console errors/warnings ({len(errors)}):")
+                for log in errors[-5:]:
+                    diag_parts.append(f"  [{log.get('level')}] {log.get('text', '')[:150]}")
+        if runtime.diagnostics_dir:
+            diag_parts.append(
+                f"Full diagnostics saved to: timeout_step_{result.step}"
+            )
+        parts.append("\n".join(diag_parts))
+
     # Notify the agent if the URL changed (navigation occurred).
     url_after = runtime.page.url if runtime.page else None
     if url_before and url_after and url_after != url_before:
