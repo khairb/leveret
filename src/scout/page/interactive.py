@@ -367,63 +367,91 @@ _CLEANUP_REDUNDANT_JS = """(layerInfo) => {
 }"""
 
 
-# Small JS helper used by Layer 4 to stamp a single element from Python.
-_STAMP_SINGLE_JS = """(el, iid) => {
-    try {
-        if (typeof el.checkVisibility === 'function') {
-            if (!el.checkVisibility({checkVisibilityCSS: true})) return null;
-        }
-        const r = el.getBoundingClientRect();
-        if (r.width === 0 && r.height === 0) return null;     // zero-size
-        if (el.disabled || el.getAttribute('aria-disabled') === 'true') return null;
-        if (el.getAttribute('data-iid')) return null;          // already stamped
+# JS passed to locator.evaluate_all() for Layer 4.  Receives all elements
+# matched by get_by_role() for a single role as an array.  Filters out
+# already-stamped elements, applies visibility/disabled checks, stamps
+# new ones, and returns their info.  This is the same logic as the old
+# per-element _STAMP_SINGLE_JS, but batched over all elements at once.
+_BATCH_STAMP_JS = """(elements, args) => {
+    const nextIid = args.nextIid;
+    const maxNew  = args.maxNew;
 
-        el.setAttribute('data-iid', String(iid));
+    const SKIP_ATTRS = new Set(['class', 'style', 'data-iid', 'data-hidden']);
+    const results = [];
+    let currentIid = nextIid;
 
-        const rect = el.getBoundingClientRect();
-        const skip = new Set(['class', 'style', 'data-iid', 'data-hidden']);
-        const attrs = {};
-        for (const a of el.attributes) {
-            if (!skip.has(a.name)) attrs[a.name] = a.value;
-        }
+    for (const el of elements) {
+        if (results.length >= maxNew) break;
 
-        // Quick unique-selector attempt
-        let selector = el.tagName.toLowerCase();
-        if (el.id) {
-            selector = '#' + CSS.escape(el.id);
-        } else {
-            for (const attr of ['name','href','type','role','aria-label',
-                                 'placeholder','data-testid']) {
-                const v = el.getAttribute(attr);
-                if (v) {
-                    const s = el.tagName.toLowerCase()
-                              + '[' + attr + '="' + CSS.escape(v) + '"]';
-                    try {
-                        if (document.querySelectorAll(s).length === 1) {
-                            selector = s;
-                            break;
-                        }
-                    } catch(_) {}
+        try {
+            // Already stamped by an earlier layer or earlier role iteration
+            if (el.getAttribute('data-iid') != null) continue;
+
+            // Visibility: CSS visibility + zero-size only (no position filter).
+            // This matches what the accessibility tree includes.
+            if (typeof el.checkVisibility === 'function') {
+                if (!el.checkVisibility({checkVisibilityCSS: true})) continue;
+            }
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 && r.height === 0) continue;
+
+            // Disabled check
+            if (el.disabled === true
+                || el.getAttribute('aria-disabled') === 'true') continue;
+
+            // Stamp
+            el.setAttribute('data-iid', String(currentIid));
+
+            const rect = el.getBoundingClientRect();
+            const attrs = {};
+            for (const a of el.attributes) {
+                if (!SKIP_ATTRS.has(a.name)) attrs[a.name] = a.value;
+            }
+
+            // Unique selector
+            let selector = el.tagName.toLowerCase();
+            if (el.id) {
+                const s = '#' + CSS.escape(el.id);
+                try { if (document.querySelectorAll(s).length === 1) selector = s; }
+                catch(_) {}
+            } else {
+                for (const attr of ['name','href','type','role','aria-label',
+                                     'placeholder','data-testid']) {
+                    const v = el.getAttribute(attr);
+                    if (v) {
+                        const s = el.tagName.toLowerCase()
+                                  + '[' + attr + '="' + CSS.escape(v) + '"]';
+                        try {
+                            if (document.querySelectorAll(s).length === 1) {
+                                selector = s;
+                                break;
+                            }
+                        } catch(_) {}
+                    }
                 }
             }
-        }
 
-        return {
-            iid,
-            tag:          el.tagName.toLowerCase(),
-            attributes:   attrs,
-            text:         (el.textContent || '').trim().substring(0, 500),
-            selector,
-            bounding_box: {
-                x:      Math.round(rect.x),
-                y:      Math.round(rect.y),
-                width:  Math.round(rect.width),
-                height: Math.round(rect.height)
-            }
-        };
-    } catch (_) {
-        return null;
+            results.push({
+                iid:          currentIid,
+                tag:          el.tagName.toLowerCase(),
+                attributes:   attrs,
+                text:         (el.textContent || '').trim().substring(0, 500),
+                selector,
+                bounding_box: {
+                    x:      Math.round(rect.x),
+                    y:      Math.round(rect.y),
+                    width:  Math.round(rect.width),
+                    height: Math.round(rect.height)
+                }
+            });
+
+            currentIid++;
+        } catch (_) {
+            continue;
+        }
     }
+
+    return {results, nextIid: currentIid};
 }"""
 
 
@@ -516,12 +544,13 @@ def cleanup_markers(html: str) -> str:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Layer 4 — Accessibility Roles via get_by_role()
+#  Layer 4 — Accessibility Roles via get_by_role() (batched)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 # Roles to scan with Playwright's get_by_role().  These are the ARIA roles
-# that indicate interactive elements.  We iterate each role and look for
-# DOM elements that were NOT already stamped by layers 1 / 2 / 5.
+# that indicate interactive elements.  We iterate each role and use
+# evaluate_all() to process all matched elements in a single CDP call
+# per role (14 calls total instead of 500+).
 _ROLES_TO_SCAN = [
     "button", "link", "tab", "menuitem", "option", "checkbox", "radio",
     "slider", "switch", "combobox", "searchbox", "textbox", "treeitem",
@@ -537,14 +566,14 @@ async def _detect_via_accessibility_tree(
 ) -> tuple[list[dict], int]:
     """Layer 4: find interactive elements the earlier layers missed.
 
-    Uses ``page.get_by_role()`` for each known interactive ARIA role and
-    stamps any elements that were *not* already found by layers 1 / 2 / 5.
+    Uses ``page.get_by_role()`` for each known interactive ARIA role —
+    the same browser accessibility tree as before — but batches all
+    matched elements per role into a single ``locator.evaluate_all()``
+    call.  This reduces CDP round-trips from ~500+ (one per element) to
+    14 (one per role).
 
-    This catches elements where the browser infers an interactive role
-    (e.g. implicit roles from HTML semantics) that our CSS-selector-based
-    layers didn't pick up.
-
-    Caps at *max_new* newly stamped elements to bound execution time.
+    Elements already stamped by layers 1/2/5 are skipped.  Caps at
+    *max_new* newly stamped elements.
     """
     new_elements: list[dict] = []
 
@@ -554,28 +583,19 @@ async def _detect_via_accessibility_tree(
 
         try:
             locator = page.get_by_role(role)
-            count = await locator.count()
+            remaining = max_new - len(new_elements)
 
-            for i in range(count):
-                if len(new_elements) >= max_new:
-                    break
+            result = await locator.evaluate_all(
+                _BATCH_STAMP_JS,
+                {"nextIid": next_iid, "maxNew": remaining},
+                isolated_context=True,
+            )
 
-                el = locator.nth(i)
-
-                # Already stamped by an earlier layer? Skip.
-                if await el.get_attribute("data-iid") is not None:
-                    continue
-
-                # Stamp and collect metadata via JS helper
-                info = await el.evaluate(
-                    _STAMP_SINGLE_JS, next_iid, isolated_context=True
-                )
-                if info is None:
-                    continue
-
+            for info in result["results"]:
                 info["detected_by"] = ["layer4_accessibility"]
                 new_elements.append(info)
-                next_iid += 1
+
+            next_iid = result["nextIid"]
 
         except Exception:
             continue
