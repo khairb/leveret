@@ -12,8 +12,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from .timeout_predict import predict_timeout
+
 if TYPE_CHECKING:
     from ..runtime.environment import ScrapingRuntime
+
+# ═══════════════════════════════════════════════════════════════
+#  Timeout Limits
+# ═══════════════════════════════════════════════════════════════
+
+MIN_TIMEOUT: float = 1.0
+"""Floor for any explicit timeout the agent provides."""
+
+MAX_TIMEOUT: float = 300.0
+"""Ceiling for any timeout (explicit or predicted)."""
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -45,8 +57,9 @@ TOOL_SCHEMAS: list[dict] = [
                     "type": "number",
                     "description": (
                         "Max seconds to wait for this code to finish. "
-                        "Defaults to 30. Increase for slow operations "
-                        "like page loads or large extractions (max 120)."
+                        "Auto-calculated from code complexity when omitted. "
+                        "Override for slow operations "
+                        "like page loads or large extractions (max 300)."
                     ),
                 },
             },
@@ -114,9 +127,12 @@ async def _exec_python(
     timeout: float | None = None,
 ) -> ToolResult:
     """Execute Python code and return output."""
-    # Clamp timeout to [1, 120] if provided.
     if timeout is not None:
-        timeout = max(1.0, min(float(timeout), 120.0))
+        # Agent provided an explicit timeout — clamp it.
+        timeout = max(MIN_TIMEOUT, min(float(timeout), MAX_TIMEOUT))
+    else:
+        # No explicit timeout — predict from code structure.
+        timeout = predict_timeout(code)
 
     # Capture URL before execution to detect navigation.
     url_before = runtime.page.url if runtime.page else None

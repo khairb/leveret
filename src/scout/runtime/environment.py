@@ -625,6 +625,13 @@ class BrowserManager:
             args=args,
         )
 
+        # Lower the default timeout so a single hung operation doesn't eat
+        # the entire execution budget.  Legitimate interactions complete in
+        # well under these limits; the agent can always pass an explicit
+        # ``timeout`` kwarg to individual calls when more time is needed.
+        self._context.set_default_timeout(10_000)           # 10 s for most ops
+        self._context.set_default_navigation_timeout(15_000) # 15 s for goto/reload
+
         # Set viewport explicitly (avoids Playwright emulation detection).
         self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()
         await self._page.set_viewport_size(self._config["viewport"])
