@@ -167,9 +167,9 @@ def print_nudge() -> None:
 
 def print_script_found(valid: bool, error: str = "") -> None:
     if valid:
-        print(f"\n  {_c(_GREEN, 'Final script extracted!')} {_DIM}(valid syntax){_RESET}")
+        print(f"\n  {_c(_GREEN, 'Function extracted!')} {_DIM}(valid){_RESET}")
     else:
-        print(f"\n  {_c(_RED, 'Script extracted but has syntax error:')} {error}")
+        print(f"\n  {_c(_RED, 'Function extracted but has an issue:')} {error}")
 
 
 def print_result(result) -> None:
@@ -189,7 +189,7 @@ def print_result(result) -> None:
 
 
 def print_running_script() -> None:
-    print(_header("Running Generated Script"))
+    print(_header("Running Generated Function"))
 
 
 def print_script_output(output: str, error: str, returncode: int) -> None:
@@ -200,9 +200,9 @@ def print_script_output(output: str, error: str, returncode: int) -> None:
         print(f"\n{_c(_RED, 'Stderr:')}")
         print(_indent(error, "  "))
     if returncode == 0:
-        print(f"\n  {_c(_GREEN, 'Script executed successfully')}")
+        print(f"\n  {_c(_GREEN, 'Function executed successfully')}")
     else:
-        print(f"\n  {_c(_RED, f'Script exited with code {returncode}')}")
+        print(f"\n  {_c(_RED, f'Function exited with code {returncode}')}")
 
 
 async def ask_user_approval() -> tuple[bool, str]:
@@ -212,8 +212,8 @@ async def ask_user_approval() -> tuple[bool, str]:
         ``(approved, feedback)`` — feedback is empty if approved.
     """
     print(f"\n{_BOLD}{_CYAN}{'─' * 60}{_RESET}")
-    print(f"  {_BOLD}Review the script output above.{_RESET}")
-    print(f"  {_c(_GREEN, '[a]pprove')}  —  output is correct, accept the script")
+    print(f"  {_BOLD}Review the output above.{_RESET}")
+    print(f"  {_c(_GREEN, '[a]pprove')}  —  output is correct, accept the function")
     print(f"  {_c(_RED, '[r]eject')}   —  output is wrong, provide feedback")
     print(f"{_BOLD}{_CYAN}{'─' * 60}{_RESET}")
 
@@ -223,7 +223,7 @@ async def ask_user_approval() -> tuple[bool, str]:
     choice = choice.strip().lower()
 
     if choice in ("a", "approve", "y", "yes"):
-        print(f"\n  {_c(_GREEN, 'Script approved.')}")
+        print(f"\n  {_c(_GREEN, 'Function approved.')}")
         return True, ""
 
     feedback = await asyncio.to_thread(
@@ -242,7 +242,7 @@ def print_requirements_generated(requirements: str) -> None:
 
 
 def print_validator_approved() -> None:
-    print(f"\n  {_c(_GREEN, 'Validator approved the script.')}")
+    print(f"\n  {_c(_GREEN, 'Validator approved the function.')}")
 
 
 def print_validator_rejected(feedback: str) -> None:
@@ -273,7 +273,7 @@ def print_timeout_diagnostics(step: int, diag_summary: str, saved_path: str = ""
 
 def print_script_rejected(attempt: int, max_attempts: int) -> None:
     print(
-        f"\n  {_c(_RED, 'Script rejected')} "
+        f"\n  {_c(_RED, 'Function rejected')} "
         f"(attempt {attempt}/{max_attempts}). "
         f"Feeding back to agent..."
     )

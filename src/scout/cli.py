@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .agent.llm import LLMConfig
 from .agent.loop import AgentLoop
+from .agent.wrapper import generate_standalone_script
 
 
 def main() -> None:
@@ -22,7 +23,7 @@ def main() -> None:
     load_dotenv()
 
     parser = argparse.ArgumentParser(
-        description="Run the AI scraping agent to produce a Patchright script.",
+        description="Run the AI scraping agent to produce a Patchright scraping function.",
     )
     parser.add_argument("url", help="Target URL to scrape")
     parser.add_argument("task", help="What to extract (natural language)")
@@ -40,13 +41,13 @@ def main() -> None:
         "--max-steps",
         type=int,
         default=60,
-        help="Maximum total tool calls (default: 50)",
+        help="Maximum total tool calls (default: 60)",
     )
     parser.add_argument(
         "--max-python-steps",
         type=int,
         default=50,
-        help="Maximum code execution steps (default: 30)",
+        help="Maximum code execution steps (default: 50)",
     )
     parser.add_argument(
         "--output",
@@ -118,16 +119,29 @@ def main() -> None:
     run_dir = Path(result.run_dir) if result.run_dir else Path(args.trace_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save the script into the run directory.
+    # Save both output files:
+    #   - Module file: agent's function code only (for engine reuse)
+    #   - Standalone file: complete runnable script (for the user)
     if args.output:
-        script_path = Path(args.output)
+        standalone_path = Path(args.output)
+        stem = standalone_path.stem
+        module_path = standalone_path.with_name(f"{stem}_module.py")
     else:
-        script_path = run_dir / "script.py"
+        standalone_path = run_dir / "script.py"
+        module_path = run_dir / "script_module.py"
 
-    script_path.write_text(result.final_script, encoding="utf-8")
-    print(f"  Script saved to: {script_path}")
+    # Module file — the agent's function code only.
+    module_path.write_text(result.final_script, encoding="utf-8")
+    print(f"  Function module saved to: {module_path}")
 
-    # Script is already executed and approved inside the agent loop.
+    # Standalone file — complete runnable script with engine wrapper.
+    standalone_code = generate_standalone_script(
+        result.final_script, args.url, args.task,
+    )
+    standalone_path.write_text(standalone_code, encoding="utf-8")
+    print(f"  Standalone script saved to: {standalone_path}")
+
+    # Function output is already executed and approved inside the agent loop.
     # No need to re-run it here.
 
 

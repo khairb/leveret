@@ -39,7 +39,11 @@ from .checkpoint import (
     create_expand_checkpoint_function,
     format_checkpoint_summary,
     read_checkpoints,
-    write_scraping_utils,
+)
+from .wrapper import (
+    build_combined_output,
+    generate_subprocess_wrapper,
+    parse_return_value,
 )
 from .context import ConversationManager
 from .bridge import (
@@ -76,6 +80,7 @@ class AgentResult:
     """The output of a completed agent run."""
 
     final_script: str = ""
+    return_value: str | None = None
     conversation_length: int = 0
     steps_executed: int = 0
     python_steps: int = 0
@@ -241,7 +246,7 @@ class AgentLoop:
 
                 if not tool_uses:
                     # No tool calls — the agent responded with text.
-                    # Check for a fenced Python code block (final script).
+                    # Check for a fenced Python code block (final function).
                     text = _extract_text(content_blocks)
                     script = _extract_final_script(text)
                     if script:
@@ -273,23 +278,30 @@ class AgentLoop:
                                     requirements=requirements,
                                 )
 
-                            # Run the script in a fresh subprocess.
+                            # Run the function in a fresh subprocess.
                             console.print_running_script()
                             run_number = script_attempts + 1
                             run_dir = checkpoint_base_dir / f"run_{run_number}"
-                            stdout, stderr, returncode = (
+                            stdout, return_value_json, stderr, returncode = (
                                 await _run_script_subprocess(
                                     script,
+                                    url=url,
                                     timeout=self._script_timeout,
                                     checkpoint_dir=run_dir,
                                 )
                             )
+                            # Build combined output for display and
+                            # validation (stdout + return value JSON).
+                            combined_output = build_combined_output(
+                                stdout, return_value_json,
+                            )
+
                             # Read checkpoints and update the
                             # expand_checkpoint ref.
                             checkpoints = read_checkpoints(run_dir)
                             self._checkpoint_run_dir_ref[0] = run_dir
                             console.print_script_output(
-                                stdout, stderr, returncode,
+                                combined_output, stderr, returncode,
                             )
                             console.print_checkpoints_summary(checkpoints)
                             tracer.log_system_event(
@@ -298,19 +310,20 @@ class AgentLoop:
                                 stdout_len=len(stdout),
                                 stderr_len=len(stderr),
                                 checkpoints=len(checkpoints),
+                                has_return_value=return_value_json is not None,
                             )
 
-                            # Approve or reject the script output.
+                            # Approve or reject the function output.
                             cp_summary = format_checkpoint_summary(
                                 checkpoints,
                             )
 
                             # Short-circuit: skip validator when
-                            # the script crashed (non-zero exit).
+                            # the function crashed (non-zero exit).
                             if returncode != 0:
                                 approved = False
                                 feedback = (
-                                    "Script crashed with exit code "
+                                    "Function crashed with exit code "
                                     f"{returncode}. Fix the error and "
                                     "try again."
                                 )
@@ -318,7 +331,7 @@ class AgentLoop:
                                 approved, feedback = await validate_output(
                                     task=task,
                                     script=script,
-                                    stdout=stdout,
+                                    stdout=combined_output,
                                     stderr=stderr,
                                     returncode=returncode,
                                     llm_config=self._validator_config,
@@ -342,16 +355,17 @@ class AgentLoop:
 
                             if approved:
                                 result.final_script = script
+                                result.return_value = return_value_json
                                 result.success = True
                                 tracer.log_system_event(
                                     "script_approved",
                                     attempt=script_attempts + 1,
                                 )
-                                # Save script output to the run dir.
+                                # Save combined output to the run dir.
                                 if tracer.run_dir:
                                     out_path = tracer.run_dir / "output.txt"
                                     out_path.write_text(
-                                        stdout, encoding="utf-8",
+                                        combined_output, encoding="utf-8",
                                     )
                                 break
 
@@ -360,7 +374,7 @@ class AgentLoop:
                             attempt_history.append(AttemptRecord(
                                 attempt_number=script_attempts,
                                 script=script,
-                                stdout_sample=stdout[:3000],
+                                stdout_sample=combined_output[:3000],
                                 stderr=stderr,
                                 returncode=returncode,
                                 rejection_feedback=feedback,
@@ -378,7 +392,7 @@ class AgentLoop:
                             if script_attempts >= self._max_script_attempts:
                                 result.final_script = script
                                 result.error = (
-                                    f"Script rejected "
+                                    f"Function rejected "
                                     f"{script_attempts} times. "
                                     f"Last feedback: {feedback}"
                                 )
@@ -389,15 +403,16 @@ class AgentLoop:
                                 returncode, script_attempts,
                                 self._max_script_attempts,
                                 checkpoints=checkpoints,
+                                return_value_json=return_value_json,
                             )
                             conversation.add_user_message(rejection_msg)
                             continue
                         else:
-                            # Ask the agent to fix the syntax error.
+                            # Ask the agent to fix the validation error.
                             fix_msg = (
-                                f"The script has a syntax error: {error_msg}\n"
+                                f"Your code has an issue: {error_msg}\n"
                                 f"Please fix it and respond again with the "
-                                f"corrected script in a Python code block."
+                                f"corrected function in a Python code block."
                             )
                             tracer.log_system_event(
                                 "script_syntax_error", error=error_msg,
@@ -410,7 +425,7 @@ class AgentLoop:
                         nudge = (
                             "Continue working. Use your tools to explore "
                             "the page. When done, respond with the final "
-                            "script in a ```python code block."
+                            "scraping function in a ```python code block."
                         )
                         tracer.log_system_event("nudge_sent", text=nudge)
                         console.print_nudge()
@@ -498,8 +513,8 @@ class AgentLoop:
                     budget_msg = (
                         f"You have used {python_step_count} code executions "
                         f"(limit: {self._max_python_steps}). Stop using tools "
-                        f"and respond with the final script in a ```python "
-                        f"code block."
+                        f"and respond with the final scraping function in a "
+                        f"```python code block."
                     )
                     tracer.log_system_event("budget_warning", text=budget_msg)
                     console.print_budget_warning(budget_msg)
@@ -508,7 +523,7 @@ class AgentLoop:
                     budget_msg = (
                         f"You have {self._max_steps - step_count} tool calls "
                         f"remaining. Stop using tools and respond with the "
-                        f"final script in a ```python code block."
+                        f"final scraping function in a ```python code block."
                     )
                     tracer.log_system_event("budget_warning", text=budget_msg)
                     console.print_budget_warning(budget_msg)
@@ -518,7 +533,7 @@ class AgentLoop:
             if not result.success:
                 result.error = (
                     f"Agent exhausted budget ({step_count} steps, "
-                    f"{python_step_count} python) without producing a script."
+                    f"{python_step_count} python) without producing a function."
                 )
 
             result.conversation_length = len(conversation.messages)
@@ -672,47 +687,112 @@ def _extract_final_script(text: str) -> str | None:
     return matches[-1].strip()
 
 
+_EXPECTED_PARAMS = ["page", "url", "checkpoint"]
+_REQUIRED_SIG = "async def scrape(page, url, checkpoint) -> JsonValue:"
+
+
 def _validate_script(script: str) -> tuple[bool, str]:
-    """Check that the script is valid Python syntax."""
+    """Validate the agent's function code.
+
+    Checks:
+    1. Valid Python syntax
+    2. Contains a function named ``scrape``
+    3. The function is async
+    4. Parameters are exactly ``(page, url, checkpoint)`` in order
+
+    Returns ``(True, "")`` on success or ``(False, error_message)`` on
+    the first failure.
+    """
+    # Step 1: Syntax.
     try:
-        ast.parse(script)
-        return True, ""
+        tree = ast.parse(script)
     except SyntaxError as e:
-        return False, f"Line {e.lineno}: {e.msg}"
+        return False, f"Syntax error on line {e.lineno}: {e.msg}"
+
+    # Step 2: Find the scrape function.
+    scrape_funcs = [
+        node for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "scrape"
+    ]
+    if not scrape_funcs:
+        return False, (
+            "No function named `scrape` found. Your code must define:\n"
+            f"    {_REQUIRED_SIG}"
+        )
+
+    func = scrape_funcs[-1]  # last definition wins
+
+    # Step 3: Must be async.
+    if not isinstance(func, ast.AsyncFunctionDef):
+        return False, (
+            "`scrape` must be an async function. Use "
+            "`async def scrape(...)`, not `def scrape(...)`."
+        )
+
+    # Step 4: Parameter signature.
+    params = [arg.arg for arg in func.args.args]
+    if params == _EXPECTED_PARAMS:
+        return True, ""
+
+    actual_sig = f"async def scrape({', '.join(params)})"
+
+    # Check for missing parameters.
+    for p in _EXPECTED_PARAMS:
+        if p not in params:
+            return False, (
+                f"Parameter `{p}` is missing from `scrape`. "
+                f"Required signature:\n    {_REQUIRED_SIG}\n"
+                f"Your signature:\n    {actual_sig}"
+            )
+
+    # Check for extra parameters.
+    extras = [p for p in params if p not in _EXPECTED_PARAMS]
+    if extras:
+        return False, (
+            f"Unexpected parameter `{extras[0]}` in `scrape`. "
+            f"Required signature:\n    {_REQUIRED_SIG}\n"
+            f"Your signature:\n    {actual_sig}"
+        )
+
+    # Must be wrong order.
+    return False, (
+        f"Parameters are in the wrong order. "
+        f"Required signature:\n    {_REQUIRED_SIG}\n"
+        f"Your signature:\n    {actual_sig}"
+    )
 
 
 async def _run_script_subprocess(
     script: str,
+    *,
+    url: str,
     timeout: int = 120,
     checkpoint_dir: Path | None = None,
-) -> tuple[str, str, int]:
-    """Run a Python script in a fresh subprocess.
+) -> tuple[str, str | None, str, int]:
+    """Run the agent's scrape function in a fresh subprocess.
 
-    If *checkpoint_dir* is given, ``scraping_utils.py`` is written next
-    to the script and ``SCRAPE_CHECKPOINT_DIR`` is set so checkpoints
-    land in that directory.
+    Generates an engine wrapper around the agent's code, launches a
+    browser, navigates to *url*, calls ``scrape(page, url, checkpoint)``,
+    and captures the return value.
 
     Returns:
-        ``(stdout, stderr, returncode)``
+        ``(stdout, return_value_json, stderr, returncode)`` —
+        *return_value_json* is ``None`` if the function raised before
+        returning.
     """
+    cp_dir = str(checkpoint_dir) if checkpoint_dir else "/tmp/scrape_checkpoints"
+    wrapper_code = generate_subprocess_wrapper(script, url, cp_dir)
+
     script_dir = Path(tempfile.mkdtemp(prefix="scrape_run_"))
     script_path = script_dir / "script.py"
     try:
-        script_path.write_text(script, encoding="utf-8")
-
-        # Write scraping_utils.py alongside the script so
-        # ``from scraping_utils import checkpoint`` works.
-        write_scraping_utils(script_dir)
-
-        env = dict(os.environ)
-        if checkpoint_dir is not None:
-            env["SCRAPE_CHECKPOINT_DIR"] = str(checkpoint_dir)
+        script_path.write_text(wrapper_code, encoding="utf-8")
 
         proc = await asyncio.create_subprocess_exec(
             sys.executable, str(script_path),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env=env,
         )
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
@@ -721,11 +801,18 @@ async def _run_script_subprocess(
         except asyncio.TimeoutError:
             proc.kill()
             await proc.communicate()
-            return "", f"Script timed out after {timeout} seconds", -1
+            return "", None, f"Function timed out after {timeout} seconds", -1
+
+        raw_stdout = stdout_bytes.decode(errors="replace")
+        stderr = stderr_bytes.decode(errors="replace")
+
+        # Separate progress output from the serialized return value.
+        clean_stdout, return_value_json = parse_return_value(raw_stdout)
 
         return (
-            stdout_bytes.decode(errors="replace"),
-            stderr_bytes.decode(errors="replace"),
+            clean_stdout,
+            return_value_json,
+            stderr,
             proc.returncode or 0,
         )
     finally:
@@ -740,11 +827,12 @@ def _build_rejection_message(
     attempt: int,
     max_attempts: int,
     checkpoints: list[dict] | None = None,
+    return_value_json: str | None = None,
 ) -> str:
-    """Build the message sent to the agent after user rejects a script."""
+    """Build the message sent to the agent after a function is rejected."""
     parts = [
-        "## Script Rejected\n",
-        f"**User feedback:** {feedback}\n",
+        "## Function Rejected\n",
+        f"**Feedback:** {feedback}\n",
     ]
 
     if stdout.strip():
@@ -755,11 +843,25 @@ def _build_rejection_message(
                 + "\n\n... (truncated) ...\n\n"
                 + output[-1500:]
             )
-        parts.append(f"**Script output:**\n```\n{output}\n```\n")
+        parts.append(f"**Progress output:**\n```\n{output}\n```\n")
+
+    if return_value_json is not None:
+        rv_display = return_value_json.strip()
+        if len(rv_display) > 3000:
+            rv_display = (
+                rv_display[:1500]
+                + "\n\n... (truncated) ...\n\n"
+                + rv_display[-1500:]
+            )
+        parts.append(f"**Return value:**\n```json\n{rv_display}\n```\n")
+    elif returncode == 0:
+        parts.append(
+            "**Return value:** (none — function did not return a value)\n"
+        )
 
     if stderr.strip():
         parts.append(
-            f"**Script errors:**\n```\n{stderr.strip()[:2000]}\n```\n"
+            f"**Errors:**\n```\n{stderr.strip()[:2000]}\n```\n"
         )
 
     parts.append(f"**Exit code:** {returncode}\n")
@@ -773,9 +875,9 @@ def _build_rejection_message(
     parts.append(
         "\n---\n\n"
         "Do not guess at a fix. Be systematic:\n\n"
-        "1. **Analyze** the feedback, script output, and checkpoints "
-        "carefully. Understand exactly what went wrong — which part of "
-        "the script failed and why.\n"
+        "1. **Analyze** the feedback, output, return value, and "
+        "checkpoints carefully. Understand exactly what went wrong — "
+        "which part of the function failed and why.\n"
         "2. **Expand checkpoints** to see what the page looked like at "
         "key moments: call `expand_checkpoint(\"CP-1\")` to inspect "
         "the full page state at any checkpoint.\n"
@@ -784,11 +886,11 @@ def _build_rejection_message(
         "state, verify your assumptions. Use `await show_page(page)` and "
         "`await zoom_section(page, ...)` to re-examine the page if "
         "needed.\n"
-        "4. **Verify your fix** before writing the final script. Test the "
-        "corrected logic in your Python environment first.\n"
-        "5. **Write the corrected script** in a ```python code block.\n\n"
-        "The user will test this script again. Make sure your fix "
-        "addresses their feedback."
+        "4. **Verify your fix** before writing the final function. Test "
+        "the corrected logic in your Python environment first.\n"
+        "5. **Write the corrected function** in a ```python code block.\n\n"
+        "The function will be tested again. Make sure your fix "
+        "addresses the feedback."
     )
 
     return "\n".join(parts)

@@ -1,15 +1,14 @@
-"""Checkpoint observability for final generated scripts.
+"""Checkpoint observability for the scraping agent.
 
-Provides a ``checkpoint(page, label)`` function that scripts call at key
-moments.  Each call prints a one-line summary to stdout and stores full
-page state to disk.  After the script runs, the outer loop reads the
-checkpoint files and (on rejection) lets the agent expand any checkpoint
-to see what the page actually looked like at that point.
+The engine wrapper embeds a checkpoint function that writes CP-*.json
+files to a run directory.  After execution, the outer loop reads these
+files and (on rejection) lets the agent expand any checkpoint to see
+what the page looked like at that point.
 
 Directory layout::
 
     {base_dir}/
-      run_1/          # first script execution
+      run_1/          # first execution
         CP-1.json
         CP-2.json
       run_2/          # second attempt (after rejection)
@@ -22,96 +21,6 @@ import json
 import re
 from pathlib import Path
 from typing import Any
-
-# ═══════════════════════════════════════════════════════════════
-#  scraping_utils.py — written alongside the final script
-# ═══════════════════════════════════════════════════════════════
-
-SCRAPING_UTILS_SOURCE = '''\
-"""Checkpoint utility for scraping script observability.
-
-Usage::
-
-    from scraping_utils import checkpoint
-
-    await checkpoint(page, "navigated_to_listings")
-    await checkpoint(page, "extraction_complete", data_preview=items[:3])
-"""
-
-import json
-import os
-import time
-
-_CP_DIR = os.environ.get("SCRAPE_CHECKPOINT_DIR", "/tmp/scrape_checkpoints")
-_START = time.time()
-_COUNTER = 0
-
-
-async def checkpoint(page, label, *, data_preview=None):
-    """Capture a checkpoint of the current page state.
-
-    Prints a one-line summary to stdout and writes full details to disk.
-
-    Args:
-        page: Patchright Page object.
-        label: Descriptive label for this checkpoint.
-        data_preview: Optional list/dict to include as a data sample.
-    """
-    global _COUNTER
-    _COUNTER += 1
-    cp_id = f"CP-{_COUNTER}"
-
-    url = page.url
-    title = await page.title()
-    elapsed = time.time() - _START
-
-    # Capture visible text + element count via lightweight JS.
-    info = await page.evaluate(
-        """() => {
-            const text = document.body ? document.body.innerText : "";
-            const count = document.querySelectorAll("*").length;
-            return { text: text.substring(0, 5000), count };
-        }"""
-    )
-
-    visible_text = info.get("text", "")
-    element_count = info.get("count", 0)
-
-    # Write full data to disk.
-    data = {
-        "id": cp_id,
-        "label": label,
-        "url": url,
-        "title": title,
-        "timestamp_s": round(elapsed, 1),
-        "element_count": element_count,
-        "visible_text": visible_text,
-        "data_preview": data_preview,
-    }
-    os.makedirs(_CP_DIR, exist_ok=True)
-    with open(os.path.join(_CP_DIR, f"{cp_id}.json"), "w") as f:
-        json.dump(data, f, indent=2, default=str)
-
-    # Print one-line summary to stdout.
-    t = (title[:50] + "\\u2026") if len(title) > 50 else title
-    dp = f" | data_preview={len(data_preview)} items" if data_preview else ""
-    print(
-        f"[{cp_id} {label}] url={url} | "
-        f"title=\\"{t}\\" | elements={element_count}{dp} | {elapsed:.1f}s"
-    )
-'''
-
-
-# ═══════════════════════════════════════════════════════════════
-#  Utility functions
-# ═══════════════════════════════════════════════════════════════
-
-
-def write_scraping_utils(script_dir: Path) -> Path:
-    """Write ``scraping_utils.py`` into *script_dir* and return its path."""
-    dest = script_dir / "scraping_utils.py"
-    dest.write_text(SCRAPING_UTILS_SOURCE, encoding="utf-8")
-    return dest
 
 
 def read_checkpoints(run_dir: Path) -> list[dict]:
@@ -283,14 +192,16 @@ _CHECKPOINT_GUARD_MESSAGE = (
     "  • await zoom_section(page, \"section-id\")  — inspect the DOM "
     "HTML of any section\n"
     "\n"
-    "checkpoint() is for your FINAL SCRIPT only. The final script runs "
-    "in a separate process where you cannot call show_page or "
+    "checkpoint() is for your final scrape function only. The function "
+    "runs in a separate process where you cannot call show_page or "
     "zoom_section. Checkpoints give you that same visibility — each "
     "checkpoint captures the page state at a key moment so that if the "
-    "script is rejected, you can call expand_checkpoint(\"CP-1\") to "
+    "function is rejected, you can call expand_checkpoint(\"CP-1\") to "
     "see what happened.\n"
     "\n"
-    "Add checkpoint() calls to your final script, not here."
+    "Use checkpoint as a parameter in your scrape function:\n"
+    "  async def scrape(page, url, checkpoint):\n"
+    "      await checkpoint(\"label\")"
 )
 
 
