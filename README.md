@@ -5,7 +5,7 @@
 <h1 align="center">Scout</h1>
 
 <p align="center">
-  <strong>An agent writes you a Playwright scraper, then leaves and comes back on its own when the script breaks.</strong>
+  <em>You describe the data. The agent writes the scraper.<br>You run it forever — without the AI.</em>
 </p>
 
 <p align="center">
@@ -16,104 +16,244 @@
 
 ---
 
-```bash
-pip install scout
-```
-
 ```python
-from scout import Scout
-from pydantic import BaseModel, Field
+from scout import Scraper, Field, List
 
-class Listing(BaseModel):
-    title: str
-    price: float = Field(gt=0, lt=10000)
-    location: str
-    seller_response_rate: float = Field(ge=0, le=1)
-
-scraper = Scout.create(
-    task="""
-        Go to example-marketplace.com/bikes, filter to listings posted
-        in the last week under $500, paginate through every page,
-        click into each detail page, and grab the title, price,
-        location, and seller response rate.
-    """,
-    schema=Listing,
-    output="bikes_scraper.py",
+scraper = Scraper(
+    "https://news.ycombinator.com",
+    "Extract the top stories",
+    schema=List({
+        "title": str,
+        "url": str,
+        "score": Field(int, min=0),
+        "author": str,
+    }, min=10),
+    script="scrapers/hn.py",
 )
 
-# Done. You now have bikes_scraper.py — a real Playwright file
-# you can read, edit, commit, and run on a cron with no model in the loop.
+# First run — the agent opens a browser, explores the page, writes a scraper (~60s)
+result = scraper.run()
+
+# Every run after — loads the saved script from disk, no AI involved (~3s)
+result = scraper.run()
 ```
 
-That's the whole pitch. Keep reading if you want to know why it works that way.
+The first `run()` costs one API call. Every `run()` after that is free — it loads a plain Python file from disk and executes it. No model in the loop. No per-request bill.
 
-## Why this exists
+The file Scout writes is a plain Python function you can read, edit, and commit to git. If you uninstall Scout, your scrapers keep working.
 
-If you've written scrapers for a living, you know the ambush. The scraper runs fine for four months. Then on a Tuesday, the site ships a redesign, your selectors stop matching, and you find out from an empty dashboard. You spend twenty unglamorous minutes fixing it. You do this six times a year per scraper. You have eleven scrapers.
+---
 
-If you've tried the AI scraping tools — Browser Use, Firecrawl, ScrapeGraphAI's smart mode — you know the other problem. They work. They also call an LLM on every single scrape. You scale up to a real recurring job, do the math on the per-request bill, and close the tab.
+## It handles more than simple pages
 
-Scout is built on a different idea: **the model should write the scraper, not be the scraper.**
-
-You describe the job in a sentence. An agent opens a real browser, navigates the site the way you would, writes a Playwright script in pieces, runs each piece, debugs its own selectors when they miss by actually looking at the page, and iterates until the output matches your schema. This takes one to ten minutes depending on the site.
-
-When it's done, the agent is gone. What you have is a plain Python file. It runs on a cron in seconds, with no API key in the job, no per-request bill, and no model in the loop. You own it the same way you'd own a scraper you wrote yourself — because, structurally, it *is* a scraper you wrote yourself, just with the boring part done by something else.
-
-## When the site breaks
-
-Every run validates against your schema. If the script crashes, returns too few rows, or returns rows that fail validation, Scout knows. With `auto_heal=True`, the agent gets called back in automatically — it receives the original task, the original schema, the broken script, and the actual error, and writes a fresh script. Your cron job keeps working. You don't get paged.
+The example above is easy. Here's the kind of task Scout is built for — searching Airbnb for apartments in Berlin with specific dates, guests, and filters:
 
 ```python
-scraper = Scout.create(
-    task="...",
-    schema=Listing,
-    output="bikes_scraper.py",
-    auto_heal=True,
+scraper = Scraper(
+    "https://www.airbnb.de/",
+    "Find apartments in Berlin, April 18 – May 19 2026, "
+    "2 adults, 2 children, 1 baby. "
+    "Filter for washing machine, TV, and WiFi. "
+    "Extract all apartments from all pages.",
+    schema=List({
+        "title": str,
+        "description": str,
+        "bedrooms": str,
+        "beds": str,
+        "price": str,
+        "rating": str,
+        "url": Field(str, min_length=1),
+    }),
+    script="scrapers/airbnb_berlin.py",
 )
+
+result = scraper.run()
+print(f"{len(result.data)} apartments")  # apartments across multiple pages
 ```
 
-The model is on call, not on staff. You pay for it when something actually changes, which is the only time you should be paying for it.
+One call. The agent dismisses the cookie banner, types "Berlin" into the search bar, picks the dates from the calendar, clicks the guest stepper buttons, applies the amenity filters, extracts the listings, paginates through the results, and returns everything — validated against your schema. The generated script is saved to `scrapers/airbnb_berlin.py`. Run it tomorrow without the AI.
 
-## What's actually in the file
+The agent can work through pagination (numbered pages, "load more" buttons, infinite scroll), filtering and search forms, navigating from listing pages into detail pages, and multi-step interactions that require clicking, waiting, and extracting in sequence. When a selector misses, it inspects the page at the point of failure to see what's actually there and tries again. Generation takes thirty seconds to ten minutes depending on the site. Set `headless=False` to watch it work.
 
-The file Scout writes is a normal Playwright script. No Scout imports, no runtime dependency on this library, no framework lock-in. You can read it. You can edit it. You can delete the parts you don't like and keep the parts you do. You can commit it to git and review the diff like any other code. If you uninstall Scout tomorrow, your scrapers keep running.
+## What it generates
 
-This matters because the thing you actually want from a scraper is a file you control. Everything else is somebody else's roadmap.
+Scout saves a standalone function — no framework code, no imports from Scout, nothing you couldn't have written yourself:
 
-## How it compares
+```python
+# scrapers/hn.py  (generated by Scout, edited by you whenever you want)
 
-|  | Scout | Browser Use / Firecrawl / ScrapeGraphAI |
-|---|---|---|
-| LLM calls per scrape (steady state) | 0 | 1 per scrape |
-| Output | A Playwright file you own | A managed service result |
-| Cost at 10k scrapes/month | One-time generation + occasional repair | Per-request, forever |
-| What you have if the vendor disappears | Your scrapers | Nothing |
-| Detection profile | Patchright (low) | Varies |
+async def scrape(page, url, checkpoint):
+    stories = []
+    rows = await page.query_selector_all("tr.athing")
 
-This isn't a knock on those tools — they're solving a different problem. If you want a one-shot scrape of an unfamiliar site and you don't care about the artifact, use them. If you want a scraper you can put in production and forget about, that's what Scout is for.
+    for row in rows:
+        title_el = await row.query_selector(".titleline > a")
+        title = await title_el.inner_text()
+        link = await title_el.get_attribute("href")
+        # ...
+        stories.append({"title": title, "url": link, ...})
+
+    return stories
+```
+
+This is the file that runs on your cron job. No API key. No `anthropic` import. Just Python and a browser.
+
+## When the site changes
+
+Sites redesign. Class names shift. Your scraper breaks and silently returns empty data — sometimes for days before anyone notices.
+
+Scout catches this. Every run validates against your schema. If the script crashes, times out, returns too few rows, or returns rows that fail validation, Scout raises a specific error you can act on:
+
+```python
+from scout import ScoutValidationError, ScoutScriptError
+
+try:
+    result = scraper.run()
+except (ScoutValidationError, ScoutScriptError):
+    # Site changed — regenerate with the same task and schema
+    result = scraper.run(force=True)
+```
+
+The agent gets the original task, the original schema, and the error context. The new script is validated before it's saved. Your data shape stays consistent even when the site's HTML doesn't.
 
 ## Install
 
 ```bash
 pip install scout
-playwright install chromium
+patchright install chromium
+export ANTHROPIC_API_KEY=sk-ant-...   # only needed when generating
 ```
 
-You'll need an API key for the model that writes and repairs scripts. Set it once:
+Scout uses [Patchright](https://github.com/AmaanAnis999/Patchright) — a Playwright-compatible browser that's harder to detect than vanilla Playwright, so it gets through more bot detection than you'd expect.
 
-```bash
-export ANTHROPIC_API_KEY=...   # or OPENAI_API_KEY
+## Schemas
+
+The schema tells Scout what shape your data should be. Scout validates every result against it — if the output doesn't match during generation, the agent retries until it does.
+
+Schemas are plain Python. Start simple, add constraints when you need them:
+
+```python
+# Just types
+schema = [{"title": str, "price": float}]
+
+# With constraints
+schema = List({
+    "title": Field(str, min_length=1),
+    "price": Field(float, min=0),
+    "currency": Field(str, enum=["USD", "EUR", "GBP"]),
+    "rating": Field(int, min=1, max=5, optional=True),
+}, min=20)
+
+# Nested structures
+schema = {
+    "restaurant": str,
+    "reviews": [{
+        "text": str,
+        "rating": int,
+        "author": str,
+    }],
+}
 ```
 
-The key is only used when Scout is *writing* or *repairing* a script. The scripts it produces don't need it.
+When validation fails during generation, the agent sees specific, grouped feedback:
 
-## Status
+```
+Schema validation failed (3 error types):
 
-Scout is new. It works, it's tested on a growing list of real sites, and it's being used in production by a small number of people including me. There will be sites it can't handle yet. If you find one, open an issue with the URL and the task description — those reports are the most useful thing you can contribute right now.
+  [1] [*].price — missing required field (4 of 25 items)
+  [2] [0].currency — value "JPY" is not one of: "USD", "EUR", "GBP"
+  [3] [*].rating — value is 0, must be between 1 and 5 (2 of 25 items)
+```
+
+## Scraping across pages
+
+A generated scraper works across pages on the same site. Use `with` to keep the browser open between runs:
+
+```python
+scraper = Scraper(
+    "https://example.com/product/1",
+    "Extract product details",
+    schema={"name": str, "price": float, "in_stock": bool},
+    script="scrapers/product.py",
+)
+
+scraper.run()  # generates the script on first call
+
+with scraper:
+    for pid in product_ids:
+        result = scraper.run(url=f"https://example.com/product/{pid}")
+        save(result.data)
+```
+
+Works with `async` too:
+
+```python
+async with scraper:
+    result = await scraper.async_run(url="https://example.com/product/42")
+```
+
+## API
+
+```python
+scraper = Scraper(
+    url,                          # target URL
+    task,                         # what to extract, in plain English
+    schema=...,                   # expected data shape
+    script="scraper.py",          # where to save/load the script (None = in-memory only)
+    model="claude-haiku-4-5",     # which model writes the scraper
+    headless=True,                # False to watch the browser work
+    timeout=600,                  # max seconds for generation
+    max_retries=6,                # how many times the agent can retry during generation
+    api_key=None,                 # or set ANTHROPIC_API_KEY
+)
+
+result = scraper.run()            # generate (if needed) + execute + validate
+result = scraper.run(url="...")   # same scraper, different page
+result = scraper.run(force=True)  # throw away the cached script, regenerate
+
+await scraper.async_run()         # async version
+
+scraper.export("standalone.py")   # save a copy you can run without Scout
+scraper.close()                   # close the browser (automatic with `with`)
+```
+
+```python
+result.data          # your data, validated against the schema
+result.url           # the URL that was scraped
+result.cached        # True = ran from saved script, False = freshly generated
+result.timestamp     # when the scrape happened (ISO 8601)
+result.script_path   # where the script lives on disk
+```
+
+## Deploying to production
+
+Generate on your laptop. Deploy the scripts. No API key needed in production.
+
+```
+Development:                        Production:
+  pip install scout                   pip install patchright
+  export ANTHROPIC_API_KEY=...        patchright install chromium
+  python generate.py                  python run.py
+  git commit scrapers/                # no API key, no anthropic package
+```
+
+Scout doesn't create config directories, caches, or dotfiles. The only thing it writes is the file you point `script=` at.
+
+## Limitations
+
+Scout is designed for the long tail of scraping jobs — the sites that are annoying to maintain a scraper for, not the ones that are hostile to scrape.
+
+- **Anti-bot systems**: Patchright handles basic bot detection, but CAPTCHAs and the most aggressive systems (Cloudflare under strict mode, Akamai, PerimeterX) will sometimes block it. When they do, the agent fails visibly during generation.
+- **Complex SPAs**: Single-page apps with heavy custom widgets or non-standard component libraries can be harder for the agent to navigate. If it can't figure out a page, try rephrasing the task with more specific instructions.
+- **Generation cost**: Every generation uses model tokens. The recurring runs are free. For most use cases — generate once, run for months — the cost is negligible.
+
+## Contributing
+
+The most useful thing you can do right now: try Scout on a real site and [open an issue](https://github.com/user/scout/issues) with the URL, the task description, and what happened. Sites that break Scout are the most valuable feedback.
 
 ## License
 
-MIT.
+MIT
 
 ---
 
