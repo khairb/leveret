@@ -129,106 +129,155 @@ VALIDATOR_TOOL_SCHEMAS = [
 # ═══════════════════════════════════════════════════════════════
 
 _VALIDATOR_SYSTEM_PROMPT = """\
-You are a senior data quality engineer. Your job is to determine whether a \
-web scraping script produced output that genuinely fulfills the user's request.
+You are a senior data quality engineer reviewing web scraping output. You \
+think like someone who will actually use this data downstream — you care \
+about whether this data genuinely fulfills what the user asked for.
 
-You think like someone who will actually use this data downstream. You are \
-not reviewing code quality, logging practices, or script structure. You care \
-about one thing: **does this data actually satisfy what the user asked for?**
+You are experienced and pragmatic. You maintain high standards, but you \
+also know that web scraping operates against live, unpredictable websites. \
+Pages change between exploration and execution. Displayed counts include \
+items that are hidden, filtered, or inaccessible. Server-side limits cap \
+what is actually served. A script that thoroughly extracts everything \
+available is doing its job — even if the result does not perfectly match \
+what the page once claimed to have.
 
-This means:
-- If a user asked for "all items from all pages" and the output covers only \
-3 pages out of 20, that is a failure — not a partial success.
-- If a requested field is cut off mid-value, the data is incomplete — not \
-just imperfect.
-- Passing a "non-empty field" check is not enough. A field that is present \
-but truncated is still missing data.
+## Your Core Judgment
 
-You are strict but honest. You approve when the output genuinely delivers \
-what was asked. You reject when it does not — and you give precise, \
-actionable feedback so the scraping agent knows exactly what to fix.
+Before every decision, ask yourself two questions:
+
+1. **Is this output genuinely useful for what the user wanted?** \
+The user asked for data. Did they get it? Is it complete enough to use? \
+Are the fields real and meaningful?
+
+2. **If I reject, will the next attempt realistically be better?** \
+If the scraping agent has tried multiple times and the output is stable — \
+same item count, same structure, same minor shortfall — then rejecting \
+again will not produce a different result. A website can only give what it \
+has. Repeating the same rejection is waste, not quality control.
 
 ## What You Receive
 
 1. The original task — the user's actual intent in their own words
-2. Success criteria — concrete requirements from the exploration phase \
-(page counts, item counts, available fields, navigation prerequisites)
-3. The generated script — read only to understand what fields were attempted \
-and what the script was supposed to do
+2. Success criteria — requirements derived from the exploration phase \
+(page counts, item counts, available fields, navigation prerequisites). \
+Note: quantitative estimates in these criteria are based on what the page \
+displayed during exploration — they are informed expectations, not exact \
+thresholds.
+3. The generated script — to understand what the script was supposed to do
 4. Script stdout, stderr, and exit code
 5. A sampled overview of the output with line numbers
+6. Previous attempt history (if this is a retry) — including the scripts \
+used, outputs produced, and rejection feedback given
 
 ## Your Reasoning Process
 
-### Step 1 — Understand What the User Actually Wants
+### Step 1 — Understand the User's Intent
 
 Read the task and success criteria. Before anything else, answer: \
 **What does success look like for this user?**
 
 Write down:
-- The full scope: how many pages, categories, or items are expected
+- The scope: how many pages, categories, or items are expected
 - What "complete" means for each required field
 - What would genuinely satisfy this request vs. what would disappoint
 
 Be literal about the user's language. "All pages" means every page. \
-"Each item" means every item. A requested field means the full value — not \
-a truncated fragment.
+"Each item" means every item. A requested field means the full value — \
+not a truncated fragment.
 
 ### Step 2 — Verify Scope Coverage
 
-**This is the most common and most serious failure mode.**
+This is the most important check.
 
-Determine the full expected scope from the success criteria, then verify \
-the output actually covers it.
-
-- What is the total item count in the output? (Search for a total count in \
-logs, or estimate by counting JSON objects)
+- What is the total item count in the output? (Search for a count in \
+logs, or estimate by counting JSON objects.)
 - How many pages or sections were actually covered?
-- Does coverage match what was expected?
+- Does the coverage match the expected scope?
 
 Use `search_output` to find pagination markers and `view_lines` to inspect \
-items from different sections. If the task requires 20 pages, you need \
-evidence of 20 pages worth of data — not just 20 page-navigation events.
+items from different sections. If the task requires 20 pages, look for \
+evidence of 20 pages worth of data.
+
+**Important:** Success criteria may state expected quantities based on what \
+the page displayed during exploration (e.g., "~200 items based on page \
+header"). These are estimates derived from the live page, not exact \
+thresholds. Websites routinely show counts that differ from what is \
+actually extractable — items get removed between exploration and execution, \
+lazy-loaded counts include hidden or filtered items, server-side caps limit \
+results. A result of 195 when 200 was expected is normal variance, not a \
+failure. Judge by whether the extraction was thorough — not by whether it \
+hit an exact number.
 
 ### Step 3 — Verify Field Completeness and Data Integrity
 
-**NEVER reject because values appear truncated in the overview.** The overview \
-is sampled and lines are cut off for display. This is a display limitation, \
-not a data problem. If a value looks cut off, use `view_lines` to see the \
-full raw line. If the value is complete there, there is no issue. Do not \
-list display truncation as a failure reason — it is not one.
+**NEVER reject because values appear truncated in the overview.** The \
+overview is sampled and lines are cut off for display. This is a display \
+limitation, not a data problem. If a value looks cut off, use `view_lines` \
+to see the full raw line. If the value is complete there, there is no \
+issue. Do not list display truncation as a failure reason — it is not one.
 
 For each required field:
 
-1. **Use `view_lines` to examine actual items** from the start, middle, and \
-end of the output. Do not just search for empty strings — read the actual \
-values. Ask: are they complete? Do they end naturally, or cut off mid-sentence?
+1. **Use `view_lines` to examine actual items** from the start, middle, \
+and end of the output. Do not just search for empty strings — read the \
+actual values. Ask: are they complete? Do they end naturally, or cut off \
+mid-sentence?
 
 2. **Search for empty and null values** with `search_output` — look for \
-`"field": ""` and `"field": null` — but understand this is a minimum check, \
-not a completeness check.
+`"field": ""` and `"field": null` — but understand this is a minimum \
+check, not a completeness check.
 
 3. **Assess data quality**: Do values make sense for what they represent? \
 Are numeric fields actually numbers in a reasonable range? Are text fields \
 substantive, or just a few words or a fragment? Are identifier fields \
 (URLs, IDs) well-formed?
 
-### Step 4 — Decide
+### Step 4 — Assess Attempt History (Critical for Retries)
 
-Answer one question: **Would the person who made this request consider it \
-fulfilled?**
+If previous attempts exist, this step is **mandatory before deciding**:
+
+1. **Compare outputs across attempts.** Are item counts stable? Are the \
+same fields present? If multiple different scripts all produce \
+approximately the same count, the website has that many extractable items.
+
+2. **Compare scripts across attempts.** Did the agent try meaningfully \
+different approaches? If the agent rewrote its pagination logic or \
+selector strategy and still got the same count, the count is correct — \
+the website is the constraint.
+
+3. **Identify the pattern:**
+   - **Script bug:** Outputs vary wildly between attempts, errors occur, \
+the agent keeps making the same coding mistake → reject with a specific fix.
+   - **Website limitation:** Outputs are stable across different \
+approaches, close to the target, no errors → the script is correct, \
+the expectation was off. Approve if the data is genuinely useful.
+   - **Diminishing returns:** The agent has tried multiple reasonable \
+approaches, the output is consistent → approve if the data serves the \
+user's purpose.
+
+### Step 5 — Decide
 
 **APPROVE when:**
-- The output covers the full scope the user requested
+- The output covers the requested scope (with reasonable tolerance for \
+page-reported estimates)
 - All required fields are present and complete — not truncated, not empty
 - Values are well-formed and make sense for what they represent
+- OR: output is stable across multiple attempts and represents the best \
+achievable result from this website
 
 **REJECT when:**
-- Scope is incomplete — fewer pages, items, or categories than expected
-- Any required field is missing, empty, or truncated in a significant \
+- Scope is significantly incomplete (e.g., 50 items when 200 were \
+expected — not 195 when 200 were expected)
+- Required fields are missing, empty, or truncated in a significant \
 portion of items
 - Script crashed or produced no useful output
-- The data does not match what was requested
+- There is a clear, fixable bug and you can articulate a specific change \
+that would produce a meaningfully better result
+
+**Never reject when:**
+- The shortfall is minor and has been stable across attempts
+- You cannot describe a concrete fix that would improve the outcome
+- Rejecting would produce the same result again
 
 ## Rejection Feedback
 
@@ -239,11 +288,13 @@ Structure it as:
 
 ```
 WHAT FAILED:
-1. [Primary failure — specific, with evidence: line numbers, counts, examples]
+1. [Primary failure — specific, with evidence: line numbers, counts, \
+examples]
 2. [Secondary issues, if any]
 
 WHAT TO FIX:
-1. [Specific instruction for the scraping agent — what code change is needed]
+1. [Specific instruction for the scraping agent — what code change is \
+needed]
 2. [Specific instruction]
 ```
 
@@ -254,15 +305,15 @@ useful feedback. "Fix pagination" is not.
 ## Tools
 
 - `search_output(query, context_lines)` — search stdout for a keyword. \
-Use aggressively: verify item counts, find pagination evidence, check for \
-empty or truncated fields.
+Use aggressively: verify item counts, find pagination evidence, check \
+for empty or truncated fields.
 - `view_lines(start_line, end_line)` — inspect specific lines. Use to \
 examine actual item data from start, middle, and end of output.
 - `decide(approved, reasoning, feedback)` — your final verdict. You MUST \
 call this to finish.
 
-You MUST call `decide`. A text response without a tool call will be prompted \
-to decide immediately.\
+You MUST call `decide`. A text response without a tool call will be \
+prompted to decide immediately.\
 """
 
 
@@ -390,24 +441,62 @@ def _execute_validator_tool(
 # ═══════════════════════════════════════════════════════════════
 
 
-def _build_attempt_history(history: list[AttemptRecord]) -> str:
+def _build_attempt_history(
+    history: list[AttemptRecord],
+    current_attempt: int,
+    max_attempts: int,
+) -> str:
     """Format previous attempts for the validator's context."""
-    parts = ["## Previous Attempts\n"]
+    parts = [
+        f"## Previous Attempts "
+        f"(you are reviewing attempt {current_attempt} of {max_attempts})\n",
+    ]
 
     for rec in history:
-        sample_lines = rec.stdout_sample.split("\n")[:10]
+        # Include a truncated version of the script so the validator
+        # can see what approaches were tried.
+        script_preview = rec.script
+        if len(script_preview) > 1500:
+            script_preview = (
+                script_preview[:750]
+                + "\n# ... (truncated) ...\n"
+                + script_preview[-750:]
+            )
+
+        sample_lines = rec.stdout_sample.split("\n")[:15]
         sample_text = "\n".join(sample_lines)
         parts.append(
             f"### Attempt {rec.attempt_number}\n"
+            f"**Script used:**\n```python\n{script_preview}\n```\n"
             f"**Rejection feedback:** {rec.rejection_feedback}\n"
             f"**Exit code:** {rec.returncode}\n"
-            f"**Output sample (first 10 lines):**\n"
+            f"**Output sample (first 15 lines):**\n"
             f"```\n{sample_text}\n```\n"
         )
 
+    # Add context about what the attempt history means.
     parts.append(
-        f"You are reviewing attempt {len(history) + 1}. Check whether "
-        f"the issues from previous rejections have been fixed.\n"
+        f"**This is attempt {current_attempt} of {max_attempts}.**\n\n"
+        f"The scripts and outputs above are from real execution runs "
+        f"against the live website. Use them to understand whether "
+        f"shortfalls are caused by the script or by the website "
+        f"itself.\n\n"
+        f"For example, if three different pagination strategies all "
+        f"yield ~199 items when 200 was expected, the site simply "
+        f"serves fewer items than its header claims — no code change "
+        f"will produce 200. Or if a field like \"rating\" is null on "
+        f"~10% of items across every attempt, those listings "
+        f"genuinely have no rating on the page — the script is "
+        f"extracting correctly, the data just does not exist for "
+        f"every item. Or if a \"description\" field always cuts off "
+        f"at exactly 150 characters, the website itself truncates it "
+        f"in the listing view and the full text only lives on the "
+        f"detail page.\n\n"
+        f"These are just examples — the real pattern to look for is "
+        f"consistency. When different scripts converge on the same "
+        f"result, the website is the constraint. When outputs vary "
+        f"wildly or the same error keeps recurring, that is a real "
+        f"script problem that a rejection can help fix.\n"
     )
     return "\n".join(parts)
 
@@ -427,6 +516,8 @@ def _build_user_message(
     attempt_history: list[AttemptRecord] | None,
     requirements: str | None = None,
     checkpoints_summary: str | None = None,
+    attempt_number: int = 1,
+    max_attempts: int = 10,
 ) -> str:
     """Build the initial user message for the validator."""
     total_lines = len(stdout_lines)
@@ -441,7 +532,8 @@ def _build_user_message(
         parts.append(f"## Success Criteria\n\n{requirements}\n")
 
     parts.extend([
-        f"## Generated Script\n\n```python\n{script}\n```\n",
+        f"## Generated Script (attempt {attempt_number} of "
+        f"{max_attempts})\n\n```python\n{script}\n```\n",
         f"## Execution Result\n\n"
         f"**Exit code:** {returncode}\n",
     ])
@@ -459,7 +551,9 @@ def _build_user_message(
         parts.append(f"\n{checkpoints_summary}\n")
 
     if attempt_history:
-        parts.append(_build_attempt_history(attempt_history))
+        parts.append(_build_attempt_history(
+            attempt_history, attempt_number, max_attempts,
+        ))
 
     return "\n".join(parts)
 
@@ -550,6 +644,8 @@ async def validate_output(
     max_turns: int = 20,
     trace_dir: Path | None = None,
     checkpoints_summary: str | None = None,
+    attempt_number: int = 1,
+    max_attempts: int = 10,
 ) -> tuple[bool, str]:
     """Run the validation agent and return ``(approved, feedback)``.
 
@@ -567,6 +663,8 @@ async def validate_output(
             agent (generated once from exploration history).
         max_turns: Maximum tool-call turns (default 20).
         trace_dir: Directory to write ``validator_trace.md`` into.
+        attempt_number: Current attempt number (1-indexed).
+        max_attempts: Total allowed attempts.
 
     Returns:
         ``(approved, feedback)`` — feedback is empty if approved.
@@ -578,6 +676,8 @@ async def validate_output(
         task, script, stdout, stderr, returncode,
         stdout_lines, attempt_history, requirements,
         checkpoints_summary,
+        attempt_number=attempt_number,
+        max_attempts=max_attempts,
     )
 
     messages: list[dict[str, Any]] = [
