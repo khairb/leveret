@@ -241,6 +241,15 @@ def print_requirements_generated(requirements: str) -> None:
     print(_indent(_truncate(requirements, max_lines=20, max_chars=2000), "    "))
 
 
+def print_revising_requirements() -> None:
+    print(f"\n  {_DIM}Revising requirements based on execution evidence...{_RESET}")
+
+
+def print_requirements_revised(requirements: str) -> None:
+    print(f"\n  {_c(_GREEN, 'Requirements revised:')}")
+    print(_indent(_truncate(requirements, max_lines=20, max_chars=2000), "    "))
+
+
 def print_validator_approved() -> None:
     print(f"\n  {_c(_GREEN, 'Validator approved the function.')}")
 

@@ -101,7 +101,7 @@ target data, and what interactive elements are relevant.
 happened and what to try next.
 3. **Designing the final function** — before writing the complete function, \
 outline its structure: what it extracts, how it navigates, how it handles \
-pagination.
+pagination, and how it shapes the data to match the output schema.
 
 ---
 
@@ -196,7 +196,7 @@ async def scrape(page, url, checkpoint):
     # url: the starting URL
     # checkpoint: await checkpoint("label", data_preview?) to record state
     #
-    # Return any JSON-serializable value: dict, list, str, int, float, bool, None
+    # Return value must match the output schema below.
     # Raise an exception if scraping fails.
 
     # Your scraping logic here...
@@ -226,10 +226,10 @@ see and need to do?" Your function handles all of that.
 
 ### Output
 
-**Return value** — return the extracted data from your function. Any \
-JSON-serializable Python value: a dict, a list of dicts, a list of \
-strings, a number — whatever shape is natural for the task. The engine \
-serializes it to JSON.
+**Return value** — return the extracted data from your function. The \
+return value must match the output schema defined below. The engine \
+validates the return value against the schema — if it doesn't match, \
+your function will be rejected with the specific validation errors.
 
 **Stdout** — print progress as your function runs: which page you are on, \
 how many items extracted, what action you are taking. This is for \
@@ -260,10 +260,11 @@ standard library modules at the top of your code block if needed.
 
 ---
 
-Your function will be executed automatically in a fresh browser and the \
-output will be reviewed. If the function is rejected with feedback, analyze \
-the feedback carefully, use your Python environment to investigate and test \
-fixes, then write the corrected function. Do not guess — be systematic. \
+Your function will be executed automatically in a fresh browser. The \
+return value will be validated against the output schema. If validation \
+fails or the function is rejected with feedback, analyze the errors \
+carefully, use your Python environment to investigate and test fixes, \
+then write the corrected function. Do not guess — be systematic. \
 Understand the root cause before writing the fix.
 
 ---
@@ -309,7 +310,13 @@ give you stale data or duplicates.
 **Don't ship broken fields.** If a field returns empty or wrong data during \
 exploration, that is a signal to investigate — not to ignore. Zoom the \
 section again, inspect the HTML, and fix the selector before writing the \
-final function. A function with known broken extraction is not done.
+final function. A function with known broken extraction is not done. The \
+output schema defines exactly which fields are required and what constraints \
+they must satisfy — use it as your checklist.
+
+---
+
+{schema_section}
 
 ---
 
@@ -366,7 +373,8 @@ function runs — which page it is on, how many items extracted, what action \
 it is about to take (e.g. `print(f"[page {{n}}] extracted {{len(items)}} \
 items")`). **Do not dump the full extracted data to stdout** — return it \
 from the function instead. Progress output makes failures diagnosable — \
-it shows exactly where the function stopped.
+it shows exactly where the function stopped. Your return \
+value must match the output schema — see the Output Schema section above.
 
 10. **Add checkpoints for observability.** `checkpoint` is a function \
 parameter — call it directly, no import needed. Call \
@@ -386,10 +394,18 @@ full page state for debugging. Use clear, descriptive labels \
 """
 
 
-def build_system_prompt() -> str:
-    """Assemble the complete system prompt."""
+def build_system_prompt(*, schema_prompt: str) -> str:
+    """Assemble the complete system prompt.
+
+    Args:
+        schema_prompt: The rendered ``## Output Schema`` section
+            (Structure + Requirements) from ``compile_schema()``.
+    """
     guide = _load_patchright_guide()
-    return _SYSTEM_PROMPT_TEMPLATE.format(patchright_guide=guide)
+    return _SYSTEM_PROMPT_TEMPLATE.format(
+        patchright_guide=guide,
+        schema_section=schema_prompt,
+    )
 
 
 def build_initial_user_message(task: str, url: str) -> str:

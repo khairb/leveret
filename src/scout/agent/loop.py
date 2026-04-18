@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import json
 import logging
 import os
 import re
@@ -52,12 +53,18 @@ from .bridge import (
     create_zoom_section_function,
 )
 from .llm import LLMConfig, call_llm
-from .requirements import generate_requirements
+from .requirements import generate_requirements, revise_requirements
 from .validator import AttemptRecord, validate_output
 from .prompt import build_initial_user_message, build_system_prompt
 from .tools import TOOL_SCHEMAS, ToolResult, execute_tool
 from .trace import Tracer
 from . import console
+
+# Import for type checking only — CompiledSchema is optional at init.
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..schema.compiler import CompiledSchema
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +124,7 @@ class AgentLoop:
         max_script_attempts: int = 10,
         approval_mode: str = "human",
         validator_config: LLMConfig | None = None,
+        compiled_schema: CompiledSchema | None = None,
     ) -> None:
         self._llm_config = llm_config or LLMConfig()
         self._max_steps = max_steps
@@ -133,6 +141,7 @@ class AgentLoop:
             model="claude-haiku-4-5",
             max_tokens=8192,
         )
+        self._compiled_schema = compiled_schema
 
     # ── Main entry point ──────────────────────────────────────
 
@@ -162,7 +171,14 @@ class AgentLoop:
             )
             console.print_page_loaded(url, section_count)
 
-            system_prompt = build_system_prompt()
+            schema_prompt = (
+                self._compiled_schema.prompt
+                if self._compiled_schema is not None
+                else ""
+            )
+            system_prompt = build_system_prompt(
+                schema_prompt=schema_prompt,
+            )
             initial_msg = build_initial_user_message(task, url)
 
             # Start trace.
@@ -320,38 +336,89 @@ class AgentLoop:
 
                             # Short-circuit: skip validator when
                             # the function crashed (non-zero exit).
+                            approved = False
+                            feedback = ""
+
                             if returncode != 0:
-                                approved = False
                                 feedback = (
                                     "Function crashed with exit code "
                                     f"{returncode}. Fix the error and "
                                     "try again."
                                 )
-                            elif self._approval_mode == "auto":
-                                approved, feedback = await validate_output(
-                                    task=task,
-                                    script=script,
-                                    stdout=combined_output,
-                                    stderr=stderr,
-                                    returncode=returncode,
-                                    llm_config=self._validator_config,
-                                    attempt_history=(
-                                        attempt_history
-                                        if attempt_history
-                                        else None
-                                    ),
-                                    requirements=requirements,
-                                    trace_dir=tracer.run_dir,
-                                    checkpoints_summary=cp_summary,
-                                )
-                                if approved:
-                                    console.print_validator_approved()
-                                else:
-                                    console.print_validator_rejected(feedback)
                             else:
-                                approved, feedback = (
-                                    await console.ask_user_approval()
-                                )
+                                # Schema validation gate — fast,
+                                # deterministic, free (no LLM call).
+                                # Runs before the LLM validator.
+                                schema_passed = True
+                                if self._compiled_schema is not None:
+                                    if return_value_json is not None:
+                                        try:
+                                            return_data = json.loads(
+                                                return_value_json,
+                                            )
+                                        except (ValueError, TypeError):
+                                            return_data = None
+                                    else:
+                                        # No return value markers —
+                                        # validate None.
+                                        return_data = None
+
+                                    valid, schema_feedback = (
+                                        self._compiled_schema.validate(
+                                            return_data,
+                                        )
+                                    )
+                                    tracer.log_system_event(
+                                        "schema_validation",
+                                        valid=valid,
+                                    )
+                                    if not valid:
+                                        schema_passed = False
+                                        feedback = schema_feedback
+
+                                if not schema_passed:
+                                    # Schema errors are definitive —
+                                    # skip the LLM validator.
+                                    pass
+                                elif self._approval_mode == "auto":
+                                    approved, feedback = (
+                                        await validate_output(
+                                            task=task,
+                                            script=script,
+                                            stdout=combined_output,
+                                            stderr=stderr,
+                                            returncode=returncode,
+                                            llm_config=(
+                                                self._validator_config
+                                            ),
+                                            attempt_history=(
+                                                attempt_history
+                                                if attempt_history
+                                                else None
+                                            ),
+                                            requirements=requirements,
+                                            trace_dir=tracer.run_dir,
+                                            checkpoints_summary=(
+                                                cp_summary
+                                            ),
+                                            attempt_number=(
+                                                script_attempts + 1
+                                            ),
+                                            max_attempts=(
+                                                self._max_script_attempts
+                                            ),
+                                        )
+                                    )
+                                    if approved:
+                                        console.print_validator_approved()
+                                    else:
+                                        console.print_validator_rejected(
+                                            feedback,
+                                        )
+                                else:
+                                    approved, feedback = (
+                                        await console.ask_user_approval()
+                                    )
 
                             if approved:
                                 result.final_script = script
@@ -388,6 +455,46 @@ class AgentLoop:
                                 script_attempts,
                                 self._max_script_attempts,
                             )
+
+                            # Revise requirements after 2 validator
+                            # rejections — execution evidence may
+                            # show that page-reported numbers do not
+                            # match what is actually extractable.
+                            if (
+                                script_attempts == 2
+                                and requirements is not None
+                                and self._approval_mode == "auto"
+                            ):
+                                console.print_revising_requirements()
+                                evidence = [
+                                    {
+                                        "attempt_number": rec.attempt_number,
+                                        "rejection_feedback": (
+                                            rec.rejection_feedback
+                                        ),
+                                        "stdout_sample": rec.stdout_sample,
+                                        "returncode": rec.returncode,
+                                    }
+                                    for rec in attempt_history
+                                ]
+                                requirements = (
+                                    await revise_requirements(
+                                        task=task,
+                                        original_requirements=requirements,
+                                        attempt_history=evidence,
+                                        llm_config=(
+                                            self._validator_config
+                                        ),
+                                    )
+                                )
+                                console.print_requirements_revised(
+                                    requirements,
+                                )
+                                tracer.log_system_event(
+                                    "requirements_revised",
+                                    requirements=requirements,
+                                    after_attempt=script_attempts,
+                                )
 
                             if script_attempts >= self._max_script_attempts:
                                 result.final_script = script
