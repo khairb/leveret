@@ -5,10 +5,26 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "anthropic>=0.94.0",
     "beautifulsoup4>=4.14.3",
     "html-sanitizer>=2.6.0",
     "patchright>=1.58.2",
     "playwright>=1.58.0",
+    "pydantic-ai-slim[anthropic,openai,google,groq]>=1.84.0",
     "python-dotenv>=1.2.2",
+]
+
+[project.optional-dependencies]
+slim = []  # Anthropic only (included in base)
+mistral = ["pydantic-ai-slim[mistral]>=1.84.0"]
+cohere = ["pydantic-ai-slim[cohere]>=1.84.0"]
+bedrock = ["pydantic-ai-slim[bedrock]>=1.84.0"]
+all = [
+    "pydantic-ai-slim[mistral]>=1.84.0",
+    "pydantic-ai-slim[cohere]>=1.84.0",
+    "pydantic-ai-slim[bedrock]>=1.84.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
 ]
