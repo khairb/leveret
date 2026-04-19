@@ -1,0 +1,7 @@
+{
+  "name": "A_syntax_error",
+  "url": "https://example.com",
+  "stdout": "",
+  "stderr": "  File \"/var/folders/4k/w5qtwdyx1xnc9z_pcqq_cy980000gn/T/harvest_885a3fym/script.py\", line 69\n    data = [\n           ^\nSyntaxError: '[' was never closed\n",
+  "returncode": 1
+}

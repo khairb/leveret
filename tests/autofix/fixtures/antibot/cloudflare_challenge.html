@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Just a moment...</title>
+  <meta name="robots" content="noindex,nofollow">
+  <style>
+    body { background: #fff; font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+    .main-wrapper { margin: 0 auto; max-width: 600px; }
+    h1 { font-size: 2rem; color: #404040; }
+    p { color: #666; }
+    .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #ff6902; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 30px auto; }
+    @keyframes spin { 0%{ transform: rotate(0deg); } 100%{ transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="main-wrapper">
+    <h1>Just a moment...</h1>
+    <div class="spinner"></div>
+    <p>Checking your browser before accessing the site.</p>
+    <p>This process is automatic. Your browser will redirect to your requested content shortly.</p>
+    <p>Please allow up to 5 seconds...</p>
+    <form id="challenge-form" action="/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1" method="POST" enctype="application/x-www-form-urlencoded">
+      <input type="hidden" name="__cf_chl_f_tk" value="qj0s7GHkF3tZ2pL8nVwXy1RmA9oE6cBdI4uMsJ5-1234567890-0-gaNycGzNChCj2T0FHUBU0g">
+      <input type="hidden" name="__cf_chl_r_tk" value="aB3cD4eF5g6hI7jK8lM9nO0pQ1rS2tU3vW4xY5z6">
+    </form>
+  </div>
+  <script src="/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1?ray=8a1b2c3d4e5f6789"></script>
+  <script>
+    (function(){
+      window._cf_chl_opt = {
+        cvId: '3',
+        cZone: 'example.com',
+        cType: 'managed',
+        cNounce: '12345',
+        cRay: '8a1b2c3d4e5f6789',
+        cHash: 'abc123def456',
+        cFPWv: '3',
+        cTTimeMs: '1000',
+      };
+    })();
+  </script>
+</body>
+</html>

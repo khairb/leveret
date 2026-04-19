@@ -1,0 +1,8 @@
+{
+  "name": "F1_page_crash",
+  "url": "https://example.com",
+  "stdout": "",
+  "stderr": "Traceback (most recent call last):\n  File \"/tmp/harvest_xyz/script.py\", line 103, in <module>\n    asyncio.run(_run())\n  File \"/tmp/harvest_xyz/script.py\", line 80, in _run\n    data = await scrape(page, url, checkpoint)\n  File \"/tmp/harvest_xyz/script.py\", line 69, in scrape\n    return await page.evaluate(\"() => document.title\")\n  File \"patchright/async_api/_generated.py\", line 8380, in evaluate\n    await self._impl_obj.evaluate(\npatchright._impl._errors.TargetClosedError: Page.evaluate: Target page, context or browser has been closed",
+  "returncode": 1,
+  "note": "Synthetic — page crash is difficult to trigger reliably. Error format matches Playwright TargetClosedError documentation."
+}

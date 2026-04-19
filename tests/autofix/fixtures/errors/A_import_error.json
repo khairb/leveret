@@ -1,0 +1,7 @@
+{
+  "name": "A_import_error",
+  "url": "https://example.com",
+  "stdout": "",
+  "stderr": "Traceback (most recent call last):\n  File \"/var/folders/4k/w5qtwdyx1xnc9z_pcqq_cy980000gn/T/harvest_qlq31nu2/script.py\", line 68, in <module>\n    from nonexistent_module_xyz import something\nModuleNotFoundError: No module named 'nonexistent_module_xyz'\n",
+  "returncode": 1
+}

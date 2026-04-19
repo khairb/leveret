@@ -1,0 +1,9 @@
+{
+  "headers": {
+    "x-px-authorization": "1"
+  },
+  "cookies": [
+    {"name": "_px3", "value": "abc"},
+    {"name": "_pxhd", "value": "def"}
+  ]
+}

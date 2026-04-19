@@ -1,0 +1,7 @@
+{
+  "name": "B_empty_output",
+  "url": "https://example.com",
+  "stdout": "__SCOUT_RETURN_VALUE_START_a7b3__\nnull\n__SCOUT_RETURN_VALUE_END_a7b3__\n",
+  "stderr": "",
+  "returncode": 0
+}

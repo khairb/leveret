@@ -1,0 +1,7 @@
+{
+  "name": "A_indentation_error",
+  "url": "https://example.com",
+  "stdout": "",
+  "stderr": "  File \"/var/folders/4k/w5qtwdyx1xnc9z_pcqq_cy980000gn/T/harvest_4mz7neh1/script.py\", line 69\n    data = []\n    ^^^^\nIndentationError: expected an indented block after function definition on line 68\n",
+  "returncode": 1
+}

@@ -1,0 +1,8 @@
+{
+  "headers": {
+    "x-dd-b": "1"
+  },
+  "cookies": [
+    {"name": "datadome", "value": "abc123"}
+  ]
+}

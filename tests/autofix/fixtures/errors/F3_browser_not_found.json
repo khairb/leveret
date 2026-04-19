@@ -1,0 +1,8 @@
+{
+  "name": "F3_browser_not_found",
+  "url": "https://example.com",
+  "stdout": "",
+  "stderr": "Traceback (most recent call last):\n  File \"/tmp/harvest_xyz/script.py\", line 103, in <module>\n    asyncio.run(_run())\n  File \"/tmp/harvest_xyz/script.py\", line 75, in _run\n    context = await p.chromium.launch_persistent_context(\n  File \"patchright/async_api/_generated.py\", line 13520, in launch_persistent_context\n    await self._impl_obj.launch_persistent_context(\npatchright._impl._errors.Error: BrowserType.launch_persistent_context: Executable doesn't exist at /path/to/chrome\nLooks like Playwright was just installed or updated.\nPlease run the following command to download new browsers:\n\n    npx playwright install\n",
+  "returncode": 1,
+  "note": "Synthetic — infrastructure errors cannot be triggered without modifying the system. Error format matches Playwright documentation."
+}

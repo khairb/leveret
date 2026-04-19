@@ -1,0 +1,8 @@
+{
+  "headers": {
+    "cf-mitigated": "challenge"
+  },
+  "cookies": [
+    {"name": "cf_clearance", "value": "abc123"}
+  ]
+}

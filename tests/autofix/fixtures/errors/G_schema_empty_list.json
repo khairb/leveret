@@ -1,0 +1,9 @@
+{
+  "name": "G_schema_empty_list",
+  "url": "https://example.com",
+  "stdout": "",
+  "stderr": "",
+  "returncode": 0,
+  "schema_error": "Expected at least 5 items, got 0",
+  "script_output": []
+}

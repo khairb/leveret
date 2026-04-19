@@ -1,0 +1,14 @@
+{
+  "name": "G_schema_wrong_type",
+  "url": "https://example.com",
+  "stdout": "",
+  "stderr": "",
+  "returncode": 0,
+  "schema_error": "Expected float for field 'price', got str",
+  "script_output": [
+    {
+      "name": "Test",
+      "price": "not a number"
+    }
+  ]
+}

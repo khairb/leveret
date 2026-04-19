@@ -1,0 +1,7 @@
+{
+  "name": "B_index_error",
+  "url": "https://example.com",
+  "stdout": "",
+  "stderr": "Traceback (most recent call last):\n  File \"/var/folders/4k/w5qtwdyx1xnc9z_pcqq_cy980000gn/T/harvest_umbqu0t8/script.py\", line 121, in <module>\n    asyncio.run(_run())\n  File \"/Users/mohammadkhairbarghouth/.pyenv/versions/3.12.12/lib/python3.12/asyncio/runners.py\", line 195, in run\n    return runner.run(main)\n           ^^^^^^^^^^^^^^^^\n  File \"/Users/mohammadkhairbarghouth/.pyenv/versions/3.12.12/lib/python3.12/asyncio/runners.py\", line 118, in run\n    return self._loop.run_until_complete(task)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/mohammadkhairbarghouth/.pyenv/versions/3.12.12/lib/python3.12/asyncio/base_events.py\", line 691, in run_until_complete\n    return future.result()\n           ^^^^^^^^^^^^^^^\n  File \"/var/folders/4k/w5qtwdyx1xnc9z_pcqq_cy980000gn/T/harvest_umbqu0t8/script.py\", line 99, in _run\n    data = await scrape(page, url, checkpoint)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/var/folders/4k/w5qtwdyx1xnc9z_pcqq_cy980000gn/T/harvest_umbqu0t8/script.py\", line 70, in scrape\n    return items[0]\n           ~~~~~^^^\nIndexError: list index out of range\n",
+  "returncode": 1
+}

@@ -1,0 +1,6 @@
+{
+  "headers": {
+    "x-amzn-waf-action": "captcha"
+  },
+  "cookies": []
+}

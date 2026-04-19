@@ -1,0 +1,13 @@
+{
+  "name": "G_schema_missing_field",
+  "url": "https://example.com",
+  "stdout": "",
+  "stderr": "",
+  "returncode": 0,
+  "schema_error": "Missing required field: 'price'",
+  "script_output": [
+    {
+      "name": "Test"
+    }
+  ]
+}

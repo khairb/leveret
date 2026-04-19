@@ -1,0 +1,7 @@
+{
+  "name": "A_module_not_found",
+  "url": "https://example.com",
+  "stdout": "",
+  "stderr": "Traceback (most recent call last):\n  File \"/var/folders/4k/w5qtwdyx1xnc9z_pcqq_cy980000gn/T/harvest_b5bzg4h_/script.py\", line 68, in <module>\n    import this_module_does_not_exist_xyz\nModuleNotFoundError: No module named 'this_module_does_not_exist_xyz'\n",
+  "returncode": 1
+}
