@@ -1,5 +1,6 @@
 """Scout — AI agent that writes web scraping scripts."""
 
+from .agent.llm import ModelName
 from .errors import (
     ScoutAutoFixError,
     ScoutConfigError,
@@ -19,6 +20,7 @@ __all__ = [
     # Core API
     "Scraper",
     "ScraperResult",
+    "ModelName",
     "Field",
     "List",
     "SchemaType",

@@ -32,6 +32,7 @@ from .errors import (
     ScoutScriptTimeoutError,
     ScoutValidationError,
 )
+from .agent.llm import ModelName
 from .schema.compiler import compile_schema
 from ._logging import logger
 
@@ -433,8 +434,8 @@ class Scraper:
         *,
         schema: Any,
         script: str | Path | None = None,
-        model: str = "claude-haiku-4-5",
-        headless: bool = True,
+        model: ModelName = "anthropic:claude-haiku-4-5",
+        headless: bool = False,
         api_key: str | None = None,
         timeout: int = 600,
         max_retries: int = 6,
@@ -684,7 +685,7 @@ class Scraper:
                 self._model,
             )
             logger.info(
-                "Note: First run calls the Anthropic API. "
+                "Note: First run calls the AI model API. "
                 "Subsequent runs use the cached script."
             )
         else:
@@ -834,18 +835,47 @@ class Scraper:
 
     # -- Internal: prerequisite checks --
 
+    # Provider name → environment variable for API key.
+    # Covers the top providers bundled in ``pip install scout``.
+    # Unknown providers fall back to ``{PROVIDER}_API_KEY``.
+    _API_KEY_ENV_VARS: dict[str, str] = {
+        "anthropic": "ANTHROPIC_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "google-gla": "GOOGLE_API_KEY",
+        "google-vertex": "GOOGLE_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "mistral": "MISTRAL_API_KEY",
+        "cohere": "CO_API_KEY",
+        "bedrock": "AWS_ACCESS_KEY_ID",
+        "deepseek": "DEEPSEEK_API_KEY",
+        "together": "TOGETHER_API_KEY",
+        "fireworks": "FIREWORKS_API_KEY",
+    }
+
     def _check_api_key(self) -> None:
         """Verify an API key is available before generation."""
         if self._api_key:
             return
-        if os.environ.get("ANTHROPIC_API_KEY"):
+
+        # Determine which env var to check based on the model provider.
+        provider = (
+            self._model.split(":")[0]
+            if ":" in self._model
+            else "anthropic"
+        )
+        env_var = self._API_KEY_ENV_VARS.get(
+            provider,
+            f"{provider.upper().replace('-', '_')}_API_KEY",
+        )
+        if os.environ.get(env_var):
             return
+
         raise ScoutError(
-            "Anthropic API key not found.\n\n"
-            "  Set the environment variable:\n"
-            "    export ANTHROPIC_API_KEY=sk-ant-...\n\n"
-            "  Or pass it directly:\n"
-            '    Scraper(..., api_key="sk-ant-...")'
+            f"API key not found for provider '{provider}'.\n\n"
+            f"  Set the environment variable:\n"
+            f"    export {env_var}=...\n\n"
+            f"  Or pass it directly:\n"
+            f'    Scraper(..., api_key="...")'
         )
 
     def _check_playwright(self) -> None:
@@ -1696,37 +1726,33 @@ class Scraper:
         )
 
     def _map_generation_error(self, exc: Exception) -> ScoutError:
-        """Map Anthropic SDK errors to ScoutGenerationError."""
-        try:
-            import anthropic
-        except ImportError:
-            return ScoutGenerationError(str(exc))
+        """Map LLM API errors to ScoutGenerationError."""
+        from pydantic_ai.exceptions import ModelHTTPError
 
-        if isinstance(exc, anthropic.RateLimitError):
-            return ScoutGenerationError(
-                "Anthropic API rate limit exceeded. "
-                "Retry in a few minutes, or check your usage "
-                "at console.anthropic.com."
-            )
-        if isinstance(exc, anthropic.AuthenticationError):
-            return ScoutGenerationError(
-                "Anthropic API rejected the API key. "
-                "Check ANTHROPIC_API_KEY or the api_key= argument."
-            )
-        if isinstance(exc, anthropic.APIConnectionError):
-            return ScoutGenerationError(
-                "Could not reach the Anthropic API. "
-                "Check your network connection."
-            )
-        if isinstance(exc, anthropic.APIStatusError):
-            status = getattr(exc, "status_code", "unknown")
-            if status and int(status) >= 500:
+        if isinstance(exc, ModelHTTPError):
+            status = exc.status_code
+            if status == 429:
                 return ScoutGenerationError(
-                    f"Anthropic API returned a server error ({status}). "
+                    "API rate limit exceeded. "
+                    "Retry in a few minutes."
+                )
+            if status == 401:
+                return ScoutGenerationError(
+                    "API rejected the API key. "
+                    "Check your API key environment variable or "
+                    "the api_key= argument."
+                )
+            if status and status >= 500:
+                return ScoutGenerationError(
+                    f"API returned a server error ({status}). "
                     "This is usually transient — retry shortly."
                 )
             return ScoutGenerationError(
-                f"Anthropic API rejected the request: {exc.message}."
+                f"API error ({status}): {exc}"
             )
-        # Not an Anthropic error — wrap generically
+        if isinstance(exc, ConnectionError):
+            return ScoutGenerationError(
+                "Could not reach the API. "
+                "Check your network connection."
+            )
         return ScoutGenerationError(str(exc))

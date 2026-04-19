@@ -5,7 +5,7 @@ Tests cover:
 - Prerequisite checks (API key, Playwright)
 - Cached execution path (load + execute + validate)
 - Generation path (AgentLoop integration)
-- Error mapping (Anthropic SDK → ScoutGenerationError)
+- Error mapping (LLM API errors → ScoutGenerationError)
 - Event loop detection (Jupyter/async environments)
 - Console output (log messages)
 - Schema validation of return values
@@ -124,7 +124,7 @@ class TestPrerequisiteChecks:
     def test_api_key_missing_raises(self, monkeypatch):
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         s = _make_scraper()
-        with pytest.raises(ScoutError, match="Anthropic API key not found"):
+        with pytest.raises(ScoutError, match="API key not found"):
             s._check_api_key()
 
     def test_api_key_error_is_actionable(self, monkeypatch):
@@ -378,7 +378,7 @@ class TestGeneration:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         s = _make_scraper()
 
-        with pytest.raises(ScoutError, match="Anthropic API key"):
+        with pytest.raises(ScoutError, match="API key not found"):
             asyncio.run(s.async_run())
 
     def test_generation_checks_playwright_second(self, monkeypatch):
@@ -515,7 +515,7 @@ class TestReturnValueValidation:
             s._validate_return_value(json.dumps([{"title": "Only one"}]))
 
 
-# ── Anthropic error mapping ──────────────────────────────────────
+# ── LLM error mapping ───────────────────────────────────────────
 
 class TestErrorMapping:
 
@@ -524,44 +524,26 @@ class TestErrorMapping:
 
     def test_rate_limit_error(self):
         s = self._make_scraper_for_mapping()
-        try:
-            import anthropic
-            exc = anthropic.RateLimitError(
-                message="Rate limited",
-                response=MagicMock(status_code=429),
-                body=None,
-            )
-            result = s._map_generation_error(exc)
-            assert isinstance(result, ScoutGenerationError)
-            assert "rate limit" in str(result).lower()
-        except ImportError:
-            pytest.skip("anthropic not installed")
+        from pydantic_ai.exceptions import ModelHTTPError
+        exc = ModelHTTPError(status_code=429, model_name="test", body="Rate limited")
+        result = s._map_generation_error(exc)
+        assert isinstance(result, ScoutGenerationError)
+        assert "rate limit" in str(result).lower()
 
     def test_auth_error(self):
         s = self._make_scraper_for_mapping()
-        try:
-            import anthropic
-            exc = anthropic.AuthenticationError(
-                message="Invalid key",
-                response=MagicMock(status_code=401),
-                body=None,
-            )
-            result = s._map_generation_error(exc)
-            assert isinstance(result, ScoutGenerationError)
-            assert "API key" in str(result)
-        except ImportError:
-            pytest.skip("anthropic not installed")
+        from pydantic_ai.exceptions import ModelHTTPError
+        exc = ModelHTTPError(status_code=401, model_name="test", body="Unauthorized")
+        result = s._map_generation_error(exc)
+        assert isinstance(result, ScoutGenerationError)
+        assert "API key" in str(result)
 
     def test_connection_error(self):
         s = self._make_scraper_for_mapping()
-        try:
-            import anthropic
-            exc = anthropic.APIConnectionError(request=MagicMock())
-            result = s._map_generation_error(exc)
-            assert isinstance(result, ScoutGenerationError)
-            assert "network" in str(result).lower()
-        except ImportError:
-            pytest.skip("anthropic not installed")
+        exc = ConnectionError("Connection error.")
+        result = s._map_generation_error(exc)
+        assert isinstance(result, ScoutGenerationError)
+        assert "network" in str(result).lower()
 
     def test_generic_exception(self):
         s = self._make_scraper_for_mapping()
@@ -595,7 +577,7 @@ class TestConsoleOutput:
 
         messages = [r.message for r in caplog.records]
         assert any("No cached script found" in m for m in messages)
-        assert any("First run calls the Anthropic API" in m for m in messages)
+        assert any("First run calls the AI model API" in m for m in messages)
 
     def test_cached_run_logs_single_line(self, tmp_path, caplog):
         """Cached run logs just one line."""

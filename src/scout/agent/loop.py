@@ -138,7 +138,7 @@ class AgentLoop:
         self._max_script_attempts = max_script_attempts
         self._approval_mode = approval_mode
         self._validator_config = validator_config or LLMConfig(
-            model="claude-haiku-4-5",
+            model="anthropic:claude-haiku-4-5",
             max_tokens=8192,
         )
         self._compiled_schema = compiled_schema
@@ -237,8 +237,8 @@ class AgentLoop:
                     llm_duration_ms,
                     usage.input_tokens,
                     usage.output_tokens,
-                    cache_read=getattr(usage, "cache_read_input_tokens", 0) or 0,
-                    cache_create=getattr(usage, "cache_creation_input_tokens", 0) or 0,
+                    cache_read=usage.cache_read_input_tokens,
+                    cache_create=usage.cache_creation_input_tokens,
                 )
 
                 # Parse the response into content blocks.
@@ -754,7 +754,7 @@ class AgentLoop:
 # ═══════════════════════════════════════════════════════════════
 
 def _serialize_content_blocks(blocks: list) -> list[dict]:
-    """Convert Anthropic content blocks to plain dicts for storage."""
+    """Convert LLM content blocks to plain dicts for storage."""
     serialized = []
     for b in blocks:
         if b.type == "text":
