@@ -92,6 +92,7 @@ class AgentResult:
     steps_executed: int = 0
     python_steps: int = 0
     success: bool = False
+    last_resort: bool = False
     error: str | None = None
     run_dir: str | None = None
 
@@ -113,8 +114,8 @@ class AgentLoop:
         self,
         llm_config: LLMConfig | None = None,
         *,
-        max_steps: int = 50,
-        max_python_steps: int = 30,
+        max_steps: int = 75,
+        max_python_steps: int = 50,
         max_syntax_retries: int = 10,
         headless: bool = False,
         browser_type: str = "chromium",
@@ -209,6 +210,7 @@ class AgentLoop:
             attempt_history: list[AttemptRecord] = []
             requirements: str | None = None
             turn_number = 0
+            needs_debugging = False
             checkpoint_base_dir = Path(
                 tempfile.mkdtemp(prefix="scrape_checkpoints_")
             )
@@ -265,6 +267,33 @@ class AgentLoop:
                     # Check for a fenced Python code block (final function).
                     text = _extract_text(content_blocks)
                     script = _extract_final_script(text)
+                    if script and needs_debugging:
+                        # The agent tried to resubmit without
+                        # investigating.  Block it and insist on
+                        # root-cause analysis first.
+                        debug_msg = (
+                            "Script not accepted. You have not "
+                            "investigated the failure yet.\n\n"
+                            "Use the `python` tool to debug before "
+                            "resubmitting. The browser and `page` "
+                            "object from your exploration are still "
+                            "live. Call `await show_page(page)` to "
+                            "see the current page state, "
+                            "`await zoom_section(page, ...)` to "
+                            "inspect the DOM of relevant sections, "
+                            "test your selectors against the live "
+                            "page, and call "
+                            "`expand_checkpoint(\"CP-...\")` to "
+                            "review what happened during execution."
+                            "\n\nIdentify the exact root cause, "
+                            "then write the corrected function."
+                        )
+                        tracer.log_system_event(
+                            "debug_required", text=debug_msg,
+                        )
+                        console.print_debug_required()
+                        conversation.add_user_message(debug_msg)
+                        continue
                     if script:
                         valid, error_msg = _validate_script(script)
                         tracer.log_script_extracted(script, valid, error_msg)
@@ -513,6 +542,7 @@ class AgentLoop:
                                 return_value_json=return_value_json,
                             )
                             conversation.add_user_message(rejection_msg)
+                            needs_debugging = True
                             continue
                         else:
                             # Ask the agent to fix the validation error.
@@ -545,6 +575,7 @@ class AgentLoop:
                     step_count += 1
                     if block.name == "python":
                         python_step_count += 1
+                        needs_debugging = False
 
                     console.print_tool_call(
                         block.name, block.input,
@@ -615,33 +646,97 @@ class AgentLoop:
 
                 conversation.add_tool_results(tool_results)
 
-                # Budget checks.
-                if python_step_count >= self._max_python_steps:
-                    budget_msg = (
-                        f"You have used {python_step_count} code executions "
-                        f"(limit: {self._max_python_steps}). Stop using tools "
-                        f"and respond with the final scraping function in a "
-                        f"```python code block."
-                    )
-                    tracer.log_system_event("budget_warning", text=budget_msg)
-                    console.print_budget_warning(budget_msg)
-                    conversation.add_user_message(budget_msg)
-                elif step_count >= self._max_steps - 2:
-                    budget_msg = (
-                        f"You have {self._max_steps - step_count} tool calls "
-                        f"remaining. Stop using tools and respond with the "
-                        f"final scraping function in a ```python code block."
-                    )
-                    tracer.log_system_event("budget_warning", text=budget_msg)
-                    console.print_budget_warning(budget_msg)
-                    conversation.add_user_message(budget_msg)
-
-            # If we exited the loop without a script:
-            if not result.success:
-                result.error = (
-                    f"Agent exhausted budget ({step_count} steps, "
-                    f"{python_step_count} python) without producing a function."
+                # Neutral turn status — inform the agent of its
+                # position without pressuring it to finish early.
+                steps_remaining = self._max_steps - step_count
+                python_remaining = (
+                    self._max_python_steps - python_step_count
                 )
+                status_msg = (
+                    f"[Turn {step_count}/{self._max_steps} — "
+                    f"{steps_remaining} remaining"
+                    f" | Code executions: {python_step_count}/"
+                    f"{self._max_python_steps},"
+                    f" {python_remaining} remaining]"
+                )
+                tracer.log_system_event(
+                    "turn_status", text=status_msg,
+                )
+                console.print_turn_status(status_msg)
+                conversation.add_user_message(status_msg)
+
+            # If we exited the loop without a script, make one
+            # final LLM call with no tools available — the agent
+            # has no choice but to generate the script.
+            if not result.success:
+                tracer.log_system_event("final_call_no_tools")
+                console.print_final_call()
+
+                final_msg = (
+                    "All your exploration turns are exhausted. "
+                    "You cannot use any more tools. Write the "
+                    "best possible scraping function now based "
+                    "on everything you have learned. Respond "
+                    "with the final `async def scrape(page, url,"
+                    " checkpoint)` function in a ```python code "
+                    "block."
+                )
+                conversation.add_user_message(final_msg)
+
+                messages_for_api = conversation.get_messages()
+                tracer.log_llm_request(messages_for_api, [])
+
+                llm_start = time.time()
+                response = await call_llm(
+                    self._llm_config,
+                    system=system_prompt,
+                    messages=messages_for_api,
+                    tools=[],
+                )
+                llm_duration_ms = (time.time() - llm_start) * 1000
+
+                tracer.log_llm_response(response, llm_duration_ms)
+                usage = response.usage
+                console.print_llm_thinking(
+                    llm_duration_ms,
+                    usage.input_tokens,
+                    usage.output_tokens,
+                    cache_read=usage.cache_read_input_tokens,
+                    cache_create=usage.cache_creation_input_tokens,
+                )
+
+                content_blocks = response.content
+                for b in content_blocks:
+                    if b.type == "text" and b.text.strip():
+                        console.print_agent_text(b.text)
+
+                conversation.add_assistant_message(
+                    _serialize_content_blocks(content_blocks),
+                )
+
+                text = _extract_text(content_blocks)
+                script = _extract_final_script(text)
+                if script:
+                    valid, error_msg = _validate_script(script)
+                    tracer.log_script_extracted(
+                        script, valid, error_msg,
+                    )
+                    if valid:
+                        result.final_script = script
+                        # Skip validation — this is a last-resort
+                        # script; let the caller decide quality.
+                        result.success = True
+                        result.last_resort = True
+                        tracer.log_system_event(
+                            "last_resort_script_accepted",
+                        )
+
+                if not result.success:
+                    result.error = (
+                        f"Agent exhausted budget ({step_count} "
+                        f"steps, {python_step_count} python) "
+                        f"without producing a function."
+                    )
 
             result.conversation_length = len(conversation.messages)
             result.steps_executed = step_count

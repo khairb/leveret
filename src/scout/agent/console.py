@@ -157,8 +157,22 @@ def print_tool_result(name: str, is_error: bool, duration_ms: float, content: st
         print(f"    -> {status} {_DIM}({dur}){_RESET}")
 
 
-def print_budget_warning(message: str) -> None:
-    print(f"\n  {_c(_YELLOW, 'Budget:')} {message}")
+def print_turn_status(message: str) -> None:
+    print(f"\n  {_DIM}{message}{_RESET}")
+
+
+def print_final_call() -> None:
+    print(
+        f"\n  {_c(_YELLOW, 'Final call:')} "
+        f"turns exhausted — requesting script with no tools"
+    )
+
+
+def print_debug_required() -> None:
+    print(
+        f"\n  {_c(_YELLOW, 'Debug required:')} "
+        f"agent must investigate before resubmitting"
+    )
 
 
 def print_nudge() -> None:
