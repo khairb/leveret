@@ -177,6 +177,16 @@ class PageStateManager:
     # ── Properties ────────────────────────────────────────────────────
 
     @property
+    def page(self):
+        """The live Patchright page this manager operates on."""
+        return self._page
+
+    @page.setter
+    def page(self, new_page) -> None:
+        """Replace the page (e.g. after script execution for debugging)."""
+        self._page = new_page
+
+    @property
     def current_state(self) -> PageState | None:
         """The most recently captured state, or ``None`` if no captures."""
         return self._states[-1] if self._states else None

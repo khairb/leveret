@@ -175,6 +175,13 @@ def print_debug_required() -> None:
     )
 
 
+def print_script_page_injected() -> None:
+    print(
+        f"\n  {_c(_CYAN, 'page')} swapped to script execution page "
+        f"— agent debugs on the actual page the script ran on"
+    )
+
+
 def print_nudge() -> None:
     print(f"\n  {_DIM}(nudging agent to continue...){_RESET}")
 
@@ -299,4 +306,26 @@ def print_script_rejected(attempt: int, max_attempts: int) -> None:
         f"\n  {_c(_RED, 'Function rejected')} "
         f"(attempt {attempt}/{max_attempts}). "
         f"Feeding back to agent..."
+    )
+
+
+def print_show_page_analysis(
+    variant: str,
+    similarity: float,
+    total_sections: int,
+    kept: int,
+    neighbor: int,
+    distant: int,
+    original_kb: float,
+    filtered_kb: float,
+    reduction_pct: float,
+) -> None:
+    """Print a compact one-line summary of show_page context management."""
+    print(
+        f"\n  {_c(_CYAN, '[show_page]')} Variant {variant}"
+        f" | similarity={similarity:.2f}"
+        f" | {total_sections} sections"
+        f" → {kept} kept, {neighbor} neighbor, {distant} distant"
+        f" | {original_kb:.0f}KB → {filtered_kb:.0f}KB"
+        f" ({reduction_pct:.0f}% reduction)"
     )

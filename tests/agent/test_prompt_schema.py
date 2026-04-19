@@ -7,7 +7,12 @@ They also check prompt quality from the agent's perspective.
 
 import pytest
 
-from scout.agent.prompt import build_system_prompt, build_initial_user_message
+from scout.agent.prompt import (
+    build_initial_user_message,
+    build_show_page_analysis_prompt_a,
+    build_show_page_analysis_prompt_b,
+    build_system_prompt,
+)
 from scout.schema.compiler import compile_schema
 from scout.schema.types import Field, List
 
@@ -283,3 +288,80 @@ class TestInitialUserMessage:
     def test_prompts_show_page(self):
         msg = build_initial_user_message("task", "https://x.com")
         assert "show_page" in msg
+
+
+# ── Show-page analysis prompts (Task 5) ─────────────────────────
+
+class TestShowPageAnalysisPromptA:
+    """Variant A — full analysis prompt."""
+
+    def test_returns_string(self):
+        result = build_show_page_analysis_prompt_a()
+        assert isinstance(result, str)
+
+    def test_starts_with_page_analysis_header(self):
+        result = build_show_page_analysis_prompt_a()
+        assert result.startswith("── Page Analysis ──")
+
+    def test_ends_with_closing_rule(self):
+        result = build_show_page_analysis_prompt_a()
+        assert result.rstrip().endswith("──")
+
+    def test_contains_all_required_sections(self):
+        result = build_show_page_analysis_prompt_a()
+        for heading in [
+            "**Why I called show_page**",
+            "**Page Overview**",
+            "**Relevant Sections**",
+            "**Interactive Elements**",
+            "**Obstacles**",
+            "**Section ID Reference**",
+            "**Next Steps**",
+        ]:
+            assert heading in result, f"Missing heading: {heading}"
+
+    def test_mentions_first_time_seeing_page(self):
+        result = build_show_page_analysis_prompt_a()
+        assert "first time" in result
+
+    def test_mentions_context_clearing(self):
+        result = build_show_page_analysis_prompt_a()
+        assert "cleared from context" in result
+
+
+class TestShowPageAnalysisPromptB:
+    """Variant B — page update prompt."""
+
+    def test_returns_string(self):
+        result = build_show_page_analysis_prompt_b()
+        assert isinstance(result, str)
+
+    def test_starts_with_page_update_header(self):
+        result = build_show_page_analysis_prompt_b()
+        assert result.startswith("── Page Update ──")
+
+    def test_ends_with_closing_rule(self):
+        result = build_show_page_analysis_prompt_b()
+        assert result.rstrip().endswith("──")
+
+    def test_contains_all_required_sections(self):
+        result = build_show_page_analysis_prompt_b()
+        for heading in [
+            "**Why I called show_page**",
+            "**What Changed**",
+            "**New Interactive Elements**",
+            "**Updated Section ID Reference**",
+            "**Next Steps**",
+        ]:
+            assert heading in result, f"Missing heading: {heading}"
+
+    def test_mentions_seen_before(self):
+        result = build_show_page_analysis_prompt_b()
+        assert "seen this page before" in result
+
+    def test_does_not_contain_variant_a_sections(self):
+        """Variant B should not include Variant A-only headings."""
+        result = build_show_page_analysis_prompt_b()
+        assert "**Page Overview**" not in result
+        assert "**Relevant Sections**" not in result
+        assert "**Obstacles**" not in result

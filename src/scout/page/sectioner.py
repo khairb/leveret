@@ -45,7 +45,9 @@ from .converter import (
     EXCLUDED_TAGS,
     VOID_ELEMENTS,
     InteractiveElement,
+    RenderedInteractiveElement,
     html_to_text,
+    html_to_text_with_elements,
 )
 
 from .patterns import (
@@ -139,6 +141,11 @@ class Section:
     # Avoid relying on these — prefer element references.
     char_start: int
     char_end: int
+
+    # ── Sidecar: rendered interactive elements ──
+    rendered_interactive_elements: list[RenderedInteractiveElement] = field(
+        default_factory=list, repr=False,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1116,9 +1123,12 @@ def section_page(
     group_counters: dict[int, int] = {}
 
     for i, candidate in enumerate(candidates):
-        # Generate text via the converter.
+        # Generate text via the converter, also capturing rendered
+        # interactive elements for the sidecar data (Task 1).
         section_html = _elements_to_html(candidate.elements)
-        section_text = html_to_text(section_html, interactive_elements)
+        section_text, rendered_elements = html_to_text_with_elements(
+            section_html, interactive_elements,
+        )
 
         if not section_text.strip():
             continue
@@ -1172,6 +1182,7 @@ def section_page(
                 ),
                 char_start=char_offset,
                 char_end=char_end,
+                rendered_interactive_elements=rendered_elements,
             )
         )
 

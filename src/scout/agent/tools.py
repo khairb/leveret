@@ -9,6 +9,7 @@ The agent also has two built-in REPL functions (``show_page`` and
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -26,6 +27,46 @@ MIN_TIMEOUT: float = 1.0
 
 MAX_TIMEOUT: float = 300.0
 """Ceiling for any timeout (explicit or predicted)."""
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Raw HTML blocker
+# ═══════════════════════════════════════════════════════════════
+
+# Patterns that dump full-page HTML into stdout, wasting tokens.
+_RAW_HTML_PATTERNS = [
+    # page.content() — returns entire page HTML.
+    (re.compile(r'\bpage\s*\.\s*content\s*\('), "page.content()"),
+    # page.inner_html("html") / page.inner_html("body") — same effect.
+    (re.compile(r'\.\s*inner_html\s*\(\s*["\'](?:html|body)["\']'), '.inner_html("html"/"body")'),
+    # document.documentElement.outerHTML inside evaluate().
+    (re.compile(r'document\s*\.\s*documentElement\s*\.\s*outerHTML'), "document.documentElement.outerHTML"),
+    # document.body.innerHTML in evaluate() targeting the whole body.
+    (re.compile(r'document\s*\.\s*body\s*\.\s*innerHTML'), "document.body.innerHTML"),
+]
+
+_RAW_HTML_REJECTION = (
+    "Script blocked: your code uses {pattern}, which dumps the entire "
+    "page HTML into the conversation and wastes context.\n\n"
+    "This is unnecessary — you already have structured tools for "
+    "viewing the page:\n"
+    "  - `await show_page(page)` — shows a clean, structured view "
+    "of the full page with section IDs\n"
+    "  - `await zoom_section(page, 'S-3')` — shows the full DOM of "
+    "a specific section for detailed inspection\n\n"
+    "Use these instead. They give you better information in less space."
+)
+
+
+def _check_raw_html_patterns(code: str) -> str:
+    """Return a rejection message if *code* contains raw HTML dump patterns.
+
+    Returns an empty string if the code is clean.
+    """
+    for pattern, label in _RAW_HTML_PATTERNS:
+        if pattern.search(code):
+            return _RAW_HTML_REJECTION.format(pattern=label)
+    return ""
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -133,6 +174,16 @@ async def _exec_python(
     else:
         # No explicit timeout — predict from code structure.
         timeout = predict_timeout(code)
+
+    # Block code that dumps raw HTML into the conversation.
+    blocked = _check_raw_html_patterns(code)
+    if blocked:
+        return ToolResult(
+            tool_use_id=tool_use_id,
+            name="python",
+            content=blocked,
+            is_error=True,
+        )
 
     # Capture URL before execution to detect navigation.
     url_before = runtime.page.url if runtime.page else None

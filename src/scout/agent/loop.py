@@ -46,8 +46,9 @@ from .wrapper import (
     generate_subprocess_wrapper,
     parse_return_value,
 )
-from .context import ConversationManager
+from .context import ConversationManager, _PAGE_VIEW_START
 from .bridge import (
+    ShowPageResult,
     create_post_exec_hook,
     create_show_page_function,
     create_zoom_section_function,
@@ -55,7 +56,22 @@ from .bridge import (
 from .llm import LLMConfig, call_llm
 from .requirements import generate_requirements, revise_requirements
 from .validator import AttemptRecord, validate_output
-from .prompt import build_initial_user_message, build_system_prompt
+from .prompt import (
+    build_initial_user_message,
+    build_show_page_analysis_prompt_a,
+    build_show_page_analysis_prompt_b,
+    build_system_prompt,
+)
+from .show_page_context import (
+    NEIGHBOR_RADIUS,
+    ElementMatch,
+    ShowPageAnalysisLog,
+    ShowPageState,
+    build_filtered_output,
+    get_referenced_sections,
+    get_sections_by_id,
+    page_similarity,
+)
 from .tools import TOOL_SCHEMAS, ToolResult, execute_tool
 from .trace import Tracer
 from . import console
@@ -211,9 +227,18 @@ class AgentLoop:
             requirements: str | None = None
             turn_number = 0
             needs_debugging = False
+            active_script_result: InProcessScriptResult | None = None
+            exploration_page = runtime.page  # Save original page ref
             checkpoint_base_dir = Path(
                 tempfile.mkdtemp(prefix="scrape_checkpoints_")
             )
+
+            # Show-page context management state.
+            show_page_state = ShowPageState()
+            pending_show_page: ShowPageResult | None = None
+            pending_is_variant_a = False
+            force_analysis_no_tools = False
+            analysis_prompt_msg_index: int | None = None
 
             # ── Main loop ─────────────────────────────────────
             while step_count < self._max_steps:
@@ -221,15 +246,18 @@ class AgentLoop:
                 console.print_turn_start(turn_number)
 
                 # Call the LLM.
+                current_tools = (
+                    [] if force_analysis_no_tools else TOOL_SCHEMAS
+                )
                 messages_for_api = conversation.get_messages()
-                tracer.log_llm_request(messages_for_api, TOOL_SCHEMAS)
+                tracer.log_llm_request(messages_for_api, current_tools)
 
                 llm_start = time.time()
                 response = await call_llm(
                     self._llm_config,
                     system=system_prompt,
                     messages=messages_for_api,
-                    tools=TOOL_SCHEMAS,
+                    tools=current_tools,
                 )
                 llm_duration_ms = (time.time() - llm_start) * 1000
 
@@ -257,6 +285,60 @@ class AgentLoop:
                     _serialize_content_blocks(content_blocks)
                 )
 
+                # ── Phase 2+3: show_page analysis & filtering ────
+                was_analysis_turn = pending_show_page is not None
+                if pending_show_page is not None:
+                    reasoning = _extract_text(content_blocks)
+                    if reasoning.strip():
+                        # Phase 3 — filter the page view.
+                        sections_for_ref = [
+                            (s.section_id, s.content,
+                             s.interactive_elements)
+                            for s in pending_show_page.sections
+                        ]
+                        referenced, el_matches = (
+                            get_referenced_sections(
+                                reasoning, sections_for_ref,
+                            )
+                        )
+                        sections_for_filter = [
+                            (s.section_id, s.content)
+                            for s in pending_show_page.sections
+                        ]
+                        filtered = build_filtered_output(
+                            sections_for_filter, referenced,
+                        )
+                        conversation.replace_last_show_page_result(
+                            filtered,
+                        )
+
+                        # ── Observability logging ────────────
+                        _emit_show_page_log(
+                            tracer=tracer,
+                            turn_number=turn_number,
+                            url=runtime.page.url if runtime.page else "",
+                            pending_show_page=pending_show_page,
+                            show_page_state=show_page_state,
+                            pending_is_variant_a=pending_is_variant_a,
+                            reasoning=reasoning,
+                            referenced=referenced,
+                            el_matches=el_matches,
+                            sections_for_filter=sections_for_filter,
+                            filtered=filtered,
+                        )
+                    # Remove ephemeral analysis prompt.
+                    if analysis_prompt_msg_index is not None:
+                        conversation.remove_message(
+                            analysis_prompt_msg_index,
+                        )
+                        analysis_prompt_msg_index = None
+                    if pending_is_variant_a:
+                        show_page_state.mark_analyzed(
+                            pending_show_page.raw_text,
+                        )
+                    pending_show_page = None
+                    force_analysis_no_tools = False
+
                 # Collect tool_use blocks.
                 tool_uses = [
                     b for b in content_blocks if b.type == "tool_use"
@@ -275,16 +357,16 @@ class AgentLoop:
                             "Script not accepted. You have not "
                             "investigated the failure yet.\n\n"
                             "Use the `python` tool to debug before "
-                            "resubmitting. The browser and `page` "
-                            "object from your exploration are still "
-                            "live. Call `await show_page(page)` to "
-                            "see the current page state, "
+                            "resubmitting. `page` now points to "
+                            "the page from your last script "
+                            "execution — it is in the exact state "
+                            "where the script ended or crashed. "
+                            "Call `await show_page(page)` to see "
+                            "what the page looks like, "
                             "`await zoom_section(page, ...)` to "
-                            "inspect the DOM of relevant sections, "
-                            "test your selectors against the live "
-                            "page, and call "
-                            "`expand_checkpoint(\"CP-...\")` to "
-                            "review what happened during execution."
+                            "inspect DOM sections, and test your "
+                            "selectors against `page` to see what "
+                            "they actually return."
                             "\n\nIdentify the exact root cause, "
                             "then write the corrected function."
                         )
@@ -323,18 +405,35 @@ class AgentLoop:
                                     requirements=requirements,
                                 )
 
-                            # Run the function in a fresh subprocess.
+                            # Clean up previous script browser and
+                            # restore exploration page as safety net.
+                            if active_script_result is not None:
+                                await active_script_result.cleanup()
+                                active_script_result = None
+                                runtime.repl.inject(
+                                    page=exploration_page,
+                                )
+                                psm.page = exploration_page
+
+                            # Run the function in a fresh in-process
+                            # browser (page stays alive for debugging).
                             console.print_running_script()
                             run_number = script_attempts + 1
                             run_dir = checkpoint_base_dir / f"run_{run_number}"
-                            stdout, return_value_json, stderr, returncode = (
-                                await _run_script_subprocess(
+                            script_run = (
+                                await _run_script_in_process(
                                     script,
                                     url=url,
                                     timeout=self._script_timeout,
                                     checkpoint_dir=run_dir,
                                 )
                             )
+                            # Track for cleanup (finally block).
+                            active_script_result = script_run
+                            stdout = script_run.stdout
+                            return_value_json = script_run.return_value_json
+                            stderr = script_run.stderr
+                            returncode = script_run.returncode
                             # Build combined output for display and
                             # validation (stdout + return value JSON).
                             combined_output = build_combined_output(
@@ -463,9 +562,21 @@ class AgentLoop:
                                     out_path.write_text(
                                         combined_output, encoding="utf-8",
                                     )
+                                # Script approved — close script browser.
+                                await active_script_result.cleanup()
+                                active_script_result = None
                                 break
 
-                            # Rejected — record attempt and feed back.
+                            # Rejected — swap the REPL's `page` to the
+                            # script's page so the agent debugs on the
+                            # actual page the script ran on.
+                            if script_run.page is not None:
+                                runtime.repl.inject(
+                                    page=script_run.page,
+                                )
+                                psm.page = script_run.page
+                                console.print_script_page_injected()
+                            # Record attempt and feed back.
                             script_attempts += 1
                             attempt_history.append(AttemptRecord(
                                 attempt_number=script_attempts,
@@ -559,14 +670,40 @@ class AgentLoop:
 
                     # No code block found — nudge the agent.
                     if stop_reason == "end_turn":
-                        nudge = (
-                            "Continue working. Use your tools to explore "
-                            "the page. When done, respond with the final "
-                            "scraping function in a ```python code block."
-                        )
-                        tracer.log_system_event("nudge_sent", text=nudge)
-                        console.print_nudge()
-                        conversation.add_user_message(nudge)
+                        if was_analysis_turn:
+                            # Analysis turn — the text-only response
+                            # is expected.  Send a brief follow-up so
+                            # the conversation ends on a user message
+                            # (required by the API).
+                            conversation.add_user_message(
+                                "Analysis received. Continue with "
+                                "your task."
+                            )
+                        else:
+                            nudge = (
+                                "Continue working. Use your tools to "
+                                "explore the page. When done, respond "
+                                "with the final scraping function in "
+                                "a ```python code block."
+                            )
+                            tracer.log_system_event(
+                                "nudge_sent", text=nudge,
+                            )
+                            console.print_nudge()
+                            conversation.add_user_message(nudge)
+                    # Save snapshot for text-only turns too.
+                    tracer.save_history_snapshot(
+                        turn_number=turn_number,
+                        messages=conversation.messages,
+                        usage={
+                            "input_tokens": usage.input_tokens,
+                            "output_tokens": usage.output_tokens,
+                            "cache_read": usage.cache_read_input_tokens,
+                            "cache_create": usage.cache_creation_input_tokens,
+                        },
+                        step_count=step_count,
+                        python_step_count=python_step_count,
+                    )
                     continue
 
                 # Execute each tool call.
@@ -665,6 +802,51 @@ class AgentLoop:
                 console.print_turn_status(status_msg)
                 conversation.add_user_message(status_msg)
 
+                # Save history snapshot for post-run analysis.
+                tracer.save_history_snapshot(
+                    turn_number=turn_number,
+                    messages=conversation.messages,
+                    usage={
+                        "input_tokens": usage.input_tokens,
+                        "output_tokens": usage.output_tokens,
+                        "cache_read": usage.cache_read_input_tokens,
+                        "cache_create": usage.cache_creation_input_tokens,
+                    },
+                    step_count=step_count,
+                    python_step_count=python_step_count,
+                )
+
+                # ── Phase 1: detect show_page and inject prompt ──
+                is_show_page_turn = any(
+                    isinstance(tr.get("content"), str)
+                    and _PAGE_VIEW_START in tr["content"]
+                    for tr in tool_results
+                )
+                sp_result = self._show_page_result_ref[0]
+                if is_show_page_turn and sp_result is not None:
+                    self._show_page_result_ref[0] = None
+                    pending_is_variant_a = (
+                        show_page_state.should_force_full_analysis(
+                            sp_result.raw_text,
+                        )
+                    )
+                    prompt = (
+                        build_show_page_analysis_prompt_a()
+                        if pending_is_variant_a
+                        else build_show_page_analysis_prompt_b()
+                    )
+                    conversation.add_user_message(prompt)
+                    analysis_prompt_msg_index = (
+                        len(conversation.messages) - 1
+                    )
+                    pending_show_page = sp_result
+                    if pending_is_variant_a:
+                        force_analysis_no_tools = True
+                    tracer.log_system_event(
+                        "show_page_phase1",
+                        variant="A" if pending_is_variant_a else "B",
+                    )
+
             # If we exited the loop without a script, make one
             # final LLM call with no tools available — the agent
             # has no choice but to generate the script.
@@ -748,6 +930,13 @@ class AgentLoop:
             tracer.log_system_event("exception", error=str(exc))
 
         finally:
+            # Clean up any leftover script browser.
+            try:
+                if active_script_result is not None:
+                    await active_script_result.cleanup()
+            except (NameError, Exception):
+                pass
+
             if runtime is not None:
                 try:
                     await runtime.stop()
@@ -808,7 +997,8 @@ class AgentLoop:
 
         # Inject show_page(page), zoom_section(page, ...), and
         # expand_checkpoint(...) into the REPL.
-        show_page_fn = create_show_page_function(psm_ref)
+        self._show_page_result_ref: list[Any] = [None]
+        show_page_fn = create_show_page_function(psm_ref, self._show_page_result_ref)
         zoom_section_fn = create_zoom_section_function(psm_ref)
         self._checkpoint_run_dir_ref: list[Any] = [None]
         expand_cp_fn = create_expand_checkpoint_function(
@@ -1021,6 +1211,238 @@ async def _run_script_subprocess(
         shutil.rmtree(script_dir, ignore_errors=True)
 
 
+# ═══════════════════════════════════════════════════════════════
+#  In-process script runner (keeps the page alive for debugging)
+# ═══════════════════════════════════════════════════════════════
+
+class InProcessScriptResult:
+    """Result of running the scrape function in-process.
+
+    Unlike the subprocess runner, the browser and page stay alive
+    after execution so the agent can inspect them for debugging.
+    """
+
+    __slots__ = (
+        "stdout", "return_value_json", "stderr", "returncode",
+        "page", "context", "pw", "profile_dir",
+    )
+
+    def __init__(self) -> None:
+        self.stdout: str = ""
+        self.return_value_json: str | None = None
+        self.stderr: str = ""
+        self.returncode: int = 0
+        self.page: Any = None          # Patchright Page — still live
+        self.context: Any = None       # BrowserContext — for cleanup
+        self.pw: Any = None            # Playwright instance — for cleanup
+        self.profile_dir: str = ""     # Temp profile — for cleanup
+
+    async def cleanup(self) -> None:
+        """Close the script browser and free resources."""
+        if self.context:
+            try:
+                await self.context.close()
+            except Exception:
+                pass
+            self.context = None
+        if self.pw:
+            try:
+                await self.pw.stop()
+            except Exception:
+                pass
+            self.pw = None
+        if self.profile_dir:
+            shutil.rmtree(self.profile_dir, ignore_errors=True)
+            self.profile_dir = ""
+        self.page = None
+
+
+async def _run_script_in_process(
+    script: str,
+    *,
+    url: str,
+    timeout: int = 600,
+    checkpoint_dir: Path | None = None,
+) -> InProcessScriptResult:
+    """Run the agent's scrape function in-process with a second browser.
+
+    Launches a fresh Playwright browser (same stealth config as the
+    subprocess wrapper), navigates to *url*, defines the agent's
+    ``scrape()`` function, and calls it.  The browser and page stay
+    alive after execution so the agent can inspect the page for
+    debugging.
+
+    Returns:
+        An :class:`InProcessScriptResult` containing stdout, return
+        value, error info, **and the live page object**.
+    """
+    from patchright.async_api import async_playwright
+    from ..runtime.environment import BrowserManager
+
+    cp_dir = str(checkpoint_dir) if checkpoint_dir else "/tmp/scrape_checkpoints"
+    stealth_args = list(BrowserManager._STEALTH_ARGS)
+    profile_dir = tempfile.mkdtemp(prefix="scraper_profile_")
+
+    result = InProcessScriptResult()
+    result.profile_dir = profile_dir
+
+    pw = None
+    context = None
+    try:
+        pw = await async_playwright().start()
+        context = await pw.chromium.launch_persistent_context(
+            user_data_dir=profile_dir,
+            channel="chrome",
+            headless=False,
+            no_viewport=True,
+            bypass_csp=True,
+            locale="en-US",
+            timezone_id="America/New_York",
+            args=stealth_args,
+        )
+        page = (
+            context.pages[0]
+            if context.pages
+            else await context.new_page()
+        )
+        await page.set_viewport_size({"width": 1920, "height": 1080})
+        await page.goto(url, wait_until="domcontentloaded")
+
+        # ── Build checkpoint function (same logic as wrapper) ──
+        cp_start = time.time()
+        cp_counter = [0]
+
+        async def checkpoint(label, data_preview=None):
+            cp_counter[0] += 1
+            cp_id = f"CP-{cp_counter[0]}"
+            cp_url = page.url
+            title = await page.title()
+            elapsed = time.time() - cp_start
+            info = await page.evaluate(
+                """() => {
+                    const text = document.body
+                        ? document.body.innerText : "";
+                    const count = document.querySelectorAll("*").length;
+                    return { text: text.substring(0, 5000), count };
+                }"""
+            )
+            visible_text = info.get("text", "")
+            element_count = info.get("count", 0)
+            data = {
+                "id": cp_id,
+                "label": label,
+                "url": cp_url,
+                "title": title,
+                "timestamp_s": round(elapsed, 1),
+                "element_count": element_count,
+                "visible_text": visible_text,
+                "data_preview": data_preview,
+            }
+            os.makedirs(cp_dir, exist_ok=True)
+            cp_path = os.path.join(cp_dir, f"{cp_id}.json")
+            with open(cp_path, "w") as f:
+                json.dump(data, f, indent=2, default=str)
+            t = (
+                (title[:50] + "\u2026")
+                if len(title) > 50
+                else title
+            )
+            dp = (
+                f" | data_preview={len(data_preview)} items"
+                if data_preview
+                else ""
+            )
+            print(
+                f"[{cp_id} {label}] url={cp_url} | "
+                f'title="{t}" | elements={element_count}'
+                f"{dp} | {elapsed:.1f}s"
+            )
+
+        # ── Define the scrape function in a clean namespace ──
+        import io as _io
+        exec_globals: dict[str, Any] = {"__builtins__": __builtins__}
+        # Pre-imports (same as subprocess wrapper).
+        exec(
+            compile(
+                "import json, re, math, os, time, asyncio, "
+                "tempfile, shutil\n"
+                "from datetime import datetime\n"
+                "from urllib.parse import urljoin, urlparse\n",
+                "<script-imports>",
+                "exec",
+            ),
+            exec_globals,
+        )
+        # Compile and exec the agent's script code.
+        exec(compile(script, "<agent-script>", "exec"), exec_globals)
+
+        scrape_fn = exec_globals.get("scrape")
+        if scrape_fn is None:
+            result.stderr = "Script does not define a scrape() function."
+            result.returncode = 1
+            result.context = context
+            result.pw = pw
+            result.page = page
+            return result
+
+        # ── Run scrape() capturing stdout ──
+        stdout_buf = _io.StringIO()
+        old_stdout = sys.stdout
+        scrape_error = None
+        return_data = None
+
+        try:
+            sys.stdout = stdout_buf
+            return_data = await asyncio.wait_for(
+                scrape_fn(page, url, checkpoint),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            scrape_error = f"Function timed out after {timeout} seconds"
+        except Exception:
+            import traceback
+            scrape_error = traceback.format_exc()
+        finally:
+            sys.stdout = old_stdout
+
+        result.stdout = stdout_buf.getvalue()
+        result.page = page
+        result.context = context
+        result.pw = pw
+
+        if scrape_error:
+            result.stderr = scrape_error
+            result.returncode = 1
+            return result
+
+        # Serialize return value.
+        try:
+            result.return_value_json = json.dumps(
+                return_data,
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+        except TypeError as exc:
+            type_name = type(return_data).__name__
+            result.stderr = (
+                f"scrape() returned type '{type_name}' which is "
+                f"not JSON-serializable: {exc}"
+            )
+            result.returncode = 1
+
+        return result
+
+    except Exception:
+        # Browser launch or navigation failure.
+        import traceback
+        result.stderr = traceback.format_exc()
+        result.returncode = 1
+        result.context = context
+        result.pw = pw
+        return result
+
+
 def _build_rejection_message(
     feedback: str,
     stdout: str,
@@ -1077,22 +1499,146 @@ def _build_rejection_message(
     parts.append(
         "\n---\n\n"
         "Do not guess at a fix. Be systematic:\n\n"
+        "`page` has been replaced with the page from the script "
+        "execution — it is in the exact state where the script ended "
+        "or crashed.\n\n"
         "1. **Analyze** the feedback, output, return value, and "
         "checkpoints carefully. Understand exactly what went wrong — "
         "which part of the function failed and why.\n"
-        "2. **Expand checkpoints** to see what the page looked like at "
-        "key moments: call `expand_checkpoint(\"CP-1\")` to inspect "
-        "the full page state at any checkpoint.\n"
-        "3. **Investigate** using your Python environment. The browser is "
-        "still open from your exploration. Test selectors, check page "
-        "state, verify your assumptions. Use `await show_page(page)` and "
-        "`await zoom_section(page, ...)` to re-examine the page if "
-        "needed.\n"
+        "2. **Inspect the page** — call `await show_page(page)` to "
+        "see the page state, `await zoom_section(page, ...)` to "
+        "inspect DOM sections, and test your selectors against "
+        "`page` to see what they actually return.\n"
+        "3. **Expand checkpoints** if you need to see the page at "
+        "earlier moments during execution: call "
+        "`expand_checkpoint(\"CP-1\")` to inspect a checkpoint.\n"
         "4. **Verify your fix** before writing the final function. Test "
-        "the corrected logic in your Python environment first.\n"
+        "the corrected logic against `page` first.\n"
         "5. **Write the corrected function** in a ```python code block.\n\n"
         "The function will be tested again. Make sure your fix "
         "addresses the feedback."
     )
 
     return "\n".join(parts)
+
+
+def _emit_show_page_log(
+    *,
+    tracer: Tracer,
+    turn_number: int,
+    url: str,
+    pending_show_page: ShowPageResult,
+    show_page_state: ShowPageState,
+    pending_is_variant_a: bool,
+    reasoning: str,
+    referenced: set[str],
+    el_matches: list,
+    sections_for_filter: list[tuple[str, str]],
+    filtered: str,
+) -> None:
+    """Build and emit the observability log after Phase 3."""
+    import time as _time
+
+    variant = "A" if pending_is_variant_a else "B"
+    total_sections = len(sections_for_filter)
+    total_page_chars = len(pending_show_page.text_output)
+    filtered_page_chars = len(filtered)
+    compression_ratio = (
+        filtered_page_chars / total_page_chars
+        if total_page_chars > 0
+        else 0.0
+    )
+
+    # Similarity score.
+    if show_page_state.last_analyzed_text is not None:
+        similarity_score = page_similarity(
+            pending_show_page.raw_text,
+            show_page_state.last_analyzed_text,
+        )
+    else:
+        similarity_score = 0.0  # First page, no baseline.
+
+    # Section ID mentions vs element matches.
+    all_section_ids = [sid for sid, _ in sections_for_filter]
+    id_mentioned = get_sections_by_id(reasoning, all_section_ids)
+    element_matched_sections = referenced - id_mentioned
+
+    # Compute kept / neighbor / distant counts.
+    kept_indices = {
+        i for i, (sid, _) in enumerate(sections_for_filter)
+        if sid in referenced
+    }
+    neighbor_indices: set[int] = set()
+    for ki in kept_indices:
+        for offset in range(-NEIGHBOR_RADIUS, NEIGHBOR_RADIUS + 1):
+            idx = ki + offset
+            if 0 <= idx < total_sections and idx not in kept_indices:
+                neighbor_indices.add(idx)
+    total_kept = len(kept_indices)
+    total_neighbor = len(neighbor_indices)
+    total_distant = total_sections - total_kept - total_neighbor
+
+    # Build ElementMatch log entries from ElementMatchResults.
+    element_match_logs: list[ElementMatch] = []
+    for m in el_matches:
+        if m.matched_attributes:
+            best = m.matched_attributes[0]
+            attr = best.get("attr", "unknown")
+            value = best.get("value", "")
+            match_type = best.get("match", "")
+            if match_type == "full":
+                marker = f'{attr}="{value}"'
+            elif attr == "text":
+                marker = str(value)
+            else:
+                marker = str(value)
+            # Extract a reasoning snippet around the marker.
+            snippet_value = str(value)
+            pos = reasoning.find(snippet_value)
+            if pos >= 0:
+                start = max(0, pos - 40)
+                end = min(len(reasoning), pos + len(snippet_value) + 40)
+                context = reasoning[start:end].replace("\n", " ").strip()
+            else:
+                context = ""
+            element_match_logs.append(ElementMatch(
+                marker=marker,
+                marker_type=attr,
+                reasoning_context=context,
+                matched_sections=m.sections_with_same_element,
+                is_ambiguous=len(m.sections_with_same_element) > 1,
+            ))
+
+    log_entry = ShowPageAnalysisLog(
+        timestamp=_time.time(),
+        turn_number=turn_number,
+        url=url,
+        similarity_score=similarity_score,
+        variant_used=variant,
+        total_sections=total_sections,
+        total_page_chars=total_page_chars,
+        analysis_char_count=len(reasoning),
+        sections_mentioned_by_id=sorted(id_mentioned),
+        sections_matched_by_element=sorted(element_matched_sections),
+        total_sections_kept=total_kept,
+        total_sections_neighbor=total_neighbor,
+        total_sections_distant=total_distant,
+        filtered_page_chars=filtered_page_chars,
+        compression_ratio=compression_ratio,
+        element_matches=element_match_logs,
+    )
+
+    tracer.log_show_page_analysis(log_entry)
+
+    reduction_pct = (1.0 - compression_ratio) * 100
+    console.print_show_page_analysis(
+        variant=variant,
+        similarity=similarity_score,
+        total_sections=total_sections,
+        kept=total_kept,
+        neighbor=total_neighbor,
+        distant=total_distant,
+        original_kb=total_page_chars / 1024,
+        filtered_kb=filtered_page_chars / 1024,
+        reduction_pct=reduction_pct,
+    )

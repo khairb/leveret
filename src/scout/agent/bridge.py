@@ -11,12 +11,38 @@ Provides:
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ..page.manager import PageStateManager
+    from ..page.converter import RenderedInteractiveElement
     from playwright.async_api import Page
     from ..runtime.environment import ExecutionResult
+
+
+@dataclass
+class ShowPageSectionData:
+    """Per-section sidecar data for the context management pipeline."""
+
+    section_id: str
+    content: str  # section text as shown to agent
+    interactive_elements: list[RenderedInteractiveElement] = field(
+        default_factory=list,
+    )
+
+
+@dataclass
+class ShowPageResult:
+    """Structured result from a show_page() call.
+
+    Carries both the text the agent sees (``text_output``) and the
+    structured sidecar data the context manager needs for filtering.
+    """
+
+    text_output: str  # formatted page view (what the agent sees)
+    raw_text: str  # plain text for similarity comparison
+    sections: list[ShowPageSectionData] = field(default_factory=list)
 
 
 def create_post_exec_hook(
@@ -35,7 +61,10 @@ def create_post_exec_hook(
     return hook
 
 
-def create_show_page_function(psm_ref: list[Any]) -> callable:
+def create_show_page_function(
+    psm_ref: list[Any],
+    result_ref: list[Any],
+) -> callable:
     """Create the ``show_page(page)`` function injected into the agent's REPL.
 
     The agent calls ``await show_page(page)`` after page interactions to
@@ -44,6 +73,9 @@ def create_show_page_function(psm_ref: list[Any]) -> callable:
     Args:
         psm_ref: A single-element list.  Set ``psm_ref[0]`` to the
             :class:`PageStateManager` instance once it's created.
+        result_ref: A single-element list.  After each call, ``result_ref[0]``
+            is set to the :class:`ShowPageResult` so the agent loop can
+            access the structured sidecar without relying on the return value.
 
     Returns:
         An async callable matching ``async def show_page(page) -> None``.
@@ -82,6 +114,24 @@ def create_show_page_function(psm_ref: list[Any]) -> callable:
         print("__PAGE_VIEW_START__")
         print(page_view)
         print("__PAGE_VIEW_END__")
+
+        # Store structured sidecar via shared ref for the agent loop.
+        # Do NOT return it — returning non-None would cause REPL
+        # double-print of the repr into captured stdout.
+        section_data = [
+            ShowPageSectionData(
+                section_id=s.id,
+                content=s.text,
+                interactive_elements=s.rendered_interactive_elements,
+            )
+            for s in state.sections
+        ]
+        result_ref[0] = ShowPageResult(
+            text_output=page_view,
+            raw_text=state.full_text,
+            sections=section_data,
+        )
+
         return None  # Prevent REPL double-print via repr()
 
     return show_page

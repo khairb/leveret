@@ -408,6 +408,112 @@ def build_system_prompt(*, schema_prompt: str) -> str:
     )
 
 
+def build_show_page_analysis_prompt_a() -> str:
+    """Return the Variant A (full analysis) prompt for show_page.
+
+    Injected after a show_page tool result when the page is new or
+    substantially different from the last analyzed page.  Tools are
+    disabled for this turn so the agent focuses on analysis.
+    """
+    return """\
+── Page Analysis ──
+
+You are seeing this page for the first time. The full page content
+above will be cleared from context after this turn — your analysis
+below will be your only reference going forward.
+
+Think carefully. Everything you do not write down now, you will not
+remember later.
+
+**Why I called show_page**
+State why you navigated here or what action you expected to see
+reflected. This frames your analysis.
+
+**Page Overview**
+Describe the overall page: what type of page is this, what is its
+layout, and what URL are you on.
+
+**Relevant Sections**
+For each part of the page that is relevant to your task, write:
+- What the section contains and why it matters
+- The section ID(s) to zoom into later
+- If there are repeated items of the same type, describe one example
+  and note the total count — don't list every instance
+
+**Interactive Elements**
+For every button, input, link, or control you may need to use, write:
+- The FULL tag exactly as shown in the page content above (e.g.,
+  <button aria-label="Weiter" type="button">)
+- What this element does or what it is for
+- Which section it is located in (section ID)
+Do not summarize or shorten the tags. Copy them exactly — you will
+use these to build selectors later.
+
+**Obstacles**
+Note any overlays, modals, or banners that may block interaction.
+If none, write "None."
+
+**Section ID Reference**
+List the section IDs you will need to zoom into, one per line, with
+a short note on what you expect to find in each:
+  [section-id] — what to look for
+
+**Next Steps**
+This is the most important part of your analysis. Everything above
+was preparation — now use it. This is your reasoning space: connect
+what you've documented to your goal and think through what to do
+next. Not a checklist of future steps, but real strategic reasoning —
+what matters most right now, why, and how you'll approach it.
+The quality of your thinking here directly shapes your next actions.
+
+──"""
+
+
+def build_show_page_analysis_prompt_b() -> str:
+    """Return the Variant B (page update) prompt for show_page.
+
+    Injected after a show_page tool result when the page is substantially
+    similar to the last analyzed page.  Tools remain enabled.
+    """
+    return """\
+── Page Update ──
+
+You have seen this page before. The page content above shows the
+current state after your last action. It will be cleared from context
+after this turn.
+
+Think carefully. Everything you do not write down now, you will not
+remember later.
+
+**Why I called show_page**
+State what action you just performed and what you expected to change.
+
+**What Changed**
+Compare the current page to your previous analysis:
+- New or removed sections — note their section IDs
+- Changed content within existing sections
+- If nothing meaningful changed, say so
+
+**New Interactive Elements**
+If any new buttons, inputs, links, or controls appeared, write their
+full tags exactly as shown, what they do, and which section they are
+in. If no new interactive elements, write "None."
+
+**Updated Section ID Reference**
+List any new section IDs you will need to zoom into:
+  [section-id] — what to look for
+If your previous reference is still valid, write "No changes."
+
+**Next Steps**
+This is the most important part of your analysis. This is your
+reasoning space: assess where things stand, connect it to your goal,
+and think through your next move. Not a checklist, but real strategic
+reasoning — what matters most now, why, and how you'll approach it.
+The quality of your thinking here directly shapes your next actions.
+
+──"""
+
+
 def build_initial_user_message(task: str, url: str) -> str:
     """Build the first user message with the task and page URL.
 

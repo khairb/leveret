@@ -59,7 +59,6 @@ await page.wait_for_timeout(5_000)  # hard wait, use sparingly
 ### Content Extraction (convenience methods)
 
 ```python
-html = await page.content()                          # full page HTML
 text = await page.inner_text('.selector')             # visible text
 attr = await page.get_attribute('a.link', 'href')     # attribute value
 txt  = await page.text_content('.selector')            # all text including hidden

@@ -39,6 +39,22 @@ class InteractiveElement:
     selector: str = ""  # CSS selector, kept for other system uses
 
 
+@dataclass
+class RenderedInteractiveElement:
+    """An interactive element as it was rendered during the HTML-to-text walk.
+
+    Captures the exact tag string the agent sees plus metadata needed by
+    the show_page context scoring algorithm (Task 3).
+    """
+
+    iid: int                       # matches data-iid
+    tag: str                       # "button", "input", "a", ...
+    attributes: dict[str, str]     # all ALLOWED_ATTRIBUTES present on this element
+    classes: list[str]             # class list (split), empty if no class attr
+    element_text: str | None       # visible text content (trimmed)
+    full_tag_str: str              # opening tag exactly as rendered
+
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -121,15 +137,14 @@ def _is_hidden(el: HtmlElement) -> bool:
 # Interactive element tag rendering
 # ---------------------------------------------------------------------------
 
-def _build_opening_tag(el: HtmlElement, meta: Optional[InteractiveElement]) -> str:
-    """Build the opening HTML tag for an interactive element, keeping only
-    allowed attributes."""
-    tag = el.tag
-    parts = [tag]
+def _merge_allowed_attributes(
+    el: HtmlElement, meta: Optional[InteractiveElement],
+) -> dict[str, str]:
+    """Merge DOM and metadata attributes, keeping only ALLOWED_ATTRIBUTES.
 
-    # Merge attributes: start with what's in the DOM, overlay with metadata.
-    # The DOM attributes are authoritative for what's actually on the element;
-    # metadata attributes fill in anything the parser may have normalised away.
+    DOM attributes are authoritative; metadata fills in anything the
+    parser may have normalised away.
+    """
     attrs: dict[str, str] = {}
     for attr_name, attr_value in el.attrib.items():
         if attr_name in ALLOWED_ATTRIBUTES:
@@ -138,6 +153,16 @@ def _build_opening_tag(el: HtmlElement, meta: Optional[InteractiveElement]) -> s
         for attr_name, attr_value in meta.attributes.items():
             if attr_name in ALLOWED_ATTRIBUTES and attr_name not in attrs:
                 attrs[attr_name] = attr_value
+    return attrs
+
+
+def _build_opening_tag(el: HtmlElement, meta: Optional[InteractiveElement]) -> str:
+    """Build the opening HTML tag for an interactive element, keeping only
+    allowed attributes."""
+    tag = el.tag
+    parts = [tag]
+
+    attrs = _merge_allowed_attributes(el, meta)
 
     # Deterministic attribute order: sorted alphabetically.
     for attr_name in sorted(attrs):
@@ -166,13 +191,16 @@ class _TreeWalker:
         # (built during walk from data-iid attributes on DOM nodes).
         self._iid_nodes: set[int] = set()
         self._parts: list[str] = []
+        self._text: str = ""
+        self.rendered_elements: list[RenderedInteractiveElement] = []
 
     # ---- public interface ----
 
     def walk(self, root: HtmlElement) -> str:
         """Walk the tree and return the final text output."""
         self._walk_node(root)
-        return self._finalise()
+        self._text = self._finalise()
+        return self._text
 
     # ---- internal walk ----
 
@@ -231,6 +259,17 @@ class _TreeWalker:
         if is_interactive:
             opening = _build_opening_tag(el, meta)
             self._parts.append(opening)
+
+            # Capture rendered interactive element for sidecar data.
+            self.rendered_elements.append(RenderedInteractiveElement(
+                iid=iid,  # type: ignore[arg-type]
+                tag=tag,
+                attributes=_merge_allowed_attributes(el, meta),
+                classes=el.get("class", "").split(),
+                element_text=(el.text_content() or "").strip() or None,
+                full_tag_str=opening,
+            ))
+
             if tag in VOID_ELEMENTS:
                 # Self-closing interactive element (e.g. <input>). Done.
                 if is_block:
@@ -302,6 +341,32 @@ class _TreeWalker:
 # Public API
 # ---------------------------------------------------------------------------
 
+def _run_walker(
+    html_string: str,
+    interactive_elements: Optional[list[InteractiveElement]] = None,
+) -> _TreeWalker | None:
+    """Parse HTML and walk the tree, returning the walker (or None on failure)."""
+    if not html_string or not html_string.strip():
+        return None
+
+    interactive_map: dict[int, InteractiveElement] = {}
+    if interactive_elements:
+        for ie in interactive_elements:
+            interactive_map[ie.iid] = ie
+
+    try:
+        doc = lxml_html.fromstring(html_string)
+    except Exception:
+        return None
+
+    if not isinstance(doc, HtmlElement):
+        return None
+
+    walker = _TreeWalker(interactive_map)
+    walker.walk(doc)
+    return walker
+
+
 def html_to_text(
     html_string: str,
     interactive_elements: Optional[list[InteractiveElement]] = None,
@@ -321,25 +386,26 @@ def html_to_text(
         A text string where visible content is plain text and interactive
         elements are preserved with their HTML tags.
     """
-    if not html_string or not html_string.strip():
+    walker = _run_walker(html_string, interactive_elements)
+    if walker is None:
         return ""
+    return walker._text
 
-    # Build iid → metadata lookup.
-    interactive_map: dict[int, InteractiveElement] = {}
-    if interactive_elements:
-        for ie in interactive_elements:
-            interactive_map[ie.iid] = ie
 
-    # Parse HTML. lxml handles malformed HTML gracefully.
-    try:
-        doc = lxml_html.fromstring(html_string)
-    except Exception:
-        # If parsing fails entirely (extremely rare with lxml), return empty.
-        return ""
+def html_to_text_with_elements(
+    html_string: str,
+    interactive_elements: Optional[list[InteractiveElement]] = None,
+) -> tuple[str, list[RenderedInteractiveElement]]:
+    """Convert HTML to text and return rendered interactive elements.
 
-    # If fromstring returns a bare text node or something unexpected, wrap it.
-    if not isinstance(doc, HtmlElement):
-        return ""
+    Like :func:`html_to_text` but also returns the
+    :class:`RenderedInteractiveElement` list captured during the walk.
+    Used by the sectioner to populate per-section sidecar data.
 
-    walker = _TreeWalker(interactive_map)
-    return walker.walk(doc)
+    Returns:
+        ``(text, rendered_elements)`` tuple.
+    """
+    walker = _run_walker(html_string, interactive_elements)
+    if walker is None:
+        return "", []
+    return walker._text, walker.rendered_elements
