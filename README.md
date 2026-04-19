@@ -111,7 +111,7 @@ try:
     result = scraper.run()
 except (ScoutValidationError, ScoutScriptError):
     # Site changed — regenerate with the same task and schema
-    result = scraper.run(force=True)
+    result = scraper.run(regenerate=True)
 ```
 
 The agent gets the original task, the original schema, and the error context. The new script is validated before it's saved. Your data shape stays consistent even when the site's HTML doesn't.
@@ -209,7 +209,7 @@ scraper = Scraper(
 
 result = scraper.run()            # generate (if needed) + execute + validate
 result = scraper.run(url="...")   # same scraper, different page
-result = scraper.run(force=True)  # throw away the cached script, regenerate
+result = scraper.run(regenerate=True)  # throw away the cached script, regenerate
 
 await scraper.async_run()         # async version
 
