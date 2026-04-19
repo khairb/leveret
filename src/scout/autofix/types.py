@@ -134,11 +134,12 @@ class PageVerificationResult(enum.Enum):
     Determined by HTTP status, URL domain match, and anti-bot detection.
     """
 
-    REAL_PAGE = "real_page"      # HTTP 200 + same domain + no anti-bot
+    REAL_PAGE = "real_page"      # HTTP 200 + same domain + no anti-bot + real content
     ANTI_BOT = "anti_bot"        # Anti-bot patterns detected
     SERVER_ERROR = "server_error"  # HTTP 5xx or 429
     REDIRECTED = "redirected"    # page.url domain differs from target
     NO_RESPONSE = "no_response"  # page.goto() failed, no Response object
+    SOFT_BLOCK = "soft_block"    # HTTP 200 but not real content (login, maintenance, etc.)
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,6 +158,26 @@ class AntibotResult:
 
     provider: str | None
     tier: int  # 1, 2, or 3
+    pattern_matched: str
+
+
+@dataclass(frozen=True, slots=True)
+class SoftBlockResult:
+    """Result from non-content page detection.
+
+    Returned by ``detect_non_content()`` when the page is identified as
+    a non-content page served with HTTP 200 (login wall, maintenance page,
+    rate-limit page, etc.). None is returned when no non-content patterns
+    are detected.
+
+    Attributes:
+        category: Detection category.
+            One of: ``"login"``, ``"maintenance"``, ``"rate_limit"``,
+            ``"geo_restriction"``, ``"suspended"``.
+        pattern_matched: Description of the pattern that triggered detection.
+    """
+
+    category: str
     pattern_matched: str
 
 

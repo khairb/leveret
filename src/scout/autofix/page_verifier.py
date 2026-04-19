@@ -9,7 +9,8 @@ Decision order for ``verify_page()`` (spec §6):
   2. HTTP 5xx or 429 → SERVER_ERROR
   3. Domain mismatch → REDIRECTED
   4. Anti-bot detected → ANTI_BOT
-  5. All checks pass → REAL_PAGE
+  5. Non-content page detected → SOFT_BLOCK
+  6. All checks pass → REAL_PAGE
 
 Gate rules for ``check_page_gate()`` (spec §6):
   Conservative/Balanced: ALL 3 attempts must be REAL_PAGE.
@@ -24,6 +25,7 @@ from typing import Sequence
 from urllib.parse import urlparse
 
 from scout.autofix.antibot import detect_antibot
+from scout.autofix.content_check import detect_non_content
 from scout.autofix.types import (
     AutoFixMode,
     PageVerificationResult,
@@ -76,6 +78,11 @@ def verify_page(
     )
     if antibot is not None:
         return PageVerificationResult.ANTI_BOT
+
+    # §6+: Non-content page detection → SOFT_BLOCK
+    soft_block = detect_non_content(content=signals.content)
+    if soft_block is not None:
+        return PageVerificationResult.SOFT_BLOCK
 
     # All checks pass → REAL_PAGE
     return PageVerificationResult.REAL_PAGE
@@ -228,6 +235,7 @@ def _describe_taint(
     taint_parts: list[str] = []
     for result_type in (
         PageVerificationResult.SERVER_ERROR,
+        PageVerificationResult.SOFT_BLOCK,
         PageVerificationResult.REDIRECTED,
         PageVerificationResult.NO_RESPONSE,
         PageVerificationResult.ANTI_BOT,

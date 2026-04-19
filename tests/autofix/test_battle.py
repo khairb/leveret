@@ -562,11 +562,9 @@ class TestBattle:
         no anti-bot markers. But it's a temporary error page, not the
         real site content.
 
-        The algorithm will regenerate — it cannot distinguish a
-        maintenance page from a legitimate redesign when the server
-        returns 200. This is an accepted trade-off: post-regeneration
-        validation catches it (the new script also fails against the
-        maintenance page).
+        The algorithm detects this as a non-content page (SOFT_BLOCK)
+        via the "something went wrong" pattern. It correctly refuses
+        to regenerate — a new script would hit the same maintenance page.
         """
         server.program("/products", SERVER_ERROR_AS_200)
         url = server.url("/products")
@@ -578,10 +576,13 @@ class TestBattle:
         )
 
         assert isinstance(result, DiagnosisResult)
-        # The algorithm regenerates — it has no way to know this is
-        # a maintenance page. HTTP 200 + same domain + no anti-bot =
-        # "real page" from the algorithm's perspective.
-        assert result.action == AutoFixAction.REGENERATE
+        # Fix 1: Non-content detection catches "something went wrong"
+        # as a maintenance page → SOFT_BLOCK → blocks regeneration.
+        assert result.action == AutoFixAction.RAISE
+        assert any(
+            r == PageVerificationResult.SOFT_BLOCK
+            for r in result.page_results
+        )
 
     # -- 8. The Adaptive Anti-Bot -----------------------------------
 
@@ -741,10 +742,10 @@ class TestBattle:
         real pages), but attempt 2 hits a network error. Two real
         signals, one noise signal.
 
-        The algorithm should NOT regenerate — the mixed evidence
-        (different error categories across attempts) makes the pattern
-        unreliable. This is a trade-off: the script IS broken, but
-        the network noise makes the algorithm uncertain.
+        The algorithm should regenerate — the script is clearly broken
+        (2 real-page attempts both show schema failure). The network
+        error on attempt 2 is correctly excluded from stability
+        assessment (Fix 2: real-page-only stability).
         """
         server.program("/products", FEW_ITEMS_PAGE)
         url = server.url("/products")
@@ -778,7 +779,10 @@ class TestBattle:
         result = await diagnose(execute, url, AutoFixMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
-        assert result.action == AutoFixAction.RAISE
+        # Fix 2: Network noise (attempt 2) is filtered out of stability.
+        # Real fingerprints [G, G] → STABLE. Category G + STABLE +
+        # 2/3 REAL_PAGE → balanced: REGENERATE.
+        assert result.action == AutoFixAction.REGENERATE
 
     # -- 14. The Conservative User ----------------------------------
 
@@ -853,8 +857,8 @@ class TestBattle:
         no anti-bot. The login page has completely different HTML than
         the products page.
 
-        What SHOULD happen: don't regenerate — a new script can't log
-        in either. The user needs to handle authentication.
+        The algorithm detects the password input field and correctly
+        refuses to regenerate — a new script can't log in either.
         """
         server.program("/products", LOGIN_WALL)
         url = server.url("/products")
@@ -866,11 +870,13 @@ class TestBattle:
         )
 
         assert isinstance(result, DiagnosisResult)
-        # FINDING: The algorithm cannot detect login walls.
-        # It sees: HTTP 200, same domain, no anti-bot, stable timeout.
-        # It thinks the page redesigned and regenerates.
-        # But regeneration won't help — the new script also can't log in.
-        assert result.action == AutoFixAction.REGENERATE
+        # Fix 1: Non-content detection catches the password input field
+        # on the login page → SOFT_BLOCK → blocks regeneration.
+        assert result.action == AutoFixAction.RAISE
+        assert any(
+            r == PageVerificationResult.SOFT_BLOCK
+            for r in result.page_results
+        )
 
     # -- 17. The Rate Limiter That Doesn't Use 429 ------------------
 
@@ -892,11 +898,13 @@ class TestBattle:
         )
 
         assert isinstance(result, DiagnosisResult)
-        # FINDING: The algorithm cannot detect non-standard rate limiting
-        # (200 instead of 429). It sees a real page with missing selectors
-        # and regenerates. But it's a rate limit page — regeneration
-        # won't help.
-        assert result.action == AutoFixAction.REGENERATE
+        # Fix 1: Non-content detection catches "browsing too fast" and
+        # the auto-refresh meta tag → SOFT_BLOCK → blocks regeneration.
+        assert result.action == AutoFixAction.RAISE
+        assert any(
+            r == PageVerificationResult.SOFT_BLOCK
+            for r in result.page_results
+        )
 
     # -- 18. The A/B Test (old version served first) ----------------
 

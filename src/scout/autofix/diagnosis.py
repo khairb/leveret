@@ -159,10 +159,19 @@ async def diagnose(
         a.page_result for a in attempts if a.page_result is not None
     ]
 
-    # S8: Need at least 2 fingerprints for stability assessment
+    # S8: Assess stability only from attempts that saw the real page.
+    # Attempts with SERVER_ERROR, NO_RESPONSE, SOFT_BLOCK, etc. didn't
+    # see real content — their errors reflect the environment, not the
+    # script. Including them would mix two unrelated signals.
+    real_fingerprints = [
+        a.fingerprint for a in attempts
+        if a.fingerprint is not None
+        and a.page_result == PageVerificationResult.REAL_PAGE
+    ]
+
     stability = (
-        assess_stability(fingerprints)
-        if len(fingerprints) >= 2
+        assess_stability(real_fingerprints)
+        if len(real_fingerprints) >= 2
         else None
     )
 
@@ -400,6 +409,9 @@ def _append_raise_explanation(
     has_antibot = any(
         r == PageVerificationResult.ANTI_BOT for r in page_results
     )
+    has_soft_block = any(
+        r == PageVerificationResult.SOFT_BLOCK for r in page_results
+    )
     has_server_err = any(
         r == PageVerificationResult.SERVER_ERROR for r in page_results
     )
@@ -421,6 +433,21 @@ def _append_raise_explanation(
         lines.append("")
         lines.append(
             "  Try again later, or use a different IP/proxy.",
+        )
+    elif has_soft_block:
+        # S12: Non-content page blocked
+        lines.append(
+            "  Auto-fix will not regenerate — the page appears to be "
+            "a non-content page (login, maintenance, or rate-limit), "
+            "not real site content.",
+        )
+        lines.append(
+            "  A new script would encounter the same page.",
+        )
+        lines.append("")
+        lines.append(
+            "  Check the URL manually, or try from a different "
+            "network/session.",
         )
     elif has_server_err:
         # S12: Server error blocked
@@ -534,8 +561,14 @@ def _page_summary(
         1 for r in page_results if r == PageVerificationResult.SERVER_ERROR
     )
 
+    soft_block = sum(
+        1 for r in page_results if r == PageVerificationResult.SOFT_BLOCK
+    )
+
     if antibot > 0:
         return f"Anti-bot detected ({antibot}/{total} attempts)"
+    if soft_block > 0:
+        return f"Non-content page detected ({soft_block}/{total} attempts)"
     if server_err > 0:
         return f"Server error detected ({server_err}/{total} attempts)"
     if real == total:

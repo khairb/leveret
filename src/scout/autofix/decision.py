@@ -351,6 +351,7 @@ def _describe_taint(
     parts: list[str] = []
     for result_type in (
         PageVerificationResult.SERVER_ERROR,
+        PageVerificationResult.SOFT_BLOCK,
         PageVerificationResult.REDIRECTED,
         PageVerificationResult.NO_RESPONSE,
     ):
