@@ -44,7 +44,7 @@ class ScoutGenerationError(ScoutError):
     """AI failed to generate a valid scraping function.
 
     Raised when the agent exhausts all retry attempts without producing
-    a function that passes validation, or when the Anthropic API returns
+    a function that passes validation, or when the LLM API returns
     an unrecoverable error.
     """
 

@@ -29,8 +29,8 @@ def main() -> None:
     parser.add_argument("task", help="What to extract (natural language)")
     parser.add_argument(
         "--model",
-        default="claude-haiku-4-5",
-        help="Anthropic model ID (default: claude-haiku-4-5)",
+        default="anthropic:claude-haiku-4-5",
+        help="LLM model in provider:name format (default: anthropic:claude-haiku-4-5)",
     )
     parser.add_argument(
         "--headless",
@@ -60,7 +60,7 @@ def main() -> None:
         "--api-key",
         type=str,
         default=None,
-        help="Anthropic API key (default: ANTHROPIC_API_KEY env var)",
+        help="API key for the model provider (default: provider-specific env var)",
     )
     parser.add_argument(
         "--trace-dir",

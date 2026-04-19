@@ -22,8 +22,8 @@ _KEEP_LINES = 10  # first N and last N lines to preserve
 class ConversationManager:
     """Manages the LLM conversation history.
 
-    Stores messages in Anthropic's native format and handles trimming
-    when the conversation grows too long.
+    Stores messages in dict format and handles trimming when the
+    conversation grows too long.
     """
 
     messages: list[dict] = field(default_factory=list)
@@ -70,7 +70,7 @@ class ConversationManager:
         """Append the assistant's response content blocks.
 
         Args:
-            content: The ``content`` list from Anthropic's response
+            content: The ``content`` list from the LLM response
                 (may contain text and tool_use blocks).
         """
         self.messages.append({"role": "assistant", "content": content})

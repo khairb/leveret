@@ -29,7 +29,7 @@ MAX_TIMEOUT: float = 300.0
 
 
 # ═══════════════════════════════════════════════════════════════
-#  Tool Schemas  (Anthropic native format)
+#  Tool Schemas
 # ═══════════════════════════════════════════════════════════════
 
 TOOL_SCHEMAS: list[dict] = [
