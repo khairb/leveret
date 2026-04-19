@@ -241,8 +241,8 @@ class TestCachedExecution:
             with pytest.raises(ScoutScriptRuntimeError, match="crashed during execution"):
                 asyncio.run(s.async_run())
 
-    def test_runtime_error_suggests_force(self, script_path):
-        """Runtime error message suggests force=True."""
+    def test_runtime_error_suggests_regenerate(self, script_path):
+        """Runtime error message suggests regenerate=True."""
         s = _make_scraper(script=str(script_path))
 
         mock_result = _mock_execute_result(
@@ -250,7 +250,7 @@ class TestCachedExecution:
         )
 
         with patch.object(s, "_execute_function", new_callable=AsyncMock, return_value=mock_result):
-            with pytest.raises(ScoutScriptRuntimeError, match="force=True"):
+            with pytest.raises(ScoutScriptRuntimeError, match="regenerate=True"):
                 asyncio.run(s.async_run())
 
     def test_domain_mismatch_on_cached_script(self, tmp_path):
@@ -300,8 +300,8 @@ class TestCachedExecution:
             assert s._cached_fn is not None
             asyncio.run(s.async_run())
 
-    def test_force_clears_cache(self, script_path, monkeypatch):
-        """force=True discards cached function and regenerates."""
+    def test_regenerate_clears_cache(self, script_path, monkeypatch):
+        """regenerate=True discards cached function and regenerates."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
         s = _make_scraper(script=str(script_path))
 
@@ -313,7 +313,7 @@ class TestCachedExecution:
             asyncio.run(s.async_run())
         assert s._cached_fn is not None
 
-        # force=True should go to generation path (which we mock)
+        # regenerate=True should go to generation path (which we mock)
         with patch.object(s, "_run_generate", new_callable=AsyncMock) as mock_gen:
             mock_gen.return_value = ScraperResult(
                 data=[{"name": "New", "price": 2.0}],
@@ -324,7 +324,7 @@ class TestCachedExecution:
             )
             with patch.object(s, "_check_api_key"):
                 with patch.object(s, "_check_playwright"):
-                    result = asyncio.run(s.async_run(force=True))
+                    result = asyncio.run(s.async_run(regenerate=True))
 
         assert result.cached is False
         assert s._cached_fn is None  # was cleared before generation
@@ -490,9 +490,9 @@ class TestReturnValueValidation:
         with pytest.raises(ScoutValidationError):
             s._validate_return_value("{{{not json")
 
-    def test_error_message_suggests_force(self):
+    def test_error_message_suggests_regenerate(self):
         s = _make_scraper()
-        with pytest.raises(ScoutValidationError, match="force=True"):
+        with pytest.raises(ScoutValidationError, match="regenerate=True"):
             s._validate_return_value(json.dumps("wrong"))
 
     def test_complex_schema_validation(self):
@@ -615,8 +615,8 @@ class TestConsoleOutput:
         messages = [r.getMessage() for r in caplog.records]
         assert any("Running cached script" in m for m in messages)
 
-    def test_force_logs_regenerating(self, tmp_path, monkeypatch, caplog):
-        """force=True logs regeneration message."""
+    def test_regenerate_logs_regenerating(self, tmp_path, monkeypatch, caplog):
+        """regenerate=True logs regeneration message."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
         path = tmp_path / "scraper.py"
         _write_valid_script(path)
@@ -633,7 +633,7 @@ class TestConsoleOutput:
                         cached=False,
                         script_path=str(path),
                     )
-                    asyncio.run(s.async_run(force=True))
+                    asyncio.run(s.async_run(regenerate=True))
 
         messages = [r.getMessage() for r in caplog.records]
         assert any("Regenerating" in m for m in messages)
@@ -722,8 +722,8 @@ class TestRunWrapper:
         assert isinstance(result, ScraperResult)
         assert result.cached is True
 
-    def test_run_passes_url_and_force(self, tmp_path, monkeypatch):
-        """run() passes url= and force= to async_run()."""
+    def test_run_passes_url_and_regenerate(self, tmp_path, monkeypatch):
+        """run() passes url= and regenerate= to async_run()."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
         path = tmp_path / "scraper.py"
         _write_valid_script(path)
@@ -737,10 +737,10 @@ class TestRunWrapper:
                 cached=False,
                 script_path=str(path),
             )
-            s.run(url="https://example.com/other", force=True)
+            s.run(url="https://example.com/other", regenerate=True)
 
         mock_async.assert_awaited_once_with(
-            url="https://example.com/other", force=True,
+            url="https://example.com/other", regenerate=True,
         )
 
 

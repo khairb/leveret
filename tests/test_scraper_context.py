@@ -8,7 +8,7 @@ Covers:
 - close() method
 - __del__ warning
 - export() method
-- Edge cases: nesting, force inside with, timeout
+- Edge cases: nesting, regenerate inside with, timeout
 """
 
 import asyncio
@@ -896,8 +896,8 @@ class TestEdgeCases:
             pass
 
     @pytest.mark.asyncio
-    async def test_force_inside_context_manager(self, tmp_path):
-        """force=True inside context manager triggers generation path."""
+    async def test_regenerate_inside_context_manager(self, tmp_path):
+        """regenerate=True inside context manager triggers generation path."""
         s = _make_scraper(tmp_path)
         _write_valid_script(s._script_path)
 
@@ -917,7 +917,7 @@ class TestEdgeCases:
              patch.object(s, "_check_api_key"), \
              patch.object(s, "_check_playwright"):
             async with s:
-                result = await s.async_run(force=True)
+                result = await s.async_run(regenerate=True)
                 assert result.cached is False
 
     @pytest.mark.asyncio

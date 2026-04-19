@@ -9,6 +9,7 @@ Hierarchy::
     ├── ScoutSchemaError
     ├── ScoutConfigError
     ├── ScoutGenerationError
+    ├── ScoutAutoFixError
     ├── ScoutScriptError
     │   ├── ScoutScriptLoadError
     │   ├── ScoutScriptRuntimeError
@@ -48,6 +49,19 @@ class ScoutGenerationError(ScoutError):
     """
 
 
+class ScoutAutoFixError(ScoutError):
+    """Auto-fix regenerated but the new script failed the same way.
+
+    Raised when the auto-fix system regenerated a script, but the new
+    script failed with the same error pattern as the old one. This
+    indicates the problem is not the script — it's something
+    regeneration cannot fix (unknown anti-bot, page genuinely doesn't
+    have what the schema expects, etc.).
+
+    The user should check the URL manually or adjust the task/schema.
+    """
+
+
 class ScoutScriptError(ScoutError):
     """Base class for saved-script execution failures.
 
@@ -61,7 +75,7 @@ class ScoutScriptLoadError(ScoutScriptError):
 
     The file has a syntax error, is missing the ``scrape`` function,
     or is otherwise not valid Python. Fix the file manually or
-    regenerate with ``force=True``.
+    regenerate with ``regenerate=True``.
     """
 
 
@@ -70,7 +84,7 @@ class ScoutScriptRuntimeError(ScoutScriptError):
 
     The script loaded and started running but raised an exception —
     typically because the website structure changed and selectors
-    no longer match. Regenerate with ``force=True``.
+    no longer match. Regenerate with ``regenerate=True``.
     """
 
 

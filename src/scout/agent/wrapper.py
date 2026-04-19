@@ -11,7 +11,9 @@ This module generates:
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
+from typing import Any
 
 from ..runtime.environment import BrowserManager
 
@@ -21,6 +23,11 @@ from ..runtime.environment import BrowserManager
 
 RETURN_VALUE_START = "__SCOUT_RETURN_VALUE_START_a7b3__"
 RETURN_VALUE_END = "__SCOUT_RETURN_VALUE_END_a7b3__"
+
+# Markers for page signal extraction (auto-fix S6/S7).
+# Printed to stdout on script failure when collect_page_signals=True.
+PAGE_SIGNALS_START = "__SCOUT_PAGE_SIGNALS_START_c9e1__"
+PAGE_SIGNALS_END = "__SCOUT_PAGE_SIGNALS_END_c9e1__"
 
 # Pre-imported modules available in the function's execution scope.
 _PRE_IMPORTS = """\
@@ -113,7 +120,7 @@ async def _run():
             )
             page = context.pages[0] if context.pages else await context.new_page()
             await page.set_viewport_size({{"width": 1920, "height": 1080}})
-            await page.goto(url, wait_until="domcontentloaded")
+            _goto_response = await page.goto(url, wait_until="domcontentloaded")
 
 {call_section}
 
@@ -131,6 +138,8 @@ def generate_subprocess_wrapper(
     agent_code: str,
     url: str,
     checkpoint_dir: str,
+    *,
+    collect_page_signals: bool = False,
 ) -> str:
     """Generate the subprocess wrapper script.
 
@@ -142,11 +151,50 @@ def generate_subprocess_wrapper(
     - Navigates to the URL
     - Calls ``scrape(page, url, checkpoint)``
     - Serializes the return value between markers
+
+    Args:
+        agent_code: The ``async def scrape(...)`` function source code.
+        url: Target URL for navigation.
+        checkpoint_dir: Directory for checkpoint files.
+        collect_page_signals: When True, attach a response listener and
+            collect page-level signals (URL, content, HTTP status, headers,
+            cookies) on script failure. The signals are serialized as JSON
+            between ``PAGE_SIGNALS_START/END`` markers in stdout. Used by
+            the auto-fix diagnosis loop (spec §6/§7).
     """
     stealth_args = list(BrowserManager._STEALTH_ARGS)
     checkpoint_code = _CHECKPOINT_TEMPLATE.format(checkpoint_dir=checkpoint_dir)
 
-    call_section = f"""\
+    if collect_page_signals:
+        call_section = _build_call_section_with_signals()
+    else:
+        call_section = _build_call_section_basic()
+
+    runner = _ENGINE_RUNNER.format(
+        url=url,
+        stealth_args=stealth_args,
+        call_section=call_section,
+    )
+
+    parts = [
+        "#!/usr/bin/env python3",
+        "# Scout engine wrapper — auto-generated, do not edit.\n",
+        _PRE_IMPORTS,
+        "from patchright.async_api import async_playwright\n",
+        "# ── Checkpoint ──\n",
+        checkpoint_code,
+        "# ── Agent Code ──\n",
+        agent_code,
+        "\n# ── Engine Runner ──\n",
+        runner,
+        "asyncio.run(_run())",
+    ]
+    return "\n".join(parts) + "\n"
+
+
+def _build_call_section_basic() -> str:
+    """Build the call section without signal collection (default)."""
+    return f"""\
             # Create checkpoint closure: agent calls checkpoint("label"),
             # wrapper injects page automatically.
             async def checkpoint(label, data_preview=None):
@@ -170,26 +218,112 @@ def generate_subprocess_wrapper(
             print(rv_json)
             print("{RETURN_VALUE_END}")"""
 
-    runner = _ENGINE_RUNNER.format(
-        url=url,
-        stealth_args=stealth_args,
-        call_section=call_section,
-    )
 
-    parts = [
-        "#!/usr/bin/env python3",
-        "# Scout engine wrapper — auto-generated, do not edit.\n",
-        _PRE_IMPORTS,
-        "from patchright.async_api import async_playwright\n",
-        "# ── Checkpoint ──\n",
-        checkpoint_code,
-        "# ── Agent Code ──\n",
-        agent_code,
-        "\n# ── Engine Runner ──\n",
-        runner,
-        "asyncio.run(_run())",
-    ]
-    return "\n".join(parts) + "\n"
+def _build_call_section_with_signals() -> str:
+    """Build the call section with page signal collection (auto-fix §6/§7).
+
+    Collects page signals (URL, content, HTTP status, headers, cookies)
+    on EVERY attempt — both success and failure. Signals are needed on
+    failure for all categories, and on success for Category G (script
+    succeeded but schema validation fails later).
+
+    The initial document response from ``page.goto()`` is seeded from
+    ``_goto_response`` (captured in the engine runner template). A
+    response listener captures any subsequent document responses from
+    navigations triggered by the scrape function.
+
+    Every signal access is wrapped in try/except — the diagnostic system
+    must never crash (dev guide).
+    """
+    return f"""\
+            # Seed with the goto response (auto-fix S6).
+            # _goto_response is set by the engine runner template.
+            _doc_responses = []
+            if _goto_response is not None:
+                _doc_responses.append(_goto_response)
+
+            # Also capture subsequent document responses from the script.
+            def _on_doc_response(response):
+                try:
+                    if response.request.resource_type == "document":
+                        _doc_responses.append(response)
+                except Exception:
+                    pass
+            page.on("response", _on_doc_response)
+
+            # Create checkpoint closure.
+            async def checkpoint(label, data_preview=None):
+                await _raw_checkpoint(page, label, data_preview=data_preview)
+
+            # Run the scrape function, capturing any exception.
+            _scrape_exc = None
+            _scrape_data = None
+            try:
+                _scrape_data = await scrape(page, url, checkpoint)
+            except Exception as _exc:
+                _scrape_exc = _exc
+
+            # Collect page signals on every attempt (auto-fix S6/S7).
+            # Needed on failure for all categories, and on success
+            # for Category G (schema validation may fail later).
+            # Every access is defensive — page may be crashed/closed.
+            _signals = {{}}
+            try:
+                _signals["page_url"] = page.url
+            except Exception:
+                pass
+            try:
+                _signals["content"] = await asyncio.wait_for(
+                    page.content(), timeout=5.0,
+                )
+            except Exception:
+                pass
+            if _doc_responses:
+                _last_resp = _doc_responses[-1]
+                try:
+                    _signals["http_status"] = _last_resp.status
+                except Exception:
+                    pass
+                try:
+                    _signals["headers"] = dict(_last_resp.headers)
+                except Exception:
+                    pass
+            try:
+                _cookies = await context.cookies()
+                _signals["cookies"] = [
+                    {{"name": c["name"], "value": c.get("value", "")}}
+                    for c in _cookies
+                ]
+            except Exception:
+                pass
+            # Serialize signals between markers.
+            try:
+                _sig_json = json.dumps(_signals, ensure_ascii=False)
+                print("{PAGE_SIGNALS_START}")
+                print(_sig_json)
+                print("{PAGE_SIGNALS_END}")
+            except Exception:
+                pass
+
+            # Re-raise if the script failed.
+            if _scrape_exc is not None:
+                raise _scrape_exc
+
+            # Success — serialize return value between markers.
+            try:
+                rv_json = json.dumps(_scrape_data, ensure_ascii=False, indent=2, default=str)
+            except TypeError as exc:
+                type_name = type(_scrape_data).__name__
+                print(
+                    f"ERROR: scrape() returned type '{{type_name}}' which is not "
+                    f"JSON-serializable: {{exc}}",
+                    file=__import__('sys').stderr,
+                )
+                __import__('sys').exit(1)
+
+            print("{RETURN_VALUE_START}")
+            print(rv_json)
+            print("{RETURN_VALUE_END}")"""
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -281,6 +415,42 @@ def parse_return_value(raw_stdout: str) -> tuple[str, str | None]:
         clean_stdout = clean_stdout + "\n" + after if clean_stdout else after
 
     return clean_stdout, return_value_json
+
+
+def parse_page_signals(raw_stdout: str) -> dict[str, Any] | None:
+    """Extract page signals JSON from subprocess stdout.
+
+    Looks for the ``PAGE_SIGNALS_START/END`` markers and parses the
+    JSON between them. Returns a dict with keys like ``http_status``,
+    ``page_url``, ``content``, ``headers``, ``cookies``.
+
+    Returns ``None`` if markers are not found (e.g. old wrapper format,
+    successful execution, or signal serialization failed).
+
+    The caller converts the dict to a ``PageSignals`` dataclass.
+    """
+    start_idx = raw_stdout.find(PAGE_SIGNALS_START)
+    end_idx = raw_stdout.find(PAGE_SIGNALS_END)
+
+    if start_idx == -1 or end_idx == -1 or end_idx <= start_idx:
+        return None
+
+    signals_json = raw_stdout[
+        start_idx + len(PAGE_SIGNALS_START) : end_idx
+    ].strip()
+
+    if not signals_json:
+        return None
+
+    try:
+        signals = json.loads(signals_json)
+    except (ValueError, TypeError):
+        return None
+
+    if not isinstance(signals, dict):
+        return None
+
+    return signals
 
 
 def build_combined_output(

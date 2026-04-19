@@ -1,6 +1,7 @@
 """Scout — AI agent that writes web scraping scripts."""
 
 from .errors import (
+    ScoutAutoFixError,
     ScoutConfigError,
     ScoutError,
     ScoutGenerationError,
@@ -22,8 +23,9 @@ __all__ = [
     "List",
     "SchemaType",
     # Errors
-    "ScoutError",
+    "ScoutAutoFixError",
     "ScoutConfigError",
+    "ScoutError",
     "ScoutGenerationError",
     "ScoutSchemaError",
     "ScoutScriptError",
