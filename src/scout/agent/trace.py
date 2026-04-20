@@ -636,7 +636,9 @@ class Tracer:
             return
 
         snapshots = [json.loads(f.read_text()) for f in files]
-        report = _build_stats_report(snapshots)
+        report = _build_stats_report(
+            snapshots, self._entries, self._model,
+        )
         (self._run_dir / "history_stats.txt").write_text(report, encoding="utf-8")
 
     def _rewrite_final_trace(self) -> None:
@@ -745,7 +747,68 @@ def _fmt_ch(n: int) -> str:
     return _fmt_tok(n)
 
 
-def _build_stats_report(snapshots: list[dict]) -> str:
+_MODEL_PRICING: dict[str, dict[str, float]] = {
+    # Anthropic — prices per million tokens (USD).
+    # Cache read = 0.1× input, cache write = 1.25× input.
+    "claude-opus-4":       {"input": 15.0,  "output": 75.0, "cache_read": 1.50,  "cache_write": 18.75},
+    "claude-opus-4-5":     {"input": 5.0,   "output": 25.0, "cache_read": 0.50,  "cache_write": 6.25},
+    "claude-opus-4-6":     {"input": 5.0,   "output": 25.0, "cache_read": 0.50,  "cache_write": 6.25},
+    "claude-sonnet-4":     {"input": 3.0,   "output": 15.0, "cache_read": 0.30,  "cache_write": 3.75},
+    "claude-sonnet-4-5":   {"input": 3.0,   "output": 15.0, "cache_read": 0.30,  "cache_write": 3.75},
+    "claude-sonnet-4-6":   {"input": 3.0,   "output": 15.0, "cache_read": 0.30,  "cache_write": 3.75},
+    "claude-haiku-4-5":    {"input": 1.0,   "output": 5.0,  "cache_read": 0.10,  "cache_write": 1.25},
+    "claude-3-5-haiku":    {"input": 0.80,  "output": 4.0,  "cache_read": 0.08,  "cache_write": 1.00},
+    # OpenAI — prices per million tokens (USD).
+    # No separate cache-write fee; cache_write = input price.
+    "gpt-4o":              {"input": 2.50,  "output": 10.0, "cache_read": 1.25,  "cache_write": 2.50},
+    "gpt-4o-mini":         {"input": 0.15,  "output": 0.60, "cache_read": 0.075, "cache_write": 0.15},
+    "gpt-4.1":             {"input": 2.0,   "output": 8.0,  "cache_read": 0.50,  "cache_write": 2.0},
+    "gpt-4.1-mini":        {"input": 0.40,  "output": 1.60, "cache_read": 0.10,  "cache_write": 0.40},
+    "gpt-4.1-nano":        {"input": 0.10,  "output": 0.40, "cache_read": 0.025, "cache_write": 0.10},
+    "o1":                  {"input": 15.0,  "output": 60.0, "cache_read": 7.50,  "cache_write": 15.0},
+    "o1-mini":             {"input": 3.0,   "output": 12.0, "cache_read": 1.50,  "cache_write": 3.0},
+    "o3":                  {"input": 2.0,   "output": 8.0,  "cache_read": 0.50,  "cache_write": 2.0},
+    "o3-mini":             {"input": 1.10,  "output": 4.40, "cache_read": 0.55,  "cache_write": 1.10},
+    "o4-mini":             {"input": 1.10,  "output": 4.40, "cache_read": 0.275, "cache_write": 1.10},
+}
+
+
+def _resolve_pricing(model: str) -> dict[str, float] | None:
+    """Resolve a model string like 'anthropic:claude-sonnet-4-20250514' to pricing."""
+    # Strip provider prefix.
+    name = model.split(":", 1)[-1] if ":" in model else model
+    # Exact match first.
+    if name in _MODEL_PRICING:
+        return _MODEL_PRICING[name]
+    # Strip date suffixes (e.g. claude-sonnet-4-20250514 → claude-sonnet-4).
+    for key in sorted(_MODEL_PRICING, key=len, reverse=True):
+        if name.startswith(key):
+            return _MODEL_PRICING[key]
+    return None
+
+
+def _calc_cost(
+    pricing: dict[str, float],
+    input_tokens: int,
+    output_tokens: int,
+    cache_read_tokens: int = 0,
+    cache_create_tokens: int = 0,
+) -> float:
+    """Calculate cost in USD given per-million-token prices and token counts."""
+    m = 1_000_000
+    return (
+        (input_tokens / m) * pricing["input"]
+        + (output_tokens / m) * pricing["output"]
+        + (cache_read_tokens / m) * pricing["cache_read"]
+        + (cache_create_tokens / m) * pricing["cache_write"]
+    )
+
+
+def _build_stats_report(
+    snapshots: list[dict],
+    entries: list[_StepEntry] | None = None,
+    model: str = "",
+) -> str:
     """Build a complete plain-text statistics report from snapshot data."""
     o: list[str] = []
     w = o.append
@@ -875,6 +938,93 @@ def _build_stats_report(snapshots: list[dict]) -> str:
             w(f"  Largest jump: Turn {per_turn[max_g_idx + 1]['turn']} "
               f"(+{_fmt_tok(max(growths))} tokens)")
             w("")
+
+    # ── Cost estimate ─────────────────────────────────────────
+    pricing = _resolve_pricing(model) if model else None
+    if pricing and grand_total > 0:
+        cache_read = cu.get("total_cache_read", 0)
+        cache_create = cu.get("total_cache_create", 0)
+        # Actual input tokens billed = input - cache_read - cache_create
+        # (cache tokens are billed separately at their own rates).
+        billed_input = max(total_input - cache_read - cache_create, 0)
+        total_cost = _calc_cost(
+            pricing, billed_input, total_output, cache_read, cache_create,
+        )
+
+        w("-" * 72)
+        w("  COST ESTIMATE")
+        w("-" * 72)
+        w("")
+        model_display = model.split(":", 1)[-1] if ":" in model else model
+        w(f"  Model: {model_display}")
+        w(f"  Pricing (per 1M tokens):")
+        w(f"    Input: ${pricing['input']:.2f}  |  Output: ${pricing['output']:.2f}  "
+          f"|  Cache read: ${pricing['cache_read']:.3f}  "
+          f"|  Cache write: ${pricing['cache_write']:.2f}")
+        w("")
+        w(f"  {'Component':<25} {'Tokens':>12} {'Rate':>10} {'Cost':>10}")
+        w(f"  {'─' * 25} {'─' * 12} {'─' * 10} {'─' * 10}")
+
+        def _d(v: float, decimals: int = 4) -> str:
+            """Format a dollar amount."""
+            return f"${v:.{decimals}f}"
+
+        input_cost = (billed_input / 1_000_000) * pricing["input"]
+        output_cost = (total_output / 1_000_000) * pricing["output"]
+        cr_cost = (cache_read / 1_000_000) * pricing["cache_read"]
+        cw_cost = (cache_create / 1_000_000) * pricing["cache_write"]
+
+        w(f"  {'Input (non-cached)':<25} {_fmt_tok(billed_input):>12} "
+          f"{_d(pricing['input'], 2):>10} {_d(input_cost):>10}")
+        w(f"  {'Output':<25} {_fmt_tok(total_output):>12} "
+          f"{_d(pricing['output'], 2):>10} {_d(output_cost):>10}")
+        if cache_read:
+            w(f"  {'Cache read':<25} {_fmt_tok(cache_read):>12} "
+              f"{_d(pricing['cache_read'], 3):>10} {_d(cr_cost):>10}")
+        if cache_create:
+            w(f"  {'Cache write':<25} {_fmt_tok(cache_create):>12} "
+              f"{_d(pricing['cache_write'], 2):>10} {_d(cw_cost):>10}")
+        w(f"  {'─' * 25} {'':>12} {'':>10} {'─' * 10}")
+        w(f"  {'TOTAL':<25} {'':>12} {'':>10} {_d(total_cost):>10}")
+        w("")
+
+        # Per-turn cost breakdown.
+        if per_turn:
+            w(f"  PER-TURN COST")
+            w(f"  {'Turn':>5} {'Input':>10} {'Output':>10} "
+              f"{'CacheRd':>10} {'CacheWr':>10} {'Cost':>10}")
+            w(f"  {'─' * 5} {'─' * 10} {'─' * 10} "
+              f"{'─' * 10} {'─' * 10} {'─' * 10}")
+            cumulative_cost = 0.0
+            for t in per_turn:
+                t_cr = t.get("cache_read", 0)
+                t_cw = t.get("cache_create", 0)
+                t_inp = max(t["input_tokens"] - t_cr - t_cw, 0)
+                t_cost = _calc_cost(
+                    pricing, t_inp, t["output_tokens"], t_cr, t_cw,
+                )
+                cumulative_cost += t_cost
+                w(f"  {t['turn']:>5} {_fmt_tok(t_inp):>10} "
+                  f"{_fmt_tok(t['output_tokens']):>10} "
+                  f"{_fmt_tok(t_cr):>10} {_fmt_tok(t_cw):>10} "
+                  f"{_d(t_cost):>10}")
+            w(f"  {'─' * 5} {'':>10} {'':>10} {'':>10} {'':>10} {'─' * 10}")
+            w(f"  {'Total':>5} {'':>10} {'':>10} {'':>10} {'':>10} "
+              f"{_d(cumulative_cost):>10}")
+            w("")
+
+        # What-if: show cost for other models.
+        w(f"  COST COMPARISON (same token usage, different models)")
+        w(f"  {'Model':<30} {'Est. Cost':>10}")
+        w(f"  {'─' * 30} {'─' * 10}")
+        for alt_name in sorted(_MODEL_PRICING):
+            alt_p = _MODEL_PRICING[alt_name]
+            alt_cost = _calc_cost(
+                alt_p, billed_input, total_output, cache_read, cache_create,
+            )
+            marker = " <-- this run" if alt_p is pricing else ""
+            w(f"  {alt_name:<30} {_d(alt_cost):>10}{marker}")
+        w("")
 
     # ── Message breakdown by role ─────────────────────────────
     w("-" * 72)
@@ -1022,6 +1172,171 @@ def _build_stats_report(snapshots: list[dict]) -> str:
               f"account for 80% of the history")
             break
     w("")
+
+    # ── Tool execution summary ───────────────────────────────
+    if entries:
+        tool_results_entries = [
+            e for e in entries if e.kind == "tool_result"
+        ]
+        if tool_results_entries:
+            # Per-tool-name aggregation.
+            tool_agg: dict[str, dict] = {}
+            for e in tool_results_entries:
+                name = e.data.get("name", "?")
+                dur = e.data.get("duration_ms", 0)
+                content_len = len(e.data.get("content", ""))
+                is_err = e.data.get("is_error", False)
+                if name not in tool_agg:
+                    tool_agg[name] = {
+                        "count": 0, "total_ms": 0, "max_ms": 0,
+                        "total_chars": 0, "max_chars": 0, "errors": 0,
+                        "durations": [],
+                    }
+                a = tool_agg[name]
+                a["count"] += 1
+                a["total_ms"] += dur
+                a["max_ms"] = max(a["max_ms"], dur)
+                a["total_chars"] += content_len
+                a["max_chars"] = max(a["max_chars"], content_len)
+                a["durations"].append(dur)
+                if is_err:
+                    a["errors"] += 1
+
+            total_tool_ms = sum(a["total_ms"] for a in tool_agg.values())
+            total_tool_calls = sum(a["count"] for a in tool_agg.values())
+
+            w("-" * 72)
+            w("  TOOL EXECUTION SUMMARY")
+            w("-" * 72)
+            w("")
+            w(f"  Total tool calls: {total_tool_calls}  |  "
+              f"Total tool time: {total_tool_ms / 1000:.1f}s")
+            w("")
+            w(f"  {'Tool':<20} {'#':>4} {'Err':>4} {'Total':>8} "
+              f"{'Avg':>8} {'Max':>8} {'OutChars':>10} "
+              f"{'%Time':>7}  Bar")
+            w(f"  {'─' * 20} {'─' * 4} {'─' * 4} {'─' * 8} "
+              f"{'─' * 8} {'─' * 8} {'─' * 10} "
+              f"{'─' * 7}  {'─' * 20}")
+            for name, a in sorted(
+                tool_agg.items(), key=lambda x: -x[1]["total_ms"],
+            ):
+                avg_ms = a["total_ms"] / a["count"] if a["count"] else 0
+                err_str = str(a["errors"]) if a["errors"] else ""
+                w(f"  {name:<20} {a['count']:>4} {err_str:>4} "
+                  f"{a['total_ms'] / 1000:>7.1f}s "
+                  f"{avg_ms / 1000:>7.1f}s "
+                  f"{a['max_ms'] / 1000:>7.1f}s "
+                  f"{_fmt_ch(a['total_chars']):>10} "
+                  f"{_pct(a['total_ms'], total_tool_ms):>7}  "
+                  f"{_bar(a['total_ms'], total_tool_ms, 20)}")
+            w("")
+
+            # Top 10 slowest individual tool calls.
+            slowest = sorted(
+                tool_results_entries,
+                key=lambda e: -e.data.get("duration_ms", 0),
+            )[:10]
+            w(f"  TOP 10 SLOWEST TOOL CALLS")
+            w(f"  {'#':>3} {'Tool':<20} {'Duration':>10} "
+              f"{'Output':>10} {'Error':>6}")
+            w(f"  {'─' * 3} {'─' * 20} {'─' * 10} "
+              f"{'─' * 10} {'─' * 6}")
+            for rank, e in enumerate(slowest, 1):
+                name = e.data.get("name", "?")
+                dur = e.data.get("duration_ms", 0)
+                out_ch = len(e.data.get("content", ""))
+                is_err = "YES" if e.data.get("is_error") else ""
+                w(f"  {rank:>3} {name:<20} {dur / 1000:>9.1f}s "
+                  f"{_fmt_ch(out_ch):>10} {is_err:>6}")
+            w("")
+
+    # ── Top largest content blocks ────────────────────────────
+    # Show the biggest individual blocks in the conversation
+    # history, so you can see what's bloating context.
+    all_blocks: list[dict] = []
+    for m in messages:
+        role = m["role"]
+        for block in m["blocks"]:
+            all_blocks.append({
+                "msg_idx": m["index"],
+                "role": role,
+                "type": block.get("type", "?"),
+                "name": block.get("name", ""),
+                "chars": block.get("chars", 0),
+                "tool_use_id": block.get("tool_use_id", ""),
+            })
+    biggest_blocks = sorted(all_blocks, key=lambda b: -b["chars"])[:15]
+    if biggest_blocks:
+        w("-" * 72)
+        w("  TOP 15 LARGEST CONTENT BLOCKS")
+        w("-" * 72)
+        w("")
+        w(f"  {'#':>3} {'Msg':>4} {'Role':<10} {'Type':<24} "
+          f"{'Chars':>10} {'%':>7}  Bar")
+        w(f"  {'─' * 3} {'─' * 4} {'─' * 10} {'─' * 24} "
+          f"{'─' * 10} {'─' * 7}  {'─' * 20}")
+        for rank, b in enumerate(biggest_blocks, 1):
+            btype = b["type"]
+            if btype == "tool_use" and b["name"]:
+                btype = f"tool_use:{b['name']}"
+            elif btype == "tool_result" and b["tool_use_id"]:
+                btype = f"tool_result"
+            btype = btype[:23]
+            w(f"  {rank:>3} {b['msg_idx']:>4} {b['role']:<10} {btype:<24} "
+              f"{_fmt_ch(b['chars']):>10} "
+              f"{_pct(b['chars'], total_chars):>7}  "
+              f"{_bar(b['chars'], total_chars, 20)}")
+        w("")
+
+    # ── Show page / context management stats ──────────────────
+    if entries:
+        sp_events = [
+            e for e in entries
+            if e.kind == "system"
+            and e.data.get("event") == "show_page_analysis"
+        ]
+        if sp_events:
+            w("-" * 72)
+            w("  SHOW PAGE / CONTEXT MANAGEMENT")
+            w("-" * 72)
+            w("")
+            w(f"  show_page calls: {len(sp_events)}")
+            w("")
+            w(f"  {'#':>3} {'Sections':>9} {'Kept':>5} {'Nbr':>4} "
+              f"{'Dist':>5} {'FullChars':>10} {'Filtered':>10} "
+              f"{'Ratio':>7} {'Sim':>5} {'Var':>4}")
+            w(f"  {'─' * 3} {'─' * 9} {'─' * 5} {'─' * 4} "
+              f"{'─' * 5} {'─' * 10} {'─' * 10} "
+              f"{'─' * 7} {'─' * 5} {'─' * 4}")
+            for i, e in enumerate(sp_events, 1):
+                d = e.data
+                total_s = d.get("total_sections", 0)
+                kept = d.get("total_sections_kept", 0)
+                nbr = d.get("total_sections_neighbor", 0)
+                dist = d.get("total_sections_distant", 0)
+                orig = d.get("total_page_chars", 0)
+                filt = d.get("filtered_page_chars", 0)
+                ratio = d.get("compression_ratio", 0)
+                sim = d.get("similarity_score", 0)
+                var = d.get("variant_used", "?")
+                w(f"  {i:>3} {total_s:>9} {kept:>5} {nbr:>4} "
+                  f"{dist:>5} {_fmt_ch(orig):>10} {_fmt_ch(filt):>10} "
+                  f"{ratio:>6.2f}x {sim:>4.2f} {var:>4}")
+            total_orig = sum(
+                e.data.get("total_page_chars", 0) for e in sp_events
+            )
+            total_filt = sum(
+                e.data.get("filtered_page_chars", 0) for e in sp_events
+            )
+            if total_orig > 0:
+                savings = total_orig - total_filt
+                w("")
+                w(f"  Total page chars produced: {_fmt_ch(total_orig)}  "
+                  f"| After filtering: {_fmt_ch(total_filt)}  "
+                  f"| Saved: {_fmt_ch(savings)} "
+                  f"({savings / total_orig * 100:.0f}%)")
+            w("")
 
     # ── Heatmap ───────────────────────────────────────────────
     if messages:
