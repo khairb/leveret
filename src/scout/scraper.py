@@ -282,24 +282,28 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
     if scrape_func is None:
         raise ScoutScriptLoadError(
             f'Script "{path}" has no function named "scrape". '
-            f"The file must define: async def scrape(page, url, checkpoint). "
+            f"The file must define: async def scrape(page, start_url, checkpoint). "
             f"Fix the file or regenerate with scraper.run(regenerate=True)."
         )
 
     if not isinstance(scrape_func, ast.AsyncFunctionDef):
         raise ScoutScriptLoadError(
             f'Script "{path}" defines "scrape" as a sync function. '
-            f"It must be async: async def scrape(page, url, checkpoint). "
+            f"It must be async: async def scrape(page, start_url, checkpoint). "
             f"Fix the file or regenerate with scraper.run(regenerate=True)."
         )
 
-    # Check signature: exactly (page, url, checkpoint)
-    expected_params = ["page", "url", "checkpoint"]
+    # Check signature: exactly (page, start_url, checkpoint).
+    # Also accept the legacy (page, url, checkpoint) for backward compat.
+    _ACCEPTED_PARAMS = [
+        ["page", "start_url", "checkpoint"],
+        ["page", "url", "checkpoint"],
+    ]
     actual_params = [arg.arg for arg in scrape_func.args.args]
-    if actual_params != expected_params:
+    if actual_params not in _ACCEPTED_PARAMS:
         raise ScoutScriptLoadError(
             f'Script "{path}" has wrong signature for scrape(). '
-            f"Expected: scrape(page, url, checkpoint). "
+            f"Expected: scrape(page, start_url, checkpoint). "
             f"Got: scrape({', '.join(actual_params)}). "
             f"Fix the file or regenerate with scraper.run(regenerate=True)."
         )
@@ -329,7 +333,7 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
     if not inspect.iscoroutinefunction(fn):
         raise ScoutScriptLoadError(
             f'Script "{path}": scrape is not async. '
-            f"It must be: async def scrape(page, url, checkpoint)."
+            f"It must be: async def scrape(page, start_url, checkpoint)."
         )
 
     metadata = _parse_script_metadata(source)

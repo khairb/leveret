@@ -523,7 +523,7 @@ class TestBuildFilteredOutput:
         result = build_filtered_output(sections, referenced)
 
         for sid, content in sections:
-            assert f"[{sid}] ──" in result
+            assert f"[{sid}]" in result
             assert content in result
         assert "omitted" not in result
 
@@ -542,17 +542,18 @@ class TestBuildFilteredOutput:
         # Distant before neighbors: sections 0,1,2 → [3 sections omitted]
         assert "[3 sections omitted]" in result
 
-        # Neighbors before kept: sections 3,4,5
+        # Neighbors before kept: sections 3,4,5 (header + [omitted])
         for i in (3, 4, 5):
-            assert f"[section-{i} — omitted]" in result
+            assert f"[section-{i}]" in result
+            assert "[omitted]" in result
 
         # Kept section: section-6
-        assert "[section-6] ──" in result
+        assert "[section-6]" in result
         assert "Content of section 6" in result
 
         # Neighbors after kept: sections 7,8,9
         for i in (7, 8, 9):
-            assert f"[section-{i} — omitted]" in result
+            assert f"[section-{i}]" in result
 
         # Distant after neighbors: sections 10,11 → [2 sections omitted]
         assert "[2 sections omitted]" in result
@@ -564,12 +565,12 @@ class TestBuildFilteredOutput:
         result = build_filtered_output(sections, referenced)
 
         # Both kept sections present with full content
-        assert "[section-4] ──" in result
-        assert "[section-5] ──" in result
+        assert "Content of section 4" in result
+        assert "Content of section 5" in result
 
         # Neighbors: sections 1,2,3 (before) and 6,7,8 (after)
         for i in (1, 2, 3, 6, 7, 8):
-            assert f"[section-{i} — omitted]" in result
+            assert f"[section-{i}]" in result
 
         # Distant: section 0 before, section 9 after
         # Section 0 is distant (outside radius of section-4)
@@ -582,11 +583,12 @@ class TestBuildFilteredOutput:
         result = build_filtered_output(sections, referenced)
 
         # Kept section
-        assert "[section-0] ──" in result
+        assert "[section-0]" in result
+        assert "Content of section 0" in result
 
         # Neighbors: 1, 2, 3
         for i in (1, 2, 3):
-            assert f"[section-{i} — omitted]" in result
+            assert f"[section-{i}]" in result
 
         # Distant: sections 4..7
         assert "[4 sections omitted]" in result
@@ -605,10 +607,11 @@ class TestBuildFilteredOutput:
 
         # Neighbors: 4, 5, 6
         for i in (4, 5, 6):
-            assert f"[section-{i} — omitted]" in result
+            assert f"[section-{i}]" in result
 
         # Kept section
-        assert "[section-7] ──" in result
+        assert "[section-7]" in result
+        assert "Content of section 7" in result
 
     def test_block_separator_is_double_newline(self):
         """Blocks are joined with \\n\\n."""
@@ -620,11 +623,18 @@ class TestBuildFilteredOutput:
         assert len(blocks) == 3
 
     def test_kept_section_format(self):
-        """Kept section uses [id] ──\\ncontent\\n── format."""
+        """Kept section uses --- [id] role (N interactive) --- header."""
         sections = [("my-section", "Hello world")]
         referenced = {"my-section"}
         result = build_filtered_output(sections, referenced)
-        assert result == "[my-section] ──\nHello world\n──"
+        assert result == "--- [my-section] content (0 interactive) ---\nHello world"
+
+    def test_kept_section_format_with_metadata(self):
+        """Kept section with role/count uses full header."""
+        sections = [("nav-main", "Home About Contact", "navigation", 3)]
+        referenced = {"nav-main"}
+        result = build_filtered_output(sections, referenced)
+        assert result == "--- [nav-main] navigation (3 interactive) ---\nHome About Contact"
 
     def test_empty_sections_list(self):
         """Empty sections list → empty output."""
@@ -641,12 +651,12 @@ class TestBuildFilteredOutput:
         assert "[3 sections omitted]" in result
 
         # Neighbors: only 3 and 5
-        assert "[section-3 — omitted]" in result
-        assert "[section-5 — omitted]" in result
+        assert "[section-3]" in result
+        assert "[section-5]" in result
 
-        # Sections 1,2 should NOT be neighbors
-        assert "[section-1 — omitted]" not in result
-        assert "[section-2 — omitted]" not in result
+        # Sections 1,2 should NOT be neighbors (they're in the distant block)
+        assert "[section-1]" not in result
+        assert "[section-2]" not in result
 
         # Distant after: sections 6,7
         assert "[2 sections omitted]" in result

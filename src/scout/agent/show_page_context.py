@@ -397,57 +397,87 @@ def get_referenced_sections(
 # Filtered output builder
 # ---------------------------------------------------------------------------
 
+def _section_header(
+    section_id: str,
+    semantic_role: str = "",
+    interactive_count: int = 0,
+) -> str:
+    """Build a section header matching ``_format_page_view`` style.
+
+    ``--- [section-id] role (N interactive) ---``
+    """
+    role = semantic_role or "content"
+    return (
+        f"--- [{section_id}] {role} "
+        f"({interactive_count} interactive) ---"
+    )
+
+
 def build_filtered_output(
-    sections: list[tuple[str, str]],
+    sections: list[tuple[str, str]] | list[tuple[str, str, str, int]],
     referenced: set[str],
     neighbor_radius: int = NEIGHBOR_RADIUS,
+    page_header: str | None = None,
 ) -> str:
     """Build filtered show_page output with neighbor-aware omission.
 
     Classifies each section into one of three tiers:
 
-    - **Kept** — section ID is in *referenced*.  Full content is emitted
-      wrapped in ``[section-id] ──\\n{content}\\n──``.
+    - **Kept** — section ID is in *referenced*.  Full header + content.
     - **Neighbor** — within *neighbor_radius* positions of a kept section.
-      Emitted as ``[section-id — omitted]`` (ID only, no content).
+      Emitted as header only (no content).
     - **Distant** — everything else.  Consecutive distant sections are
       accumulated and flushed as ``[N sections omitted]``.
 
     Blocks are joined with ``\\n\\n`` for visual separation.
 
     Args:
-        sections: ``(section_id, section_content)`` pairs in page order.
+        sections: Tuples of ``(id, content)`` or
+            ``(id, content, semantic_role, interactive_count)``.
         referenced: Set of section IDs the agent referenced.
         neighbor_radius: How many positions around a kept section count
             as neighbors.  Defaults to :data:`NEIGHBOR_RADIUS`.
+        page_header: Optional page header line (e.g.
+            ``=== Page State #5 | https://... ===``).  When provided it
+            is prepended so the URL is never lost after filtering.
 
     Returns:
         The filtered output string.
     """
-    kept_indices = {i for i, (sid, _) in enumerate(sections) if sid in referenced}
+    # Normalise to 4-tuples: (id, content, role, interactive_count).
+    normalised: list[tuple[str, str, str, int]] = []
+    for entry in sections:
+        if len(entry) == 4:
+            normalised.append(entry)  # type: ignore[arg-type]
+        else:
+            normalised.append((entry[0], entry[1], "", 0))
+
+    kept_indices = {i for i, (sid, *_) in enumerate(normalised) if sid in referenced}
 
     neighbor_indices: set[int] = set()
     for ki in kept_indices:
         for offset in range(-neighbor_radius, neighbor_radius + 1):
             idx = ki + offset
-            if 0 <= idx < len(sections) and idx not in kept_indices:
+            if 0 <= idx < len(normalised) and idx not in kept_indices:
                 neighbor_indices.add(idx)
 
     blocks: list[str] = []
     distant_count = 0
 
-    for i, (section_id, section_content) in enumerate(sections):
+    for i, (section_id, section_content, role, i_count) in enumerate(normalised):
         if i in kept_indices:
             if distant_count > 0:
                 blocks.append(f"[{distant_count} sections omitted]")
                 distant_count = 0
-            blocks.append(f"[{section_id}] ──\n{section_content}\n──")
+            header = _section_header(section_id, role, i_count)
+            blocks.append(f"{header}\n{section_content.strip()}")
 
         elif i in neighbor_indices:
             if distant_count > 0:
                 blocks.append(f"[{distant_count} sections omitted]")
                 distant_count = 0
-            blocks.append(f"[{section_id} — omitted]")
+            header = _section_header(section_id, role, i_count)
+            blocks.append(f"{header}\n[omitted]")
 
         else:
             distant_count += 1
@@ -455,7 +485,10 @@ def build_filtered_output(
     if distant_count > 0:
         blocks.append(f"[{distant_count} sections omitted]")
 
-    return "\n\n".join(blocks)
+    body = "\n\n".join(blocks)
+    if page_header:
+        return page_header + "\n\n" + body
+    return body
 
 
 # ---------------------------------------------------------------------------

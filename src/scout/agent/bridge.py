@@ -27,6 +27,8 @@ class ShowPageSectionData:
 
     section_id: str
     content: str  # section text as shown to agent
+    semantic_role: str = ""
+    interactive_count: int = 0
     interactive_elements: list[RenderedInteractiveElement] = field(
         default_factory=list,
     )
@@ -87,29 +89,10 @@ def create_show_page_function(
             print("[show_page] Page state manager not initialized yet.")
             return None
 
-        import time as _time
-        t0 = _time.monotonic()
-
         await asyncio.sleep(2)
-        t_sleep = _time.monotonic()
 
         state = await psm.capture()
-        t_capture = _time.monotonic()
-
         page_view = psm.get_page_view()
-        t_format = _time.monotonic()
-
-        # Print timing breakdown so it appears in captured stdout.
-        timings = state.capture_timings if hasattr(state, "capture_timings") else {}
-        print("__SHOW_PAGE_TIMING__")
-        print(f"  sleep:          {(t_sleep - t0) * 1000:7.0f}ms")
-        if timings:
-            for label, ms in timings.items():
-                print(f"  {label + ':':16s}{ms:7.0f}ms")
-        print(f"  capture (total):{(t_capture - t_sleep) * 1000:7.0f}ms")
-        print(f"  format_view:    {(t_format - t_capture) * 1000:7.0f}ms")
-        print(f"  show_page total:{(t_format - t0) * 1000:7.0f}ms")
-        print("__SHOW_PAGE_TIMING_END__")
 
         print("__PAGE_VIEW_START__")
         print(page_view)
@@ -122,6 +105,8 @@ def create_show_page_function(
             ShowPageSectionData(
                 section_id=s.id,
                 content=s.text,
+                semantic_role=s.semantic_role,
+                interactive_count=s.interactive_count,
                 interactive_elements=s.rendered_interactive_elements,
             )
             for s in state.sections

@@ -306,11 +306,22 @@ class AgentLoop:
                             )
                         )
                         sections_for_filter = [
-                            (s.section_id, s.content)
+                            (s.section_id, s.content,
+                             s.semantic_role, s.interactive_count)
                             for s in pending_show_page.sections
                         ]
+                        # Extract the page header line so it
+                        # survives filtering (preserves URL).
+                        pv_text = pending_show_page.text_output
+                        first_line = pv_text.split("\n", 1)[0]
+                        page_header = (
+                            first_line
+                            if first_line.startswith("===")
+                            else None
+                        )
                         filtered = build_filtered_output(
                             sections_for_filter, referenced,
+                            page_header=page_header,
                         )
                         conversation.replace_last_show_page_result(
                             filtered,
@@ -436,7 +447,7 @@ class AgentLoop:
                             script_run = (
                                 await _run_script_in_process(
                                     script,
-                                    url=url,
+                                    start_url=url,
                                     timeout=self._script_timeout,
                                     checkpoint_dir=run_dir,
                                 )
@@ -835,7 +846,8 @@ class AgentLoop:
                     "turn_status", text=status_msg,
                 )
                 console.print_turn_status(status_msg)
-                conversation.add_user_message(status_msg)
+                if step_count % 10 == 0:
+                    conversation.add_user_message(status_msg)
 
                 # Periodic debugging reminders — escalating but
                 # never aggressive.  Only appended when the agent
@@ -933,7 +945,7 @@ class AgentLoop:
                     "You cannot use any more tools. Write the "
                     "best possible scraping function now based "
                     "on everything you have learned. Respond "
-                    "with the final `async def scrape(page, url,"
+                    "with the final `async def scrape(page, start_url,"
                     " checkpoint)` function in a ```python code "
                     "block."
                 )
@@ -1203,8 +1215,8 @@ def _extract_final_script(text: str) -> str | None:
     return matches[-1].strip()
 
 
-_EXPECTED_PARAMS = ["page", "url", "checkpoint"]
-_REQUIRED_SIG = "async def scrape(page, url, checkpoint) -> JsonValue:"
+_EXPECTED_PARAMS = ["page", "start_url", "checkpoint"]
+_REQUIRED_SIG = "async def scrape(page, start_url, checkpoint) -> JsonValue:"
 
 
 def _validate_script(script: str) -> tuple[bool, str]:
@@ -1214,7 +1226,7 @@ def _validate_script(script: str) -> tuple[bool, str]:
     1. Valid Python syntax
     2. Contains a function named ``scrape``
     3. The function is async
-    4. Parameters are exactly ``(page, url, checkpoint)`` in order
+    4. Parameters are exactly ``(page, start_url, checkpoint)`` in order
 
     Returns ``(True, "")`` on success or ``(False, error_message)`` on
     the first failure.
@@ -1289,7 +1301,7 @@ async def _run_script_subprocess(
     """Run the agent's scrape function in a fresh subprocess.
 
     Generates an engine wrapper around the agent's code, launches a
-    browser, navigates to *url*, calls ``scrape(page, url, checkpoint)``,
+    browser, navigates to *url*, calls ``scrape(page, start_url, checkpoint)``,
     and captures the return value.
 
     Returns:
@@ -1384,7 +1396,7 @@ class InProcessScriptResult:
 async def _run_script_in_process(
     script: str,
     *,
-    url: str,
+    start_url: str,
     timeout: int = 600,
     checkpoint_dir: Path | None = None,
 ) -> InProcessScriptResult:
@@ -1430,7 +1442,7 @@ async def _run_script_in_process(
             else await context.new_page()
         )
         await page.set_viewport_size({"width": 1920, "height": 1080})
-        await page.goto(url, wait_until="domcontentloaded")
+        await page.goto(start_url, wait_until="domcontentloaded")
 
         # ── Build checkpoint function (same logic as wrapper) ──
         cp_start = time.time()
@@ -1518,7 +1530,7 @@ async def _run_script_in_process(
         try:
             sys.stdout = stdout_buf
             return_data = await asyncio.wait_for(
-                scrape_fn(page, url, checkpoint),
+                scrape_fn(page, start_url, checkpoint),
                 timeout=timeout,
             )
         except asyncio.TimeoutError:
@@ -1690,14 +1702,14 @@ def _emit_show_page_log(
         similarity_score = 0.0  # First page, no baseline.
 
     # Section ID mentions vs element matches.
-    all_section_ids = [sid for sid, _ in sections_for_filter]
+    all_section_ids = [s[0] for s in sections_for_filter]
     id_mentioned = get_sections_by_id(reasoning, all_section_ids)
     element_matched_sections = referenced - id_mentioned
 
     # Compute kept / neighbor / distant counts.
     kept_indices = {
-        i for i, (sid, _) in enumerate(sections_for_filter)
-        if sid in referenced
+        i for i, s in enumerate(sections_for_filter)
+        if s[0] in referenced
     }
     neighbor_indices: set[int] = set()
     for ki in kept_indices:

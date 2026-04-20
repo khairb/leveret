@@ -1,6 +1,6 @@
 """Engine wrapper generation for the structured function format.
 
-The agent writes ``async def scrape(page, url, checkpoint) -> JsonValue``.
+The agent writes ``async def scrape(page, start_url, checkpoint) -> JsonValue``.
 This module generates:
 
 1. A subprocess wrapper that launches a browser, calls the function,
@@ -104,7 +104,7 @@ async def _raw_checkpoint(page, label, *, data_preview=None):
 
 _ENGINE_RUNNER = """\
 async def _run():
-    url = {url!r}
+    start_url = {url!r}
     profile_dir = tempfile.mkdtemp(prefix="scraper_profile_")
     try:
         async with async_playwright() as p:
@@ -120,7 +120,7 @@ async def _run():
             )
             page = context.pages[0] if context.pages else await context.new_page()
             await page.set_viewport_size({{"width": 1920, "height": 1080}})
-            _goto_response = await page.goto(url, wait_until="domcontentloaded")
+            _goto_response = await page.goto(start_url, wait_until="domcontentloaded")
 
 {call_section}
 
@@ -149,7 +149,7 @@ def generate_subprocess_wrapper(
     - Defines an inline checkpoint function
     - Launches a browser with production defaults
     - Navigates to the URL
-    - Calls ``scrape(page, url, checkpoint)``
+    - Calls ``scrape(page, start_url, checkpoint)``
     - Serializes the return value between markers
 
     Args:
@@ -200,7 +200,7 @@ def _build_call_section_basic() -> str:
             async def checkpoint(label, data_preview=None):
                 await _raw_checkpoint(page, label, data_preview=data_preview)
 
-            data = await scrape(page, url, checkpoint)
+            data = await scrape(page, start_url, checkpoint)
 
             # Serialize return value between markers.
             try:
@@ -259,7 +259,7 @@ def _build_call_section_with_signals() -> str:
             _scrape_exc = None
             _scrape_data = None
             try:
-                _scrape_data = await scrape(page, url, checkpoint)
+                _scrape_data = await scrape(page, start_url, checkpoint)
             except Exception as _exc:
                 _scrape_exc = _exc
 
@@ -345,7 +345,7 @@ def generate_standalone_script(
     safe_task = task.replace('"""', r'\"\"\"')
 
     call_section = """\
-            data = await scrape(page, url, _checkpoint)
+            data = await scrape(page, start_url, _checkpoint)
 
             print(json.dumps(data, ensure_ascii=False, indent=2, default=str))"""
 

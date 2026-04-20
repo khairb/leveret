@@ -200,7 +200,7 @@ _CHECKPOINT_GUARD_MESSAGE = (
     "see what happened.\n"
     "\n"
     "Use checkpoint as a parameter in your scrape function:\n"
-    "  async def scrape(page, url, checkpoint):\n"
+    "  async def scrape(page, start_url, checkpoint):\n"
     "      await checkpoint(\"label\")"
 )
 

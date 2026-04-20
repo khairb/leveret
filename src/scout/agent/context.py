@@ -38,7 +38,8 @@ class ConversationManager:
 
     messages: list[dict] = field(default_factory=list)
     max_messages: int = 80
-    skip_zoom_truncation: bool = True
+    skip_zoom_truncation: bool = False
+    skip_page_view_truncation: bool = False
 
     # ── Public API ────────────────────────────────────────────────
 
@@ -110,7 +111,8 @@ class ConversationManager:
         # Zoom truncation protects the just-added message so that all
         # zoom results from the current turn remain visible to the
         # agent before it gets a chance to respond.
-        _truncate_old_page_views_inplace(self.messages)
+        if not self.skip_page_view_truncation:
+            _truncate_old_page_views_inplace(self.messages)
         if not self.skip_zoom_truncation:
             _truncate_old_zoom_results_inplace(
                 self.messages, protect_last_msg=True,

@@ -188,16 +188,19 @@ text message. Briefly explain what the function does, then include the \
 complete function in a single fenced Python code block:
 
 ```python
-async def scrape(page, url, checkpoint):
-    # page: Patchright Page, already navigated to `url`, DOM loaded
-    # url: the starting URL
+async def scrape(page, start_url, checkpoint):
+    # page: a NEW browser page — not your exploration session. No cookies,
+    #        no dismissed popups, no navigation history.
+    # start_url: the original URL. Navigate here or to a more direct
+    #            URL if you discovered one during exploration (e.g. a
+    #            search URL with query params already filled in).
     # checkpoint: await checkpoint("label", data_preview?) to record state
     #
     # Return value must match the output schema below.
     # Raise an exception if scraping fails.
 
-    # Your scraping logic here...
-
+    await page.goto(start_url)  # or a more direct URL you discovered
+    ...
     return data
 ```
 
@@ -209,8 +212,9 @@ with it.
 
 ### What You Own vs. What the Engine Owns
 
-The engine launches the browser, navigates to the URL, and calls your \
-function with a live page. **You own everything after the initial load:**
+The engine launches a **separate browser** (not your exploration session), \
+navigates to `start_url`, and calls your function with that new page. \
+**You own everything after the initial load:**
 
 - Dismissing cookie consent, GDPR dialogs, popups
 - All navigation: pagination, detail pages, tabs, filters, "load more"
@@ -262,11 +266,14 @@ standard library modules at the top of your code block if needed.
 There is a gap between exploration and the final function that causes most \
 scraping failures. Understanding this gap is essential.
 
-**Your function runs in a clean browser session.** It must handle \
-everything from initial page load to extraction — dismissing dialogs, \
-navigating, applying filters, waiting for content. Mark key moments \
-with `await checkpoint("label")` — if something goes wrong, the \
-checkpoints show where execution diverged from expectations.
+**Your function runs in a new browser — not your exploration session.** \
+The page starts at `start_url` with no prior state, regardless of where \
+you navigated during exploration. If you explored page 3 of results, \
+your function still starts at page 1 and must navigate there itself. \
+It must handle everything from initial page load to extraction — \
+dismissing dialogs, navigating, applying filters, waiting for content. \
+Mark key moments with `await checkpoint("label")` — if something goes \
+wrong, the checkpoints show where execution diverged from expectations.
 
 **Wait for what you need, not for time.** `asyncio.sleep()` is not a loading \
 strategy — real websites load at unpredictable speeds. A 2-second sleep that \
@@ -295,10 +302,12 @@ they must satisfy — use it as your checklist.
 ## Debugging Rejected Functions
 
 When your function is rejected, do not start over. The error, output, \
-and checkpoints tell you what went wrong. The page is in the exact \
-state where your function ended or crashed — use the `python` tool to \
-investigate, fix the specific issue, verify the fix works, then \
-resubmit the corrected function.
+and checkpoints tell you what went wrong. Your `page` variable has been \
+replaced with the page from the script execution — it is in the exact \
+state where your function ended or crashed. Use the `python` tool to \
+investigate on this page, fix the specific issue, verify the fix works, \
+then resubmit the corrected function. (Note: when you resubmit, the \
+function will again run in a fresh browser from `start_url`.)
 
 ---
 
@@ -326,10 +335,10 @@ unstable classes already stripped — every class shown is safe to use.
 4. **Test before committing.** Extract a few items first to verify your \
 selectors work, then generalize to the full function.
 
-5. **Your function receives a freshly loaded page — handle cold-start.** \
-The page has been navigated to the URL but has no state: no cookies \
-accepted, no popups dismissed. Handle any consent dialogs, overlays, or \
-setup steps before extraction.
+5. **Your function receives a new page at `start_url` — handle cold-start.** \
+This is a separate browser from your exploration session. No cookies \
+accepted, no popups dismissed, no navigation done. Handle any consent \
+dialogs, overlays, or setup steps before extraction.
 
 6. **Use `page.evaluate()` with `isolated_context=True`** for JavaScript \
 extraction — this avoids bot detection.
