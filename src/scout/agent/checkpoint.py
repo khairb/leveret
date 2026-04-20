@@ -20,7 +20,10 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .bridge import ShowPageResult
 
 
 def read_checkpoints(run_dir: Path) -> list[dict]:
@@ -91,17 +94,116 @@ def format_checkpoint_summary(checkpoints: list[dict]) -> str:
 # ═══════════════════════════════════════════════════════════════
 
 
+def _build_checkpoint_page_view(
+    cp_id: str,
+    data: dict,
+) -> ShowPageResult:
+    """Build a sectioned page view from a checkpoint's stored data.
+
+    If the checkpoint has stored HTML, runs the sanitizer + sectioner to
+    produce the same format as ``show_page``.  Falls back to a single
+    section wrapping ``visible_text`` for old-format checkpoints.
+
+    Returns a :class:`ShowPageResult` ready for the filtering pipeline.
+    """
+    from .bridge import ShowPageResult, ShowPageSectionData
+    from ..page.sanitize import format_html_conservative
+    from ..page.sectioner import section_page
+
+    label = data.get("label", "?")
+    ts = data.get("timestamp_s", 0)
+    url = data.get("url", "")
+    raw_html = data.get("html", "")
+
+    header = f"=== Checkpoint {cp_id} ({label}) at {ts}s | {url} ==="
+
+    if raw_html:
+        sanitized = format_html_conservative(
+            raw_html, truncate_repeating=False,
+        )
+        sections = section_page(sanitized, None)
+    else:
+        sections = []
+
+    if sections:
+        parts: list[str] = [header, ""]
+        section_data: list[ShowPageSectionData] = []
+        for s in sections:
+            i_count = s.interactive_count
+            h = (
+                f"--- [{s.id}] {s.semantic_role} "
+                f"({i_count} interactive) ---"
+            )
+            parts.append(h)
+            parts.append(s.text)
+            parts.append("")
+            section_data.append(
+                ShowPageSectionData(
+                    section_id=s.id,
+                    content=s.text,
+                    semantic_role=s.semantic_role,
+                    interactive_count=i_count,
+                ),
+            )
+        text_output = "\n".join(parts).rstrip()
+        raw_text = "\n".join(s.text for s in sections)
+    else:
+        # Fallback: wrap visible_text as a single section.
+        visible_text = data.get("visible_text", "")
+        fallback_id = f"checkpoint-{cp_id.lower()}"
+        h = f"--- [{fallback_id}] content (0 interactive) ---"
+        text_output = f"{header}\n\n{h}\n{visible_text}".rstrip()
+        raw_text = visible_text
+        section_data = [
+            ShowPageSectionData(
+                section_id=fallback_id,
+                content=visible_text,
+            ),
+        ]
+
+    # Append data_preview as a synthetic section if present.
+    preview = data.get("data_preview")
+    if preview is not None:
+        try:
+            preview_str = json.dumps(preview, indent=2, default=str)
+        except (TypeError, ValueError):
+            preview_str = str(preview)
+        preview_id = "data-preview"
+        h = f"--- [{preview_id}] data (0 interactive) ---"
+        text_output += f"\n\n{h}\n{preview_str}"
+        section_data.append(
+            ShowPageSectionData(
+                section_id=preview_id,
+                content=preview_str,
+            ),
+        )
+
+    return ShowPageResult(
+        text_output=text_output,
+        raw_text=raw_text,
+        sections=section_data,
+    )
+
+
 def create_expand_checkpoint_function(
     run_dir_ref: list[Any],
+    result_ref: list[Any],
 ) -> callable:
     """Create the ``expand_checkpoint(...)`` function for the agent's REPL.
 
-    Uses a mutable ref (single-element list) so the outer loop can point
-    it at the latest run directory after each script execution.
+    Uses mutable refs (single-element lists) so the outer loop can point
+    them at the latest state after each script execution.
+
+    The output uses the same ``__PAGE_VIEW_START__`` / ``__PAGE_VIEW_END__``
+    markers as ``show_page``, so the loop's analysis-then-filter pipeline
+    handles it automatically.
 
     Args:
         run_dir_ref: ``[None]`` initially.  Set ``run_dir_ref[0]`` to the
             :class:`Path` of the current run's checkpoint directory.
+        result_ref: Shared ``[None]`` ref — same one used by ``show_page``.
+            After expansion, ``result_ref[0]`` is set to a
+            :class:`ShowPageResult` for the filtering pipeline.
 
     Returns:
         A sync callable: ``def expand_checkpoint(*checkpoint_ids) -> None``.
@@ -135,6 +237,11 @@ def create_expand_checkpoint_function(
             )
             return None
 
+        # Build a combined ShowPageResult across all requested checkpoints.
+        all_sections: list = []
+        all_text_parts: list[str] = []
+        all_raw_parts: list[str] = []
+
         for cp_id in checkpoint_ids:
             path = run_dir / f"{cp_id}.json"
             if not path.exists():
@@ -147,32 +254,28 @@ def create_expand_checkpoint_function(
                 print(f"[expand_checkpoint] Error reading {cp_id}: {exc}")
                 continue
 
-            label = data.get("label", "?")
-            ts = data.get("timestamp_s", 0)
-            url = data.get("url", "")
-            title = data.get("title", "")
-            elems = data.get("element_count", 0)
-            text = data.get("visible_text", "")
-            preview = data.get("data_preview")
+            sp = _build_checkpoint_page_view(cp_id, data)
+            all_sections.extend(sp.sections)
+            all_text_parts.append(sp.text_output)
+            all_raw_parts.append(sp.raw_text)
 
-            print(f"\n=== Checkpoint {cp_id} ({label}) at {ts}s ===")
-            print(f"URL: {url}")
-            print(f"Title: {title}")
-            print(f"Elements: {elems}")
+        if not all_text_parts:
+            return None
 
-            if text:
-                print(f"\nPage Text:\n{text}")
-            else:
-                print("\nPage Text: (empty)")
+        combined_text = "\n\n".join(all_text_parts)
 
-            if preview is not None:
-                try:
-                    preview_str = json.dumps(preview, indent=2, default=str)
-                except (TypeError, ValueError):
-                    preview_str = str(preview)
-                print(f"\nData Preview:\n{preview_str}")
-            else:
-                print("\nData Preview: (none)")
+        # Use the same markers as show_page so the loop picks it up.
+        print("__PAGE_VIEW_START__")
+        print(combined_text)
+        print("__PAGE_VIEW_END__")
+
+        # Populate the shared sidecar ref for the filtering pipeline.
+        from .bridge import ShowPageResult
+        result_ref[0] = ShowPageResult(
+            text_output=combined_text,
+            raw_text="\n".join(all_raw_parts),
+            sections=all_sections,
+        )
 
         return None  # Prevent REPL double-print via repr()
 

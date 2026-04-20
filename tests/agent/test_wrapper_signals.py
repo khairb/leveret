@@ -124,7 +124,9 @@ class TestBasicModeBackwardCompat:
 
     def test_no_page_content_collection(self):
         code = _gen(collect_page_signals=False)
-        assert "page.content()" not in code
+        # Signal-collection page.content() uses asyncio.wait_for;
+        # checkpoint's page.content() for HTML capture is expected.
+        assert '_signals["content"]' not in code
         assert "context.cookies()" not in code
 
 

@@ -1089,6 +1089,7 @@ class AgentLoop:
         self._checkpoint_run_dir_ref: list[Any] = [None]
         expand_cp_fn = create_expand_checkpoint_function(
             self._checkpoint_run_dir_ref,
+            self._show_page_result_ref,
         )
         checkpoint_guard = create_checkpoint_guard()
         runtime.repl.inject(
@@ -1464,6 +1465,11 @@ async def _run_script_in_process(
             )
             visible_text = info.get("text", "")
             element_count = info.get("count", 0)
+            # Capture raw HTML for sectioning at expansion time.
+            try:
+                raw_html = await page.content()
+            except Exception:
+                raw_html = ""
             data = {
                 "id": cp_id,
                 "label": label,
@@ -1472,6 +1478,7 @@ async def _run_script_in_process(
                 "timestamp_s": round(elapsed, 1),
                 "element_count": element_count,
                 "visible_text": visible_text,
+                "html": raw_html,
                 "data_preview": data_preview,
             }
             os.makedirs(cp_dir, exist_ok=True)

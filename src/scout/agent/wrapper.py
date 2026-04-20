@@ -75,6 +75,12 @@ async def _raw_checkpoint(page, label, *, data_preview=None):
     visible_text = info.get("text", "")
     element_count = info.get("count", 0)
 
+    # Capture raw HTML for sectioning at expansion time.
+    try:
+        raw_html = await page.content()
+    except Exception:
+        raw_html = ""
+
     data = {{
         "id": cp_id,
         "label": label,
@@ -83,6 +89,7 @@ async def _raw_checkpoint(page, label, *, data_preview=None):
         "timestamp_s": round(elapsed, 1),
         "element_count": element_count,
         "visible_text": visible_text,
+        "html": raw_html,
         "data_preview": data_preview,
     }}
     os.makedirs(_CP_DIR, exist_ok=True)
