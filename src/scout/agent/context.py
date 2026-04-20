@@ -3,10 +3,15 @@
 Page-view context is managed by the show_page 4-phase pipeline
 (see ``show_page_context.py``).  Old page views beyond the most recent
 two are truncated in-place to keep history compact.
+
+Zoom-section results use a similar truncation scheme: the last two
+zoom outputs are kept intact; older ones are replaced with a compact
+stub listing which sections were zoomed.
 """
 
 from __future__ import annotations
 
+import re as _re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -15,6 +20,11 @@ _PAGE_VIEW_START = "__PAGE_VIEW_START__"
 _PAGE_VIEW_END = "__PAGE_VIEW_END__"
 _KEEP_RECENT_PAGE_VIEWS = 2
 _KEEP_LINES = 10  # first N and last N lines to preserve
+
+# ── Zoom-section truncation constants ──────────────────────────
+_ZOOM_START = "__ZOOM_START__"
+_ZOOM_END = "__ZOOM_END__"
+_KEEP_RECENT_ZOOMS = 2
 
 
 
@@ -28,6 +38,7 @@ class ConversationManager:
 
     messages: list[dict] = field(default_factory=list)
     max_messages: int = 80
+    skip_zoom_truncation: bool = True
 
     # ── Public API ────────────────────────────────────────────────
 
@@ -94,9 +105,16 @@ class ConversationManager:
                 ``{"type": "tool_result", "tool_use_id": ..., "content": ...}``
         """
         self.messages.append({"role": "user", "content": results})
-        # Truncate old page views whenever new tool results arrive —
-        # this is the only entry point for new page views.
+        # Truncate old page views and zoom results whenever new tool
+        # results arrive — this is the only entry point for new content.
+        # Zoom truncation protects the just-added message so that all
+        # zoom results from the current turn remain visible to the
+        # agent before it gets a chance to respond.
         _truncate_old_page_views_inplace(self.messages)
+        if not self.skip_zoom_truncation:
+            _truncate_old_zoom_results_inplace(
+                self.messages, protect_last_msg=True,
+            )
         self._trim_if_needed()
 
     def replace_last_show_page_result(self, filtered_content: str) -> None:
@@ -229,3 +247,110 @@ def _truncate_old_page_views_inplace(messages: list[dict]) -> None:
         )
 
 
+# ═══════════════════════════════════════════════════════════════
+#  Zoom-Result Truncation
+# ═══════════════════════════════════════════════════════════════
+
+# Regex to parse the zoom start marker and extract section IDs.
+# Format: __ZOOM_START__|section-id-1, section-id-2|
+_ZOOM_START_RE = _re.compile(
+    r"__ZOOM_START__\|([^|]*)\|"
+)
+
+
+def _truncate_old_zoom_results_inplace(
+    messages: list[dict],
+    *,
+    protect_last_msg: bool = False,
+) -> None:
+    """Truncate old zoom_section results in-place, keeping the last N.
+
+    Scans all tool_result blocks for ``__ZOOM_START__`` /
+    ``__ZOOM_END__`` markers.  The most recent
+    ``_KEEP_RECENT_ZOOMS`` are left untouched.  Older ones are
+    replaced with a compact stub listing the zoomed section IDs
+    and total line count.
+
+    A single tool_result can contain multiple zoom blocks (if the
+    agent called ``zoom_section`` more than once in one code
+    execution).  Each block is tracked independently.
+
+    Args:
+        messages: The conversation message list (modified in-place).
+        protect_last_msg: When ``True``, the last message in *messages*
+            is excluded from scanning **and** from the keep/truncate
+            decision.  This prevents zoom results from the current
+            turn from being truncated before the agent has a chance
+            to read them.
+
+    Modifies *messages* in-place.
+    """
+    # ── 1. Locate every zoom block ────────────────────────────
+    # Each entry is (msg_idx, block_idx, char_offset_of_start_marker).
+    locations: list[tuple[int, int, int]] = []
+
+    scan_end = len(messages) - 1 if protect_last_msg else len(messages)
+    for i in range(scan_end):
+        msg = messages[i]
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        for j, block in enumerate(content):
+            if (
+                block.get("type") != "tool_result"
+                or not isinstance(block.get("content"), str)
+            ):
+                continue
+            text: str = block["content"]
+            # Find ALL zoom blocks within this tool result.
+            search_from = 0
+            while True:
+                start = text.find(_ZOOM_START, search_from)
+                if start < 0:
+                    break
+                end = text.find(_ZOOM_END, start)
+                if end < 0:
+                    break
+                locations.append((i, j, start))
+                search_from = end + len(_ZOOM_END)
+
+    # ── 2. Nothing to truncate? ───────────────────────────────
+    if len(locations) <= _KEEP_RECENT_ZOOMS:
+        return
+
+    to_truncate = locations[:-_KEEP_RECENT_ZOOMS]
+
+    # Process in reverse order so that character offsets remain
+    # valid when multiple blocks live in the same tool result.
+    for msg_idx, block_idx, start_offset in reversed(to_truncate):
+        block = messages[msg_idx]["content"][block_idx]
+        text = block["content"]
+
+        start_pos = start_offset
+        end_pos = text.find(_ZOOM_END, start_pos)
+
+        # Extract section IDs from the start marker.
+        m = _ZOOM_START_RE.search(text, start_pos)
+        section_ids = m.group(1).strip() if m else "unknown"
+
+        # Count lines in the zoom output for the stub message.
+        first_nl = text.find("\n", start_pos)
+        zoom_content = text[first_nl + 1:end_pos] if first_nl >= 0 else ""
+        line_count = zoom_content.count("\n") + 1
+
+        stub = (
+            f"[Zoom output for sections: {section_ids} — "
+            f"{line_count} lines of HTML truncated. "
+            f"Call zoom_section(page, \"section-id\") again "
+            f"to inspect current HTML structure.]"
+        )
+
+        # Preserve the pipe-delimited section IDs in the start
+        # marker so that re-truncation remains idempotent.
+        block["content"] = (
+            text[:start_pos]
+            + f"{_ZOOM_START}|{section_ids}|\n"
+            + stub + "\n"
+            + _ZOOM_END
+            + text[end_pos + len(_ZOOM_END):]
+        )

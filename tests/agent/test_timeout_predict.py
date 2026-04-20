@@ -95,7 +95,7 @@ class TestSingleCalls:
         assert t == BASELINE
 
     def test_asyncio_sleep(self):
-        t = _t("await asyncio.sleep(5)")
+        t = _t("await asyncio.sleep(2)")
         # 5s * 1.2 = 6 → baseline
         assert t == BASELINE
 

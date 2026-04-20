@@ -46,7 +46,7 @@ from .wrapper import (
     generate_subprocess_wrapper,
     parse_return_value,
 )
-from .context import ConversationManager, _PAGE_VIEW_START
+from .context import ConversationManager, _PAGE_VIEW_START, _ZOOM_START
 from .bridge import (
     ShowPageResult,
     create_post_exec_hook,
@@ -60,7 +60,10 @@ from .prompt import (
     build_initial_user_message,
     build_show_page_analysis_prompt_a,
     build_show_page_analysis_prompt_b,
+    build_show_page_debugging_prompt_a,
+    build_show_page_debugging_prompt_b,
     build_system_prompt,
+    build_zoom_structural_capture_prompt,
 )
 from .show_page_context import (
     NEIGHBOR_RADIUS,
@@ -227,6 +230,7 @@ class AgentLoop:
             requirements: str | None = None
             turn_number = 0
             needs_debugging = False
+            debugging_turn_count = 0  # turns since last rejection
             active_script_result: InProcessScriptResult | None = None
             exploration_page = runtime.page  # Save original page ref
             checkpoint_base_dir = Path(
@@ -237,8 +241,10 @@ class AgentLoop:
             show_page_state = ShowPageState()
             pending_show_page: ShowPageResult | None = None
             pending_is_variant_a = False
-            force_analysis_no_tools = False
             analysis_prompt_msg_index: int | None = None
+
+            # Zoom-section structural capture state.
+            zoom_prompt_msg_index: int | None = None
 
             # ── Main loop ─────────────────────────────────────
             while step_count < self._max_steps:
@@ -246,9 +252,7 @@ class AgentLoop:
                 console.print_turn_start(turn_number)
 
                 # Call the LLM.
-                current_tools = (
-                    [] if force_analysis_no_tools else TOOL_SCHEMAS
-                )
+                current_tools = TOOL_SCHEMAS
                 messages_for_api = conversation.get_messages()
                 tracer.log_llm_request(messages_for_api, current_tools)
 
@@ -337,7 +341,11 @@ class AgentLoop:
                             pending_show_page.raw_text,
                         )
                     pending_show_page = None
-                    force_analysis_no_tools = False
+
+                # Remove ephemeral zoom structural capture prompt.
+                if zoom_prompt_msg_index is not None:
+                    conversation.remove_message(zoom_prompt_msg_index)
+                    zoom_prompt_msg_index = None
 
                 # Collect tool_use blocks.
                 tool_uses = [
@@ -349,7 +357,7 @@ class AgentLoop:
                     # Check for a fenced Python code block (final function).
                     text = _extract_text(content_blocks)
                     script = _extract_final_script(text)
-                    if script and needs_debugging:
+                    if script and needs_debugging and debugging_turn_count == 0:
                         # The agent tried to resubmit without
                         # investigating.  Block it and insist on
                         # root-cause analysis first.
@@ -381,6 +389,11 @@ class AgentLoop:
                         tracer.log_script_extracted(script, valid, error_msg)
                         console.print_script_found(valid, error_msg)
                         if valid:
+                            # Agent submitted a script — clear
+                            # debugging state.
+                            needs_debugging = False
+                            debugging_turn_count = 0
+
                             # Generate requirements once (before
                             # the first validation).
                             if (
@@ -651,9 +664,11 @@ class AgentLoop:
                                 self._max_script_attempts,
                                 checkpoints=checkpoints,
                                 return_value_json=return_value_json,
+                                script_source=script,
                             )
                             conversation.add_user_message(rejection_msg)
                             needs_debugging = True
+                            debugging_turn_count = 0
                             continue
                         else:
                             # Ask the agent to fix the validation error.
@@ -675,17 +690,36 @@ class AgentLoop:
                             # is expected.  Send a brief follow-up so
                             # the conversation ends on a user message
                             # (required by the API).
-                            conversation.add_user_message(
-                                "Analysis received. Continue with "
-                                "your task."
-                            )
+                            if needs_debugging:
+                                conversation.add_user_message(
+                                    "Analysis received. Continue "
+                                    "investigating the root cause "
+                                    "of the failure."
+                                )
+                            else:
+                                conversation.add_user_message(
+                                    "Analysis received. Continue with "
+                                    "your task."
+                                )
                         else:
-                            nudge = (
-                                "Continue working. Use your tools to "
-                                "explore the page. When done, respond "
-                                "with the final scraping function in "
-                                "a ```python code block."
-                            )
+                            if needs_debugging:
+                                nudge = (
+                                    "Use the `python` tool to "
+                                    "investigate the failure — "
+                                    "try `show_page` or `zoom_section` "
+                                    "if needed. Once you understand "
+                                    "the root cause, submit "
+                                    "the corrected function in a "
+                                    "```python code block."
+                                )
+                            else:
+                                nudge = (
+                                    "Continue working. Use your tools "
+                                    "to explore the page. When done, "
+                                    "respond with the final scraping "
+                                    "function in a ```python code "
+                                    "block."
+                                )
                             tracer.log_system_event(
                                 "nudge_sent", text=nudge,
                             )
@@ -712,7 +746,8 @@ class AgentLoop:
                     step_count += 1
                     if block.name == "python":
                         python_step_count += 1
-                        needs_debugging = False
+                        if needs_debugging:
+                            debugging_turn_count += 1
 
                     console.print_tool_call(
                         block.name, block.input,
@@ -802,6 +837,22 @@ class AgentLoop:
                 console.print_turn_status(status_msg)
                 conversation.add_user_message(status_msg)
 
+                # Periodic debugging reminders — escalating but
+                # never aggressive.  Only appended when the agent
+                # is using the python tool while a rejection is
+                # still pending.
+                if needs_debugging:
+                    reminder = _debugging_reminder(
+                        debugging_turn_count,
+                    )
+                    if reminder:
+                        conversation.add_user_message(reminder)
+                        tracer.log_system_event(
+                            "debugging_reminder",
+                            turn=debugging_turn_count,
+                            text=reminder,
+                        )
+
                 # Save history snapshot for post-run analysis.
                 tracer.save_history_snapshot(
                     turn_number=turn_number,
@@ -830,22 +881,45 @@ class AgentLoop:
                             sp_result.raw_text,
                         )
                     )
-                    prompt = (
-                        build_show_page_analysis_prompt_a()
-                        if pending_is_variant_a
-                        else build_show_page_analysis_prompt_b()
-                    )
+                    if needs_debugging and pending_is_variant_a:
+                        prompt = build_show_page_debugging_prompt_a()
+                    elif needs_debugging:
+                        prompt = build_show_page_debugging_prompt_b()
+                    elif pending_is_variant_a:
+                        prompt = build_show_page_analysis_prompt_a()
+                    else:
+                        prompt = build_show_page_analysis_prompt_b()
                     conversation.add_user_message(prompt)
                     analysis_prompt_msg_index = (
                         len(conversation.messages) - 1
                     )
                     pending_show_page = sp_result
-                    if pending_is_variant_a:
-                        force_analysis_no_tools = True
                     tracer.log_system_event(
                         "show_page_phase1",
                         variant="A" if pending_is_variant_a else "B",
                     )
+
+                # ── Zoom structural capture prompt ────────────
+                # Inject a lightweight prompt when zoom_section was
+                # called, unless show_page already triggered an
+                # analysis prompt (which covers structural capture).
+                if not is_show_page_turn:
+                    is_zoom_turn = any(
+                        isinstance(tr.get("content"), str)
+                        and _ZOOM_START in tr["content"]
+                        for tr in tool_results
+                    )
+                    if is_zoom_turn:
+                        zoom_prompt = (
+                            build_zoom_structural_capture_prompt()
+                        )
+                        conversation.add_user_message(zoom_prompt)
+                        zoom_prompt_msg_index = (
+                            len(conversation.messages) - 1
+                        )
+                        tracer.log_system_event(
+                            "zoom_structural_capture",
+                        )
 
             # If we exited the loop without a script, make one
             # final LLM call with no tools available — the agent
@@ -1037,6 +1111,56 @@ class AgentLoop:
 # ═══════════════════════════════════════════════════════════════
 #  Helpers
 # ═══════════════════════════════════════════════════════════════
+
+def _debugging_reminder(turn_count: int) -> str | None:
+    """Return a periodic debugging reminder, or None if not due.
+
+    Reminders fire at turns 3, 4, 7, 8, 11, 12, … (pairs with a gap).
+    Each tier uses different wording so the model doesn't tune them out.
+    """
+    if turn_count < 3:
+        return None
+
+    # Tier boundaries: 3-4, 7-8, 11-12, ...
+    cycle = (turn_count - 3) % 4
+    if cycle >= 2:
+        # Gap turns — no reminder.
+        return None
+
+    tier = (turn_count - 3) // 4
+    reminders = [
+        # Tier 0 (turns 3-4): gentle
+        (
+            "Once you understand the root cause, write and submit "
+            "the corrected `scrape` function."
+        ),
+        (
+            "Focus on what specifically failed and why. Then submit "
+            "the fixed `scrape` function."
+        ),
+        # Tier 1 (turns 7-8): moderate
+        (
+            "You have enough context to fix the `scrape` function. "
+            "Submit the corrected version when ready."
+        ),
+        (
+            "The goal is a working `scrape` function, not a complete "
+            "manual walkthrough. Fix the issue and resubmit."
+        ),
+        # Tier 2+ (turns 11-12, 15-16, ...): direct
+        (
+            "Submit the corrected `scrape` function now — further "
+            "manual exploration is unlikely to reveal new information."
+        ),
+        (
+            "Time to write the fix. Apply what you learned and "
+            "submit the corrected `scrape` function."
+        ),
+    ]
+    # Pick from the appropriate tier, alternating within the pair.
+    idx = min(tier * 2 + cycle, len(reminders) - 1)
+    return reminders[idx]
+
 
 def _serialize_content_blocks(blocks: list) -> list[dict]:
     """Convert LLM content blocks to plain dicts for storage."""
@@ -1452,12 +1576,23 @@ def _build_rejection_message(
     max_attempts: int,
     checkpoints: list[dict] | None = None,
     return_value_json: str | None = None,
+    script_source: str | None = None,
 ) -> str:
     """Build the message sent to the agent after a function is rejected."""
     parts = [
         "## Function Rejected\n",
         f"**Feedback:** {feedback}\n",
     ]
+
+    if script_source:
+        src = script_source.strip()
+        if len(src) > 4000:
+            src = (
+                src[:2000]
+                + "\n\n... (truncated) ...\n\n"
+                + src[-2000:]
+            )
+        parts.append(f"**Your function:**\n```python\n{src}\n```\n")
 
     if stdout.strip():
         output = stdout.strip()
@@ -1498,25 +1633,21 @@ def _build_rejection_message(
 
     parts.append(
         "\n---\n\n"
-        "Do not guess at a fix. Be systematic:\n\n"
-        "`page` has been replaced with the page from the script "
-        "execution — it is in the exact state where the script ended "
-        "or crashed.\n\n"
-        "1. **Analyze** the feedback, output, return value, and "
-        "checkpoints carefully. Understand exactly what went wrong — "
-        "which part of the function failed and why.\n"
-        "2. **Inspect the page** — call `await show_page(page)` to "
-        "see the page state, `await zoom_section(page, ...)` to "
-        "inspect DOM sections, and test your selectors against "
-        "`page` to see what they actually return.\n"
-        "3. **Expand checkpoints** if you need to see the page at "
-        "earlier moments during execution: call "
-        "`expand_checkpoint(\"CP-1\")` to inspect a checkpoint.\n"
-        "4. **Verify your fix** before writing the final function. Test "
-        "the corrected logic against `page` first.\n"
-        "5. **Write the corrected function** in a ```python code block.\n\n"
-        "The function will be tested again. Make sure your fix "
-        "addresses the feedback."
+        "Read the error and your function to understand what went "
+        "wrong. `page` is in the state where your function ended or "
+        "crashed — you can inspect it directly with the `python` "
+        "tool.\n\n"
+        "Call `await show_page(page)` to see what the page looks "
+        "like at the point of failure — this reveals whether the "
+        "expected elements are present or whether the page is in an "
+        "unexpected state. Call `await zoom_section(page, ...)` to "
+        "inspect the actual HTML structure of specific sections. "
+        "Zoom is especially important during debugging because the "
+        "DOM may differ from what your selectors assumed — the real "
+        "attributes, nesting, and classes are only visible in the "
+        "zoom output.\n\n"
+        "Investigate the root cause, verify your fix, then submit "
+        "the corrected function in a ```python block."
     )
 
     return "\n".join(parts)

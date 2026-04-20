@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 # Similarity threshold: pages with similarity >= this value relative to
 # the last Variant A baseline are considered "same page" (Variant B).
-SIMILARITY_THRESHOLD: float = 0.7
+SIMILARITY_THRESHOLD: float = 0.8
 
 # Default neighbor radius for filtered output.
 NEIGHBOR_RADIUS: int = 3

@@ -90,7 +90,7 @@ def create_show_page_function(
         import time as _time
         t0 = _time.monotonic()
 
-        await asyncio.sleep(5)
+        await asyncio.sleep(2)
         t_sleep = _time.monotonic()
 
         state = await psm.capture()
@@ -167,7 +167,10 @@ def create_zoom_section_function(psm_ref: list[Any]) -> callable:
             return None
 
         html = psm.zoom_in(*section_ids)
+        ids_label = ", ".join(section_ids)
+        print(f"__ZOOM_START__|{ids_label}|")
         print(html)
+        print("__ZOOM_END__")
         return None  # Prevent REPL double-print via repr()
 
     return zoom_section

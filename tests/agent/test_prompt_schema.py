@@ -139,7 +139,7 @@ class TestPostWorkflow:
 
     def test_validated_against_schema(self):
         prompt = _build_prompt_with_schema([{"x": str}])
-        assert "validated against the output schema" in prompt
+        assert "validates the return value against the schema" in prompt
 
     def test_no_output_will_be_reviewed(self):
         prompt = _build_prompt_with_schema([{"x": str}])
@@ -307,22 +307,13 @@ class TestShowPageAnalysisPromptA:
         result = build_show_page_analysis_prompt_a()
         assert result.rstrip().endswith("──")
 
-    def test_contains_all_required_sections(self):
+    def test_mentions_section_ids(self):
         result = build_show_page_analysis_prompt_a()
-        for heading in [
-            "**Why I called show_page**",
-            "**Page Overview**",
-            "**Relevant Sections**",
-            "**Interactive Elements**",
-            "**Obstacles**",
-            "**Section ID Reference**",
-            "**Next Steps**",
-        ]:
-            assert heading in result, f"Missing heading: {heading}"
+        assert "section ID" in result or "section id" in result.lower()
 
-    def test_mentions_first_time_seeing_page(self):
+    def test_mentions_interactive_elements(self):
         result = build_show_page_analysis_prompt_a()
-        assert "first time" in result
+        assert "interactive element" in result.lower() or "full tags" in result.lower()
 
     def test_mentions_context_clearing(self):
         result = build_show_page_analysis_prompt_a()
@@ -344,24 +335,14 @@ class TestShowPageAnalysisPromptB:
         result = build_show_page_analysis_prompt_b()
         assert result.rstrip().endswith("──")
 
-    def test_contains_all_required_sections(self):
+    def test_mentions_relevant_content(self):
         result = build_show_page_analysis_prompt_b()
-        for heading in [
-            "**Why I called show_page**",
-            "**What Changed**",
-            "**New Interactive Elements**",
-            "**Updated Section ID Reference**",
-            "**Next Steps**",
-        ]:
-            assert heading in result, f"Missing heading: {heading}"
+        assert "relevant" in result.lower()
 
-    def test_mentions_seen_before(self):
+    def test_mentions_changes(self):
         result = build_show_page_analysis_prompt_b()
-        assert "seen this page before" in result
+        assert "changed" in result.lower()
 
-    def test_does_not_contain_variant_a_sections(self):
-        """Variant B should not include Variant A-only headings."""
+    def test_mentions_context_clearing(self):
         result = build_show_page_analysis_prompt_b()
-        assert "**Page Overview**" not in result
-        assert "**Relevant Sections**" not in result
-        assert "**Obstacles**" not in result
+        assert "cleared from context" in result

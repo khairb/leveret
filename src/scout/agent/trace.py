@@ -329,8 +329,10 @@ class Tracer:
 
         elapsed = time.time() - self._start_time
 
-        # Build per-message metadata without storing full content
-        # (content can be huge — we store sizes and types).
+        # Build per-message metadata AND store full content for
+        # debugging.  The block-level stats (types, sizes) are kept
+        # for the history_stats report; the raw content is added so
+        # snapshots can be inspected directly.
         message_stats = []
         for idx, msg in enumerate(messages):
             role = msg.get("role", "?")
@@ -385,10 +387,11 @@ class Tracer:
                 "index": idx,
                 "role": role,
                 "chars": char_count,
-                "estimated_tokens": char_count // 4,  # rough approximation
+                "estimated_tokens": char_count // 4,
                 "content_types": list(set(content_types)),
                 "block_count": len(block_details),
                 "blocks": block_details,
+                "content": content,
             })
 
         # Aggregate LLM usage from trace entries up to this turn.
@@ -431,7 +434,10 @@ class Tracer:
         }
 
         path = snap_dir / f"turn_{turn_number:03d}.json"
-        path.write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
+        path.write_text(
+            json.dumps(snapshot, indent=2, default=str),
+            encoding="utf-8",
+        )
 
     # ── Internal ──────────────────────────────────────────────
 

@@ -114,9 +114,6 @@ Follow these phases:
 - **Think out loud**: state what you see — where is the target data? Which \
 sections contain it? What interactive elements are relevant (forms, \
 pagination, tabs, filters)?
-- **Handle overlays first.** If you see cookie consent banners, GDPR dialogs, \
-newsletter popups, or any overlay — dismiss them before doing anything else. \
-These will block interaction in a fresh browser session.
 - **Zoom into every section you will work with** — data sections you will \
 extract from, pagination controls you will click, forms you will fill, \
 filters you will toggle. Study the HTML structure of each before writing \
@@ -260,35 +257,16 @@ standard library modules at the top of your code block if needed.
 
 ---
 
-Your function will be executed automatically in a fresh browser. The \
-return value will be validated against the output schema. If validation \
-fails or the function is rejected with feedback, analyze the errors \
-carefully, use your Python environment to investigate and test fixes, \
-then write the corrected function. Do not guess — be systematic. \
-Understand the root cause before writing the fix.
-
----
-
 ## Writing Robust Functions
 
 There is a gap between exploration and the final function that causes most \
 scraping failures. Understanding this gap is essential.
 
-**Your function starts from zero — replay your full journey.** Right now \
-your browser has state: dialogs dismissed, pages navigated, filters applied, \
-content loaded. The function receives a fresh page with none of that. \
-Every action you performed during exploration — from the first page load \
-to the moment you could extract data — must appear in the function, in \
-order. If you searched, the function must search. If you dismissed a \
-popup, the function must dismiss it. If you clicked a tab, the function \
-must click it. If you selected a filter or sort order, the function must \
-select it. If you scrolled to trigger lazy loading, the function must \
-scroll. Ask yourself: *"What did I do, step by step, to get the page \
-into the state where extraction works?"* That sequence of actions **is** \
-your function — the extraction logic is just the final step. Mark the \
-key moments with `await checkpoint("label")` — they are your function's \
-flight recorder. If something goes wrong, the checkpoints show exactly \
-where the journey diverged from what you expected.
+**Your function runs in a clean browser session.** It must handle \
+everything from initial page load to extraction — dismissing dialogs, \
+navigating, applying filters, waiting for content. Mark key moments \
+with `await checkpoint("label")` — if something goes wrong, the \
+checkpoints show where execution diverged from expectations.
 
 **Wait for what you need, not for time.** `asyncio.sleep()` is not a loading \
 strategy — real websites load at unpredictable speeds. A 2-second sleep that \
@@ -313,6 +291,14 @@ section again, inspect the HTML, and fix the selector before writing the \
 final function. A function with known broken extraction is not done. The \
 output schema defines exactly which fields are required and what constraints \
 they must satisfy — use it as your checklist.
+
+## Debugging Rejected Functions
+
+When your function is rejected, do not start over. The error, output, \
+and checkpoints tell you what went wrong. The page is in the exact \
+state where your function ended or crashed — use the `python` tool to \
+investigate, fix the specific issue, verify the fix works, then \
+resubmit the corrected function.
 
 ---
 
@@ -343,8 +329,7 @@ selectors work, then generalize to the full function.
 5. **Your function receives a freshly loaded page — handle cold-start.** \
 The page has been navigated to the URL but has no state: no cookies \
 accepted, no popups dismissed. Handle any consent dialogs, overlays, or \
-setup steps before extraction. Think: "what would a first-time visitor \
-see after the URL loads?" — your function must handle all of it.
+setup steps before extraction.
 
 6. **Use `page.evaluate()` with `isolated_context=True`** for JavaScript \
 extraction — this avoids bot detection.
@@ -412,59 +397,23 @@ def build_show_page_analysis_prompt_a() -> str:
     """Return the Variant A (full analysis) prompt for show_page.
 
     Injected after a show_page tool result when the page is new or
-    substantially different from the last analyzed page.  Tools are
-    disabled for this turn so the agent focuses on analysis.
+    substantially different from the last analyzed page.  Tools remain
+    enabled so the agent can analyze and act in the same turn.
     """
     return """\
 ── Page Analysis ──
 
-You are seeing this page for the first time. The full page content
-above will be cleared from context after this turn — your analysis
-below will be your only reference going forward.
+The full page content above will be cleared from context after this
+turn — what you write down now is what you'll have to work with.
 
-Think carefully. Everything you do not write down now, you will not
-remember later.
+For each section relevant to your task, note:
+- The section ID and what it contains
+- Why it matters for your goal
+- Interactive elements you may need — copy the full tags as shown
+  (e.g., <button aria-label="Next" type="button">); you'll need
+  the exact attributes for selectors later
 
-**Why I called show_page**
-State why you navigated here or what action you expected to see
-reflected. This frames your analysis.
-
-**Page Overview**
-Describe the overall page: what type of page is this, what is its
-layout, and what URL are you on.
-
-**Relevant Sections**
-For each part of the page that is relevant to your task, write:
-- What the section contains and why it matters
-- The section ID(s) to zoom into later
-- If there are repeated items of the same type, describe one example
-  and note the total count — don't list every instance
-
-**Interactive Elements**
-For every button, input, link, or control you may need to use, write:
-- The FULL tag exactly as shown in the page content above (e.g.,
-  <button aria-label="Weiter" type="button">)
-- What this element does or what it is for
-- Which section it is located in (section ID)
-Do not summarize or shorten the tags. Copy them exactly — you will
-use these to build selectors later.
-
-**Obstacles**
-Note any overlays, modals, or banners that may block interaction.
-If none, write "None."
-
-**Section ID Reference**
-List the section IDs you will need to zoom into, one per line, with
-a short note on what you expect to find in each:
-  [section-id] — what to look for
-
-**Next Steps**
-This is the most important part of your analysis. Everything above
-was preparation — now use it. This is your reasoning space: connect
-what you've documented to your goal and think through what to do
-next. Not a checklist of future steps, but real strategic reasoning —
-what matters most right now, why, and how you'll approach it.
-The quality of your thinking here directly shapes your next actions.
+Then reason about your current situation and plan your next move.
 
 ──"""
 
@@ -478,38 +427,79 @@ def build_show_page_analysis_prompt_b() -> str:
     return """\
 ── Page Update ──
 
-You have seen this page before. The page content above shows the
-current state after your last action. It will be cleared from context
-after this turn.
+The page content above will be cleared from context after this turn.
+Note what is relevant and what changed:
+- Relevant sections and their IDs
+- New interactive elements — copy full tags as shown
+- Relevant changes that affect your approach
 
-Think carefully. Everything you do not write down now, you will not
-remember later.
+──"""
 
-**Why I called show_page**
-State what action you just performed and what you expected to change.
 
-**What Changed**
-Compare the current page to your previous analysis:
-- New or removed sections — note their section IDs
-- Changed content within existing sections
-- If nothing meaningful changed, say so
+def build_show_page_debugging_prompt_a() -> str:
+    """Return the Variant A show_page prompt during debugging.
 
-**New Interactive Elements**
-If any new buttons, inputs, links, or controls appeared, write their
-full tags exactly as shown, what they do, and which section they are
-in. If no new interactive elements, write "None."
+    Full analysis like regular Variant A, but the closing line
+    orients the agent toward diagnosing the failure and resubmitting.
+    """
+    return """\
+── Page Analysis (debugging) ──
 
-**Updated Section ID Reference**
-List any new section IDs you will need to zoom into:
-  [section-id] — what to look for
-If your previous reference is still valid, write "No changes."
+The full page content above will be cleared from context after this
+turn — what you write down now is what you'll have to work with.
 
-**Next Steps**
-This is the most important part of your analysis. This is your
-reasoning space: assess where things stand, connect it to your goal,
-and think through your next move. Not a checklist, but real strategic
-reasoning — what matters most now, why, and how you'll approach it.
-The quality of your thinking here directly shapes your next actions.
+For each section relevant to your task, note:
+- The section ID and what it contains
+- Why it matters for your goal
+- Interactive elements you may need — copy the full tags as shown
+  (e.g., <button aria-label="Next" type="button">); you'll need
+  the exact attributes for selectors later
+
+Then reason about what this tells you about the failure and how
+to fix your function.
+
+──"""
+
+
+def build_show_page_debugging_prompt_b() -> str:
+    """Return the Variant B show_page prompt during debugging.
+
+    Lighter update like regular Variant B, with a brief reminder
+    of the debugging goal.
+    """
+    return """\
+── Page Update (debugging) ──
+
+The page content above will be cleared from context after this turn.
+Note what is relevant and what changed:
+- Relevant sections and their IDs
+- New interactive elements — copy full tags as shown
+- Relevant changes that affect your diagnosis
+
+Identify the cause and the fix.
+
+──"""
+
+
+def build_zoom_structural_capture_prompt() -> str:
+    """Return the lightweight structural capture prompt for zoom_section.
+
+    Injected after a zoom_section tool result to guide the agent to
+    write down key structural findings before the zoom HTML is truncated
+    from context.  Tools remain enabled — no extra turn is forced.
+    """
+    return """\
+── Structural Capture ──
+
+You just inspected section HTML with zoom_section. Before coding,
+briefly note the key structural findings:
+- **Selectors**: data-testid values, aria-labels, IDs, stable classes
+- **Structure**: tag nesting pattern (what wraps what)
+- **Patterns**: repeating structures, conditional elements
+
+Be specific — write the actual attribute values you will use as
+selectors. This zoom output will be cleared from context in a few
+turns. Your notes here will be your lasting reference.
 
 ──"""
 
