@@ -188,6 +188,7 @@ def _build_checkpoint_page_view(
 def create_expand_checkpoint_function(
     run_dir_ref: list[Any],
     result_ref: list[Any],
+    turn_ref: list[int] | None = None,
 ) -> callable:
     """Create the ``expand_checkpoint(...)`` function for the agent's REPL.
 
@@ -204,6 +205,9 @@ def create_expand_checkpoint_function(
         result_ref: Shared ``[None]`` ref — same one used by ``show_page``.
             After expansion, ``result_ref[0]`` is set to a
             :class:`ShowPageResult` for the filtering pipeline.
+        turn_ref: A single-element list holding the current turn number.
+            Used to embed a ``__TURN_N__`` tag in the output for
+            turn-based stub collapse.
 
     Returns:
         A sync callable: ``def expand_checkpoint(*checkpoint_ids) -> None``.
@@ -265,7 +269,10 @@ def create_expand_checkpoint_function(
         combined_text = "\n\n".join(all_text_parts)
 
         # Use the same markers as show_page so the loop picks it up.
+        turn_tag = f"__TURN_{turn_ref[0]}__" if turn_ref else ""
         print("__PAGE_VIEW_START__")
+        if turn_tag:
+            print(turn_tag)
         print(combined_text)
         print("__PAGE_VIEW_END__")
 

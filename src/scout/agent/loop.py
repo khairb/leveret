@@ -249,6 +249,7 @@ class AgentLoop:
             # ── Main loop ─────────────────────────────────────
             while step_count < self._max_steps:
                 turn_number += 1
+                self._turn_ref[0] = turn_number
                 console.print_turn_start(turn_number)
 
                 # Call the LLM.
@@ -827,7 +828,7 @@ class AgentLoop:
                         **({"is_error": True} if tool_result.is_error else {}),
                     })
 
-                conversation.add_tool_results(tool_results)
+                conversation.add_tool_results(tool_results, turn=turn_number)
 
                 # Neutral turn status — inform the agent of its
                 # position without pressuring it to finish early.
@@ -1084,12 +1085,16 @@ class AgentLoop:
         # Inject show_page(page), zoom_section(page, ...), and
         # expand_checkpoint(...) into the REPL.
         self._show_page_result_ref: list[Any] = [None]
-        show_page_fn = create_show_page_function(psm_ref, self._show_page_result_ref)
-        zoom_section_fn = create_zoom_section_function(psm_ref)
+        self._turn_ref: list[int] = [0]
+        show_page_fn = create_show_page_function(
+            psm_ref, self._show_page_result_ref, self._turn_ref,
+        )
+        zoom_section_fn = create_zoom_section_function(psm_ref, self._turn_ref)
         self._checkpoint_run_dir_ref: list[Any] = [None]
         expand_cp_fn = create_expand_checkpoint_function(
             self._checkpoint_run_dir_ref,
             self._show_page_result_ref,
+            self._turn_ref,
         )
         checkpoint_guard = create_checkpoint_guard()
         runtime.repl.inject(

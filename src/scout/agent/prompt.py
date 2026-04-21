@@ -86,6 +86,12 @@ troubleshoot rejected functions — the checkpoint summary lines in the rejectio
 tell you which checkpoints were captured and their IDs. You can pass \
 multiple IDs: `expand_checkpoint("CP-1", "CP-3")`.
 
+**Context management** — older `show_page` and `zoom_section` outputs are \
+automatically condensed to compact stubs (marked `[stub]`) that preserve \
+the URL, section count, and which sections were kept. Your reasoning from \
+those turns remains in the conversation unchanged. To re-inspect a page \
+or section, call `show_page(page)` or `zoom_section(page, "id")` again.
+
 ---
 
 ## Reasoning

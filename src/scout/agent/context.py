@@ -1,12 +1,9 @@
 """Conversation manager — message formatting, history, and context trimming.
 
 Page-view context is managed by the show_page 4-phase pipeline
-(see ``show_page_context.py``).  Old page views beyond the most recent
-two are truncated in-place to keep history compact.
-
-Zoom-section results use a similar truncation scheme: the last two
-zoom outputs are kept intact; older ones are replaced with a compact
-stub listing which sections were zoomed.
+(see ``show_page_context.py``).  Old page views and zoom results are
+stubbed after a fixed number of turns to maximise prompt-cache prefix
+stability — see ``_STUB_AFTER_TURNS``.
 """
 
 from __future__ import annotations
@@ -15,16 +12,15 @@ import re as _re
 from dataclasses import dataclass, field
 from typing import Any
 
-# ── Page-view truncation constants ─────────────────────────────
+# ── Markers ───────────────────────────────────────────────────
 _PAGE_VIEW_START = "__PAGE_VIEW_START__"
 _PAGE_VIEW_END = "__PAGE_VIEW_END__"
-_KEEP_RECENT_PAGE_VIEWS = 2
-_KEEP_LINES = 10  # first N and last N lines to preserve
-
-# ── Zoom-section truncation constants ──────────────────────────
 _ZOOM_START = "__ZOOM_START__"
 _ZOOM_END = "__ZOOM_END__"
-_KEEP_RECENT_ZOOMS = 2
+
+# ── Turn-based stub collapse ──────────────────────────────────
+_STUB_AFTER_TURNS = 3
+_TURN_TAG_RE = _re.compile(r"__TURN_(\d+)__")
 
 
 
@@ -98,24 +94,31 @@ class ConversationManager:
         self.messages.append({"role": "assistant", "content": content})
         self._trim_if_needed()
 
-    def add_tool_results(self, results: list[dict]) -> None:
+    def add_tool_results(
+        self,
+        results: list[dict],
+        *,
+        turn: int = 0,
+    ) -> None:
         """Append tool results as a user message.
 
         Args:
             results: List of dicts, each with:
                 ``{"type": "tool_result", "tool_use_id": ..., "content": ...}``
+            turn: The current turn number.  Passed to the stub-collapse
+                functions so they can determine message age.
         """
         self.messages.append({"role": "user", "content": results})
-        # Truncate old page views and zoom results whenever new tool
+        # Stub old page views and zoom results whenever new tool
         # results arrive — this is the only entry point for new content.
         # Zoom truncation protects the just-added message so that all
         # zoom results from the current turn remain visible to the
         # agent before it gets a chance to respond.
         if not self.skip_page_view_truncation:
-            _truncate_old_page_views_inplace(self.messages)
+            _stub_old_page_views_inplace(self.messages, turn)
         if not self.skip_zoom_truncation:
-            _truncate_old_zoom_results_inplace(
-                self.messages, protect_last_msg=True,
+            _stub_old_zoom_results_inplace(
+                self.messages, turn, protect_last_msg=True,
             )
         self._trim_if_needed()
 
@@ -125,6 +128,9 @@ class ConversationManager:
         Walks backwards through messages to find the last tool_result
         containing ``__PAGE_VIEW_START__``, then replaces the content
         between the start/end markers with *filtered_content*.
+
+        Preserves the ``__TURN_N__`` tag so that turn-based stub
+        collapse can still determine the page view's age.
         """
         for i in range(len(self.messages) - 1, -1, -1):
             msg = self.messages[i]
@@ -141,9 +147,18 @@ class ConversationManager:
                     start = text.find(_PAGE_VIEW_START)
                     end = text.find(_PAGE_VIEW_END)
                     if start >= 0 and end >= 0:
+                        # Preserve __TURN_N__ tag from original content.
+                        turn_match = _TURN_TAG_RE.search(
+                            text[start:end],
+                        )
+                        turn_line = (
+                            turn_match.group(0) + "\n"
+                            if turn_match else ""
+                        )
                         block["content"] = (
                             text[:start]
                             + _PAGE_VIEW_START + "\n"
+                            + turn_line
                             + filtered_content + "\n"
                             + _PAGE_VIEW_END
                             + text[end + len(_PAGE_VIEW_END):]
@@ -172,85 +187,129 @@ def _is_tool_result_message(msg: dict) -> bool:
 
 
 # ═══════════════════════════════════════════════════════════════
-#  Page-View Truncation
+#  Page-View Stub Collapse
 # ═══════════════════════════════════════════════════════════════
 
+# Regex to extract the header line:  === Page State #N | URL ===
+_PAGE_HEADER_RE = _re.compile(
+    r"(=== Page State #\d+\s*\|.*?===)"
+)
 
-def _truncate_old_page_views_inplace(messages: list[dict]) -> None:
-    """Truncate old page views in-place, keeping the last N intact.
+# Regex to extract kept section IDs from filtered output.
+# Matches lines like:  --- [section-id] role (N interactive) ---
+# followed by actual content (not "[omitted]").
+_SECTION_HEADER_RE = _re.compile(
+    r"--- \[([^\]]+)\] .+? ---"
+)
+
+
+def _build_page_view_stub(page_view: str) -> str:
+    """Build a compact stub from a page view's content between markers.
+
+    Preserves the URL (in the header) and lists the section IDs that
+    had full content (kept sections).  Returns the stub text to place
+    between the ``__PAGE_VIEW_START__`` / ``__PAGE_VIEW_END__`` markers.
+    """
+    # Extract the header line (contains Page State # and URL).
+    header_match = _PAGE_HEADER_RE.search(page_view)
+    header = header_match.group(1) if header_match else "=== Page State ==="
+
+    # Count total sections (every section header line).
+    all_section_ids = _SECTION_HEADER_RE.findall(page_view)
+    total_sections = len(all_section_ids)
+
+    # Find kept sections — those followed by content, not "[omitted]".
+    # Split on section headers and check what follows each one.
+    kept: list[str] = []
+    parts = _SECTION_HEADER_RE.split(page_view)
+    # parts alternates: [before, id1, after1, id2, after2, ...]
+    for i in range(1, len(parts), 2):
+        section_id = parts[i]
+        content_after = parts[i + 1] if i + 1 < len(parts) else ""
+        # A kept section has real content, not just [omitted] or [N sections omitted].
+        stripped = content_after.strip().split("\n")[0].strip()
+        if stripped and stripped != "[omitted]" and not stripped.startswith("["):
+            kept.append(section_id)
+
+    # Also count sections reported as omitted in batch markers.
+    omitted_match = _re.findall(r"\[(\d+) sections omitted\]", page_view)
+    total_sections += sum(int(n) for n in omitted_match)
+
+    # Build the stub.
+    kept_str = ""
+    if kept:
+        display = kept[:6]
+        suffix = ", ..." if len(kept) > 6 else ""
+        kept_str = f", {len(kept)} kept: {', '.join(display)}{suffix}"
+
+    return (
+        f"{header} [stub]\n"
+        f"[{total_sections} sections{kept_str}"
+        f" — call show_page(page) for current state.]"
+    )
+
+
+def _stub_old_page_views_inplace(
+    messages: list[dict],
+    current_turn: int,
+) -> None:
+    """Stub old page views in-place based on turn age.
 
     Scans all tool_result blocks for ``__PAGE_VIEW_START__`` /
-    ``__PAGE_VIEW_END__`` markers.  The most recent
-    ``_KEEP_RECENT_PAGE_VIEWS`` are left untouched.  Older ones are
-    reduced to the first and last ``_KEEP_LINES`` lines with an
-    explanatory gap marker.
+    ``__PAGE_VIEW_END__`` markers.  If the embedded ``__TURN_N__`` tag
+    shows the page view is older than ``_STUB_AFTER_TURNS`` turns,
+    it is replaced with a compact stub preserving the URL and section
+    summary.  Page views without a turn tag are treated as old.
 
-    Modifies *messages* in-place so that the truncation is permanent
-    and the message prefix stays stable for prompt cache hits.
+    Already-stubbed page views (containing ``[stub]``) are skipped.
     """
-    # ── 1. Locate every page view ──────────────────────────────
-    locations: list[tuple[int, int]] = []
-
-    for i, msg in enumerate(messages):
+    for msg in messages:
         content = msg.get("content")
         if not isinstance(content, list):
             continue
-        for j, block in enumerate(content):
+        for block in content:
             if (
-                block.get("type") == "tool_result"
-                and isinstance(block.get("content"), str)
-                and _PAGE_VIEW_START in block["content"]
-                and _PAGE_VIEW_END in block["content"]
+                block.get("type") != "tool_result"
+                or not isinstance(block.get("content"), str)
             ):
-                locations.append((i, j))
+                continue
+            text: str = block["content"]
+            if _PAGE_VIEW_START not in text or _PAGE_VIEW_END not in text:
+                continue
+            # Already stubbed — skip.
+            if "[stub]" in text:
+                continue
 
-    # ── 2. Nothing to truncate? ────────────────────────────────
-    if len(locations) <= _KEEP_RECENT_PAGE_VIEWS:
-        return
+            start_pos = text.find(_PAGE_VIEW_START)
+            end_pos = text.find(_PAGE_VIEW_END)
 
-    to_truncate = locations[:-_KEEP_RECENT_PAGE_VIEWS]
+            # Extract turn tag (only between markers).
+            turn_match = _TURN_TAG_RE.search(text, start_pos, end_pos)
+            if turn_match:
+                created_turn = int(turn_match.group(1))
+                if current_turn - created_turn < _STUB_AFTER_TURNS:
+                    continue  # Too recent — keep it.
+            # No tag or old enough → stub it.
 
-    # ── 3. Truncate old page views in-place ────────────────────
-    for msg_idx, block_idx in to_truncate:
-        block = messages[msg_idx]["content"][block_idx]
-        text: str = block["content"]
+            pv_start = start_pos + len(_PAGE_VIEW_START) + 1
+            pv_end = end_pos
+            if pv_end > 0 and text[pv_end - 1] == "\n":
+                pv_end -= 1
 
-        start_pos = text.find(_PAGE_VIEW_START)
-        end_pos = text.find(_PAGE_VIEW_END)
+            page_view = text[pv_start:pv_end]
+            stub = _build_page_view_stub(page_view)
 
-        pv_start = start_pos + len(_PAGE_VIEW_START) + 1
-        pv_end = end_pos
-        if pv_end > 0 and text[pv_end - 1] == "\n":
-            pv_end -= 1
-
-        page_view = text[pv_start:pv_end]
-        lines = page_view.split("\n")
-        total = len(lines)
-
-        if total > _KEEP_LINES * 2:
-            first_lines = "\n".join(lines[:_KEEP_LINES])
-            last_lines = "\n".join(lines[-_KEEP_LINES:])
-            omitted = total - _KEEP_LINES * 2
-            truncated_pv = (
-                f"{first_lines}\n\n"
-                f"[... {omitted} lines omitted — this is an older page view. "
-                f"Call show_page(page) to see the current page state. ...]\n\n"
-                f"{last_lines}"
+            block["content"] = (
+                text[:start_pos]
+                + _PAGE_VIEW_START + "\n"
+                + stub + "\n"
+                + _PAGE_VIEW_END
+                + text[end_pos + len(_PAGE_VIEW_END):]
             )
-        else:
-            truncated_pv = page_view
-
-        block["content"] = (
-            text[:start_pos]
-            + _PAGE_VIEW_START + "\n"
-            + truncated_pv + "\n"
-            + _PAGE_VIEW_END
-            + text[end_pos + len(_PAGE_VIEW_END):]
-        )
 
 
 # ═══════════════════════════════════════════════════════════════
-#  Zoom-Result Truncation
+#  Zoom-Result Stub Collapse
 # ═══════════════════════════════════════════════════════════════
 
 # Regex to parse the zoom start marker and extract section IDs.
@@ -260,51 +319,53 @@ _ZOOM_START_RE = _re.compile(
 )
 
 
-def _truncate_old_zoom_results_inplace(
+def _stub_old_zoom_results_inplace(
     messages: list[dict],
+    current_turn: int,
     *,
     protect_last_msg: bool = False,
 ) -> None:
-    """Truncate old zoom_section results in-place, keeping the last N.
+    """Stub old zoom_section results in-place based on turn age.
 
     Scans all tool_result blocks for ``__ZOOM_START__`` /
-    ``__ZOOM_END__`` markers.  The most recent
-    ``_KEEP_RECENT_ZOOMS`` are left untouched.  Older ones are
-    replaced with a compact stub listing the zoomed section IDs
-    and total line count.
+    ``__ZOOM_END__`` markers.  If the embedded ``__TURN_N__`` tag
+    shows the zoom is older than ``_STUB_AFTER_TURNS`` turns, it is
+    replaced with a compact stub listing the zoomed section IDs.
+    Zoom blocks without a turn tag are treated as old.
 
     A single tool_result can contain multiple zoom blocks (if the
     agent called ``zoom_section`` more than once in one code
     execution).  Each block is tracked independently.
 
+    Already-stubbed zoom blocks (containing ``[stub]``) are skipped.
+
     Args:
         messages: The conversation message list (modified in-place).
+        current_turn: The current turn number for age comparison.
         protect_last_msg: When ``True``, the last message in *messages*
-            is excluded from scanning **and** from the keep/truncate
-            decision.  This prevents zoom results from the current
-            turn from being truncated before the agent has a chance
-            to read them.
-
-    Modifies *messages* in-place.
+            is excluded from scanning.  This prevents zoom results from
+            the current turn from being stubbed before the agent has a
+            chance to read them.
     """
-    # ── 1. Locate every zoom block ────────────────────────────
-    # Each entry is (msg_idx, block_idx, char_offset_of_start_marker).
-    locations: list[tuple[int, int, int]] = []
-
     scan_end = len(messages) - 1 if protect_last_msg else len(messages)
     for i in range(scan_end):
         msg = messages[i]
         content = msg.get("content")
         if not isinstance(content, list):
             continue
-        for j, block in enumerate(content):
+        for block in content:
             if (
                 block.get("type") != "tool_result"
                 or not isinstance(block.get("content"), str)
             ):
                 continue
             text: str = block["content"]
-            # Find ALL zoom blocks within this tool result.
+            if _ZOOM_START not in text or _ZOOM_END not in text:
+                continue
+
+            # Process all zoom blocks within this tool result.
+            # Work backwards so character offsets stay valid.
+            positions: list[tuple[int, int]] = []
             search_from = 0
             while True:
                 start = text.find(_ZOOM_START, search_from)
@@ -313,46 +374,47 @@ def _truncate_old_zoom_results_inplace(
                 end = text.find(_ZOOM_END, start)
                 if end < 0:
                     break
-                locations.append((i, j, start))
+                positions.append((start, end))
                 search_from = end + len(_ZOOM_END)
 
-    # ── 2. Nothing to truncate? ───────────────────────────────
-    if len(locations) <= _KEEP_RECENT_ZOOMS:
-        return
+            for start_pos, end_pos in reversed(positions):
+                zoom_block = text[start_pos:end_pos + len(_ZOOM_END)]
 
-    to_truncate = locations[:-_KEEP_RECENT_ZOOMS]
+                # Already stubbed — skip.
+                if "Zoom stub" in zoom_block:
+                    continue
 
-    # Process in reverse order so that character offsets remain
-    # valid when multiple blocks live in the same tool result.
-    for msg_idx, block_idx, start_offset in reversed(to_truncate):
-        block = messages[msg_idx]["content"][block_idx]
-        text = block["content"]
+                # Check turn age.
+                turn_match = _TURN_TAG_RE.search(zoom_block)
+                if turn_match:
+                    created_turn = int(turn_match.group(1))
+                    if current_turn - created_turn < _STUB_AFTER_TURNS:
+                        continue  # Too recent — keep it.
 
-        start_pos = start_offset
-        end_pos = text.find(_ZOOM_END, start_pos)
+                # Extract section IDs from the start marker.
+                m = _ZOOM_START_RE.search(text, start_pos)
+                section_ids = m.group(1).strip() if m else "unknown"
 
-        # Extract section IDs from the start marker.
-        m = _ZOOM_START_RE.search(text, start_pos)
-        section_ids = m.group(1).strip() if m else "unknown"
+                # Count lines in the zoom output for the stub.
+                first_nl = text.find("\n", start_pos)
+                zoom_content = (
+                    text[first_nl + 1:end_pos] if first_nl >= 0 else ""
+                )
+                line_count = zoom_content.count("\n") + 1
 
-        # Count lines in the zoom output for the stub message.
-        first_nl = text.find("\n", start_pos)
-        zoom_content = text[first_nl + 1:end_pos] if first_nl >= 0 else ""
-        line_count = zoom_content.count("\n") + 1
+                stub = (
+                    f"[Zoom stub for sections: {section_ids} — "
+                    f"{line_count} lines condensed. "
+                    f"Call zoom_section(page, \"section-id\") "
+                    f"to re-inspect.]"
+                )
 
-        stub = (
-            f"[Zoom output for sections: {section_ids} — "
-            f"{line_count} lines of HTML truncated. "
-            f"Call zoom_section(page, \"section-id\") again "
-            f"to inspect current HTML structure.]"
-        )
-
-        # Preserve the pipe-delimited section IDs in the start
-        # marker so that re-truncation remains idempotent.
-        block["content"] = (
-            text[:start_pos]
-            + f"{_ZOOM_START}|{section_ids}|\n"
-            + stub + "\n"
-            + _ZOOM_END
-            + text[end_pos + len(_ZOOM_END):]
-        )
+                block["content"] = (
+                    text[:start_pos]
+                    + f"{_ZOOM_START}|{section_ids}|\n"
+                    + stub + "\n"
+                    + _ZOOM_END
+                    + text[end_pos + len(_ZOOM_END):]
+                )
+                # Re-read text after modification for next iteration.
+                text = block["content"]

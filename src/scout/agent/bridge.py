@@ -66,6 +66,7 @@ def create_post_exec_hook(
 def create_show_page_function(
     psm_ref: list[Any],
     result_ref: list[Any],
+    turn_ref: list[int] | None = None,
 ) -> callable:
     """Create the ``show_page(page)`` function injected into the agent's REPL.
 
@@ -78,6 +79,9 @@ def create_show_page_function(
         result_ref: A single-element list.  After each call, ``result_ref[0]``
             is set to the :class:`ShowPageResult` so the agent loop can
             access the structured sidecar without relying on the return value.
+        turn_ref: A single-element list holding the current turn number.
+            Used to embed a ``__TURN_N__`` tag in the output so that
+            old page views can be stubbed based on age.
 
     Returns:
         An async callable matching ``async def show_page(page) -> None``.
@@ -94,7 +98,10 @@ def create_show_page_function(
         state = await psm.capture()
         page_view = psm.get_page_view()
 
+        turn_tag = f"__TURN_{turn_ref[0]}__" if turn_ref else ""
         print("__PAGE_VIEW_START__")
+        if turn_tag:
+            print(turn_tag)
         print(page_view)
         print("__PAGE_VIEW_END__")
 
@@ -122,7 +129,10 @@ def create_show_page_function(
     return show_page
 
 
-def create_zoom_section_function(psm_ref: list[Any]) -> callable:
+def create_zoom_section_function(
+    psm_ref: list[Any],
+    turn_ref: list[int] | None = None,
+) -> callable:
     """Create the ``zoom_section(page, ...)`` function injected into the agent's REPL.
 
     The agent calls ``await zoom_section(page, "section-id")`` to see the
@@ -134,6 +144,9 @@ def create_zoom_section_function(psm_ref: list[Any]) -> callable:
     Args:
         psm_ref: A single-element list.  Set ``psm_ref[0]`` to the
             :class:`PageStateManager` instance once it's created.
+        turn_ref: A single-element list holding the current turn number.
+            Used to embed a ``__TURN_N__`` tag in the output so that
+            old zoom results can be stubbed based on age.
 
     Returns:
         An async callable matching
@@ -153,7 +166,10 @@ def create_zoom_section_function(psm_ref: list[Any]) -> callable:
 
         html = psm.zoom_in(*section_ids)
         ids_label = ", ".join(section_ids)
+        turn_tag = f"__TURN_{turn_ref[0]}__" if turn_ref else ""
         print(f"__ZOOM_START__|{ids_label}|")
+        if turn_tag:
+            print(turn_tag)
         print(html)
         print("__ZOOM_END__")
         return None  # Prevent REPL double-print via repr()
