@@ -309,6 +309,22 @@ def print_script_rejected(attempt: int, max_attempts: int) -> None:
     )
 
 
+def print_compression(
+    start_turn: int,
+    end_turn: int,
+    tokens_before_est: int,
+    tokens_after_est: int,
+) -> None:
+    """Print a compact summary of history compression."""
+    before_k = tokens_before_est / 1000
+    after_k = tokens_after_est / 1000
+    print(
+        f"\n  {_c(_CYAN, '[compress]')} "
+        f"Turns {start_turn}-{end_turn} → summary "
+        f"(~{before_k:.0f}K→~{after_k:.0f}K tokens est.)"
+    )
+
+
 def print_show_page_analysis(
     variant: str,
     similarity: float,

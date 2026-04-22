@@ -5,6 +5,7 @@
 
 # Python
 __pycache__/
+_model_db_cache.json
 *.pyc
 *.pyo
 *.egg-info/

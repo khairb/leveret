@@ -46,7 +46,12 @@ from .wrapper import (
     generate_subprocess_wrapper,
     parse_return_value,
 )
-from .context import ConversationManager, _PAGE_VIEW_START, _ZOOM_START
+from .context import (
+    ConversationManager,
+    _PAGE_VIEW_START,
+    _ZOOM_START,
+    get_compression_threshold,
+)
 from .bridge import (
     ShowPageResult,
     create_post_exec_hook,
@@ -246,11 +251,44 @@ class AgentLoop:
             # Zoom-section structural capture state.
             zoom_prompt_msg_index: int | None = None
 
+            # History compression state.
+            last_input_tokens: int = 0
+            compression_threshold = get_compression_threshold(
+                self._llm_config.model,
+            )
+
             # ── Main loop ─────────────────────────────────────
             while step_count < self._max_steps:
                 turn_number += 1
                 self._turn_ref[0] = turn_number
                 console.print_turn_start(turn_number)
+
+                # ── History compression check ─────────────────
+                # Compress if the last LLM call's input tokens
+                # exceeded the model-specific threshold.
+                if (
+                    last_input_tokens > compression_threshold
+                    and turn_number > 2
+                ):
+                    try:
+                        comp_meta = await conversation.compress_history(
+                            task_description=task,
+                            model=self._llm_config.model,
+                        )
+                        if comp_meta:
+                            console.print_compression(
+                                comp_meta["start_turn"],
+                                comp_meta["end_turn"],
+                                comp_meta["tokens_before_est"],
+                                comp_meta["tokens_after_est"],
+                            )
+                            tracer.log_compression(comp_meta)
+                    except Exception:
+                        logger.warning(
+                            "History compression failed — continuing "
+                            "without compression",
+                            exc_info=True,
+                        )
 
                 # Call the LLM.
                 current_tools = TOOL_SCHEMAS
@@ -268,6 +306,7 @@ class AgentLoop:
 
                 tracer.log_llm_response(response, llm_duration_ms)
                 usage = response.usage
+                last_input_tokens = usage.input_tokens
                 console.print_llm_thinking(
                     llm_duration_ms,
                     usage.input_tokens,

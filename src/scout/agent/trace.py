@@ -291,6 +291,13 @@ class Tracer:
             "script_preview": script[:500] + ("..." if len(script) > 500 else ""),
         })
 
+    def log_compression(self, meta: dict[str, Any]) -> None:
+        """Log a history compression event."""
+        self._add("system", {
+            "event": "history_compression",
+            **meta,
+        })
+
     def log_show_page_analysis(self, log: Any) -> None:
         """Log a show_page analysis cycle.
 
