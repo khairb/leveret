@@ -1,8 +1,6 @@
 """Scout — AI agent that writes web scraping scripts."""
 
-from .agent.llm import ModelName
 from .errors import (
-    # New short names (preferred)
     AutoFixError,
     ConfigError,
     Error,
@@ -13,30 +11,33 @@ from .errors import (
     ScriptRuntimeError,
     ScriptTimeoutError,
     ValidationError,
-    # Backward compatibility aliases
-    ScoutAutoFixError,
-    ScoutConfigError,
-    ScoutError,
-    ScoutGenerationError,
-    ScoutSchemaError,
-    ScoutScriptError,
-    ScoutScriptLoadError,
-    ScoutScriptRuntimeError,
-    ScoutScriptTimeoutError,
-    ScoutValidationError,
 )
-from .schema.types import Field, Items, List, SchemaType
+from .schema.types import Field, Items
 from .scraper import Scraper, ScraperResult
 
+# Backward compatibility — importable but not in __all__
+from .agent.llm import ModelName as ModelName
+from .errors import (
+    ScoutAutoFixError as ScoutAutoFixError,
+    ScoutConfigError as ScoutConfigError,
+    ScoutError as ScoutError,
+    ScoutGenerationError as ScoutGenerationError,
+    ScoutSchemaError as ScoutSchemaError,
+    ScoutScriptError as ScoutScriptError,
+    ScoutScriptLoadError as ScoutScriptLoadError,
+    ScoutScriptRuntimeError as ScoutScriptRuntimeError,
+    ScoutScriptTimeoutError as ScoutScriptTimeoutError,
+    ScoutValidationError as ScoutValidationError,
+)
+from .schema.types import List as List, SchemaType as SchemaType
+
 __all__ = [
-    # Core API
+    # Core
     "Scraper",
     "ScraperResult",
-    "ModelName",
     "Field",
     "Items",
-    "SchemaType",
-    # Errors (short names)
+    # Errors
     "AutoFixError",
     "ConfigError",
     "Error",
@@ -47,16 +48,4 @@ __all__ = [
     "ScriptRuntimeError",
     "ScriptTimeoutError",
     "ValidationError",
-    # Backward compatibility
-    "List",
-    "ScoutAutoFixError",
-    "ScoutConfigError",
-    "ScoutError",
-    "ScoutGenerationError",
-    "ScoutSchemaError",
-    "ScoutScriptError",
-    "ScoutScriptLoadError",
-    "ScoutScriptRuntimeError",
-    "ScoutScriptTimeoutError",
-    "ScoutValidationError",
 ]

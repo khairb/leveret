@@ -80,7 +80,7 @@ class LLMConfig:
     Bare model names (no colon) are assumed to be Anthropic models.
     """
 
-    model: ModelName = "anthropic:claude-haiku-4-5"
+    model: ModelName = "claude-haiku-4-5"
     temperature: float = 0.0
     max_tokens: int = 16384
     api_key: str | None = None

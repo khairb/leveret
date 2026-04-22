@@ -22,15 +22,15 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from .errors import (
-    ScoutAutoFixError,
-    ScoutConfigError,
-    ScoutError,
-    ScoutGenerationError,
-    ScoutSchemaError,
-    ScoutScriptLoadError,
-    ScoutScriptRuntimeError,
-    ScoutScriptTimeoutError,
-    ScoutValidationError,
+    AutoFixError,
+    ConfigError,
+    Error,
+    GenerationError,
+    SchemaError,
+    ScriptLoadError,
+    ScriptRuntimeError,
+    ScriptTimeoutError,
+    ValidationError,
 )
 from .agent.llm import ModelName
 from .schema.compiler import compile_schema
@@ -198,7 +198,7 @@ def _save_script(
     """Write a script file with metadata docstring.
 
     Auto-creates parent directories. Wraps filesystem errors in
-    ScoutError with actionable messages.
+    Error with actionable messages.
     """
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     docstring = _build_metadata_docstring(url, task, model, timestamp)
@@ -207,19 +207,19 @@ def _save_script(
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
     except FileExistsError:
-        raise ScoutError(
+        raise Error(
             f'Cannot create directory "{path.parent}" '
             f"— a file with that name already exists."
         ) from None
     except OSError as exc:
-        raise ScoutError(
+        raise Error(
             f'Could not write script to "{path}" — {_describe_os_error(exc)}.'
         ) from None
 
     try:
         path.write_text(content, encoding="utf-8")
     except OSError as exc:
-        raise ScoutError(
+        raise Error(
             f'Could not write script to "{path}" — {_describe_os_error(exc)}.'
         ) from None
 
@@ -242,7 +242,7 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
         (scrape_fn, metadata_dict)
 
     Raises:
-        ScoutScriptLoadError: If the file has syntax errors, is missing the
+        ScriptLoadError: If the file has syntax errors, is missing the
             scrape function, or has the wrong signature.
     """
     # Read the file
@@ -250,15 +250,15 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
         source = path.read_text(encoding="utf-8")
     except OSError as exc:
         if exc.errno == errno.EACCES:
-            raise ScoutScriptLoadError(
+            raise ScriptLoadError(
                 f'Could not read script "{path}" — permission denied.'
             ) from None
-        raise ScoutScriptLoadError(
+        raise ScriptLoadError(
             f'Could not read script "{path}" — {exc}.'
         ) from None
 
     if not source.strip():
-        raise ScoutScriptLoadError(
+        raise ScriptLoadError(
             f'Script "{path}" is empty. '
             f"Regenerate with scraper.run(auto_fix='always')."
         )
@@ -267,7 +267,7 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
     try:
         tree = ast.parse(source, filename=str(path))
     except SyntaxError as exc:
-        raise ScoutScriptLoadError(
+        raise ScriptLoadError(
             f'Script "{path}" has a syntax error: {exc.msg} '
             f"(line {exc.lineno}). Fix the file or "
             f"regenerate with scraper.run(auto_fix='always')."
@@ -282,14 +282,14 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
                 break
 
     if scrape_func is None:
-        raise ScoutScriptLoadError(
+        raise ScriptLoadError(
             f'Script "{path}" has no function named "scrape". '
             f"The file must define: async def scrape(page, start_url, checkpoint). "
             f"Fix the file or regenerate with scraper.run(auto_fix='always')."
         )
 
     if not isinstance(scrape_func, ast.AsyncFunctionDef):
-        raise ScoutScriptLoadError(
+        raise ScriptLoadError(
             f'Script "{path}" defines "scrape" as a sync function. '
             f"It must be async: async def scrape(page, start_url, checkpoint). "
             f"Fix the file or regenerate with scraper.run(auto_fix='always')."
@@ -303,7 +303,7 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
     ]
     actual_params = [arg.arg for arg in scrape_func.args.args]
     if actual_params not in _ACCEPTED_PARAMS:
-        raise ScoutScriptLoadError(
+        raise ScriptLoadError(
             f'Script "{path}" has wrong signature for scrape(). '
             f"Expected: scrape(page, start_url, checkpoint). "
             f"Got: scrape({', '.join(actual_params)}). "
@@ -321,19 +321,19 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
     try:
         exec(compiled_code, namespace)  # noqa: S102
     except Exception as exc:
-        raise ScoutScriptLoadError(
+        raise ScriptLoadError(
             f'Script "{path}" failed to load: {exc}. '
             f"Fix the file or regenerate with scraper.run(auto_fix='always')."
         ) from None
 
     fn = namespace.get("scrape")
     if fn is None or not callable(fn):
-        raise ScoutScriptLoadError(
+        raise ScriptLoadError(
             f'Script "{path}" does not export a callable "scrape" function.'
         )
 
     if not inspect.iscoroutinefunction(fn):
-        raise ScoutScriptLoadError(
+        raise ScriptLoadError(
             f'Script "{path}": scrape is not async. '
             f"It must be: async def scrape(page, start_url, checkpoint)."
         )
@@ -351,7 +351,7 @@ def _check_domain_mismatch(
     script_url: str,
     current_url: str,
 ) -> None:
-    """Raise ScoutConfigError if script was generated for a different domain."""
+    """Raise ConfigError if script was generated for a different domain."""
     script_domain = _normalize_domain(script_url)
     current_domain = _normalize_domain(current_url)
 
@@ -359,7 +359,7 @@ def _check_domain_mismatch(
         return  # can't compare — skip
 
     if script_domain != current_domain:
-        raise ScoutConfigError(
+        raise ConfigError(
             f"Script '{script_path}' was generated for a different site.\n"
             f"\n"
             f"  Script:  {script_url}\n"
@@ -449,20 +449,20 @@ class Scraper:
     ) -> None:
         # -- url --
         if not isinstance(url, str) or not url.strip():
-            raise ScoutError(f'url must be a valid HTTP(S) URL (got {url!r})')
+            raise Error(f'url must be a valid HTTP(S) URL (got {url!r})')
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
-            raise ScoutError(f'url must be a valid HTTP(S) URL (got {url!r})')
+            raise Error(f'url must be a valid HTTP(S) URL (got {url!r})')
         if not parsed.hostname:
-            raise ScoutError(f'url must be a valid URL (got {url!r})')
+            raise Error(f'url must be a valid URL (got {url!r})')
 
         # -- task --
         if not isinstance(task, str) or not task.strip():
-            raise ScoutError("task must not be empty")
+            raise Error("task must not be empty")
 
         # -- schema --
         if schema is None:
-            raise ScoutSchemaError(
+            raise SchemaError(
                 "schema is required — pass a dict, list, or Field/Items schema"
             )
         compiled: CompiledSchema = compile_schema(schema)
@@ -472,31 +472,31 @@ class Scraper:
         if script is not None:
             path = Path(script).expanduser().resolve()
             if path.is_dir():
-                raise ScoutError(
+                raise Error(
                     f'script must be a file path, not a directory '
                     f'(got {str(script)!r})'
                 )
             if path.suffix != ".py":
-                raise ScoutError(
+                raise Error(
                     f'script must be a .py file path (got {str(script)!r})'
                 )
             script_path = path
 
         # -- timeout --
         if not isinstance(timeout, int) or timeout <= 0:
-            raise ScoutError(
+            raise Error(
                 f"timeout must be a positive integer (got {timeout!r})"
             )
 
         # -- max_attempts --
         if not isinstance(max_attempts, int) or max_attempts < 1:
-            raise ScoutError(
+            raise Error(
                 f"max_attempts must be at least 1 (got {max_attempts!r})"
             )
 
         # -- model --
         if not isinstance(model, str) or not model.strip():
-            raise ScoutError("model must not be empty")
+            raise Error("model must not be empty")
 
         # -- auto_fix --
         auto_fix_mode = None
@@ -551,6 +551,16 @@ class Scraper:
         """Absolute path to the script file, or None."""
         return self._script_path
 
+    @property
+    def has_script(self) -> bool:
+        """Whether a cached script exists (on disk or in memory).
+
+        When ``True``, the next ``run()`` will use the cached script
+        — no AI, no API cost.  When ``False``, the next ``run()``
+        will generate a new script via the AI agent.
+        """
+        return self._cached_fn is not None or self._has_script_on_disk()
+
     def __repr__(self) -> str:
         parts = [f"Scraper({self._url!r}"]
         if self._script_path:
@@ -575,11 +585,11 @@ class Scraper:
     def _resolve_auto_fix_value(value: bool | str) -> AutoFixMode:
         """Convert a user-facing auto_fix value to an AutoFixMode enum.
 
-        Raises ScoutConfigError for invalid values.
+        Raises ConfigError for invalid values.
         """
         mode = Scraper._VALID_AUTO_FIX.get(value)
         if mode is None:
-            raise ScoutConfigError(
+            raise ConfigError(
                 f"auto_fix must be False, True, 'conservative', "
                 f"'balanced', 'aggressive', or 'always' (got {value!r})"
             )
@@ -589,7 +599,7 @@ class Scraper:
 
     def __enter__(self) -> Scraper:
         if self._context_managed:
-            raise ScoutError(
+            raise Error(
                 "Scraper is already inside a 'with' block — "
                 "nested context managers are not supported."
             )
@@ -624,7 +634,7 @@ class Scraper:
 
     async def __aenter__(self) -> Scraper:
         if self._context_managed:
-            raise ScoutError(
+            raise Error(
                 "Scraper is already inside a 'with' block — "
                 "nested context managers are not supported."
             )
@@ -751,7 +761,7 @@ class Scraper:
         event loop where the shared browser lives.  Outside a ``with``
         block, uses ``asyncio.run()``.
 
-        Raises ScoutError if called inside a running event loop
+        Raises Error if called inside a running event loop
         (e.g. Jupyter) without a context manager.
         Use ``await scraper.async_run()`` instead.
         """
@@ -770,7 +780,7 @@ class Scraper:
             loop = None
 
         if loop is not None:
-            raise ScoutError(
+            raise Error(
                 "scraper.run() cannot be called inside a running event loop "
                 "(e.g. Jupyter, async web server).\n\n"
                 "  Use instead:\n"
@@ -778,6 +788,24 @@ class Scraper:
             )
 
         return asyncio.run(self.async_run(url=url, auto_fix=auto_fix))
+
+    async def async_regenerate(
+        self, *, url: str | None = None,
+    ) -> ScraperResult:
+        """Force-regenerate the scraping script, discarding any cached version.
+
+        Equivalent to ``async_run(auto_fix="always")``.
+        """
+        return await self.async_run(url=url, auto_fix="always")
+
+    def regenerate(
+        self, *, url: str | None = None,
+    ) -> ScraperResult:
+        """Force-regenerate the scraping script, discarding any cached version.
+
+        Equivalent to ``run(auto_fix="always")``.
+        """
+        return self.run(url=url, auto_fix="always")
 
     def export(
         self,
@@ -796,23 +824,23 @@ class Scraper:
             overwrite: Allow overwriting an existing file.
         """
         if self._script_path is None:
-            raise ScoutError(
+            raise Error(
                 "Cannot export — Scraper has no script= path. "
                 "Generate a script first."
             )
         if not self._script_path.exists():
-            raise ScoutError(
+            raise Error(
                 f"Cannot export — script not found at {self._script_path}. "
                 "Run scraper.run() to generate it first."
             )
 
         target = Path(path).expanduser().resolve()
         if target.suffix != ".py":
-            raise ScoutError(
+            raise Error(
                 f"Export path must be a .py file (got {str(path)!r})"
             )
         if target.exists() and not overwrite:
-            raise ScoutError(
+            raise Error(
                 f"File already exists: {target}. "
                 "Pass overwrite=True to replace it."
             )
@@ -827,14 +855,14 @@ class Scraper:
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
-            raise ScoutError(
+            raise Error(
                 f'Could not create directory "{target.parent}" — '
                 f"{_describe_os_error(exc)}."
             ) from None
         try:
             target.write_text(standalone, encoding="utf-8")
         except OSError as exc:
-            raise ScoutError(
+            raise Error(
                 f'Could not write export to "{target}" — '
                 f"{_describe_os_error(exc)}."
             ) from None
@@ -849,16 +877,16 @@ class Scraper:
             return self._url
 
         if not isinstance(override_url, str) or not override_url.strip():
-            raise ScoutError(
+            raise Error(
                 f"url must be a valid HTTP(S) URL (got {override_url!r})"
             )
         parsed = urlparse(override_url)
         if parsed.scheme not in ("http", "https"):
-            raise ScoutError(
+            raise Error(
                 f"url must be a valid HTTP(S) URL (got {override_url!r})"
             )
         if not parsed.hostname:
-            raise ScoutError(
+            raise Error(
                 f"url must be a valid URL (got {override_url!r})"
             )
         return override_url
@@ -906,7 +934,7 @@ class Scraper:
         if os.environ.get(env_var):
             return
 
-        raise ScoutError(
+        raise Error(
             f"API key not found for provider '{provider}'.\n\n"
             f"  Set the environment variable:\n"
             f"    export {env_var}=...\n\n"
@@ -919,7 +947,7 @@ class Scraper:
         try:
             import patchright  # noqa: F401
         except ImportError:
-            raise ScoutError(
+            raise Error(
                 "Playwright browsers not installed.\n\n"
                 "  Run this command to install:\n"
                 "    playwright install chromium"
@@ -1006,7 +1034,7 @@ class Scraper:
             )
 
             if returncode == -1 and "timed out" in stderr:
-                raise ScoutScriptTimeoutError(
+                raise ScriptTimeoutError(
                     f"Script exceeded the {self._timeout}s timeout.\n\n"
                     f"  Increase the timeout:\n"
                     f"    Scraper(..., timeout={self._timeout * 2})"
@@ -1016,7 +1044,7 @@ class Scraper:
                 err_preview = stderr.strip()
                 if len(err_preview) > 500:
                     err_preview = err_preview[-500:]
-                raise ScoutScriptRuntimeError(
+                raise ScriptRuntimeError(
                     f"Script crashed during execution.\n\n"
                     f"  {err_preview}\n\n"
                     f"  The website may have changed. "
@@ -1132,25 +1160,25 @@ class Scraper:
             regen_result = await self._run_generate(
                 effective_url, start_time,
             )
-        except ScoutGenerationError as exc:
+        except GenerationError as exc:
             # Agent could not produce a valid script at all
             logger.info("Auto-fix: regeneration failed — %s", exc)
-            raise ScoutAutoFixError(
+            raise AutoFixError(
                 f"Auto-fix triggered regeneration, but the AI agent "
                 f"could not produce a valid script.\n\n"
                 f"  Original failure: {result.message}\n\n"
                 f"  Generation error: {exc}\n\n"
                 f"  Check the URL manually, or adjust the task/schema."
             ) from exc
-        except ScoutValidationError as exc:
+        except ValidationError as exc:
             # §10: New script's output also failed schema validation.
-            # Re-raise as ScoutValidationError (not ScoutAutoFixError)
-            # per spec §10: same schema constraint → ScoutValidationError.
+            # Re-raise as ValidationError (not AutoFixError)
+            # per spec §10: same schema constraint → ValidationError.
             logger.info(
                 "Auto-fix: new script failed schema validation — %s",
                 exc,
             )
-            raise ScoutValidationError(
+            raise ValidationError(
                 f"Auto-fix regenerated a script, but it also produced "
                 f"output that does not match the schema.\n\n"
                 f"  {exc}\n\n"
@@ -1180,13 +1208,13 @@ class Scraper:
         )
 
         if category in (ErrorCategory.D, ErrorCategory.F2):
-            raise ScoutScriptTimeoutError(message)
+            raise ScriptTimeoutError(message)
         if category == ErrorCategory.G:
-            raise ScoutValidationError(message)
+            raise ValidationError(message)
         if category == ErrorCategory.F3:
-            raise ScoutError(message)
+            raise Error(message)
         # B, C, E, F1, and any other
-        raise ScoutScriptRuntimeError(message)
+        raise ScriptRuntimeError(message)
 
     # -- Internal: in-process execution --
 
@@ -1223,7 +1251,7 @@ class Scraper:
                     timeout=self._timeout,
                 )
             except asyncio.TimeoutError:
-                raise ScoutScriptTimeoutError(
+                raise ScriptTimeoutError(
                     f"Script exceeded the {self._timeout}s timeout.\n\n"
                     f"  Increase the timeout:\n"
                     f"    Scraper(..., timeout={self._timeout * 2})"
@@ -1237,7 +1265,7 @@ class Scraper:
                 )
             except TypeError as exc:
                 type_name = type(data).__name__
-                raise ScoutScriptRuntimeError(
+                raise ScriptRuntimeError(
                     f"scrape() returned type '{type_name}' which is not "
                     f"JSON-serializable: {exc}"
                 ) from None
@@ -1245,12 +1273,12 @@ class Scraper:
             return rv_json
 
         except (
-            ScoutScriptTimeoutError,
-            ScoutScriptRuntimeError,
+            ScriptTimeoutError,
+            ScriptRuntimeError,
         ):
             raise
         except Exception as exc:
-            raise ScoutScriptRuntimeError(
+            raise ScriptRuntimeError(
                 f"Script crashed during execution.\n\n"
                 f"  {exc}\n\n"
                 f"  The website may have changed. "
@@ -1267,7 +1295,7 @@ class Scraper:
         if self._cached_source is not None:
             return self._cached_source
         if self._script_path is None:
-            raise ScoutError("No script path — cannot get function source")
+            raise Error("No script path — cannot get function source")
         source = self._script_path.read_text(encoding="utf-8")
         # Strip the metadata docstring to get just the function code
         m = _METADATA_RE.search(source)
@@ -1338,7 +1366,7 @@ class Scraper:
         """Parse and validate the return value against the schema.
 
         Returns the validated Python data.
-        Raises ScoutValidationError on failure.
+        Raises ValidationError on failure.
         """
         if return_value_json is None:
             data = None
@@ -1350,7 +1378,7 @@ class Scraper:
 
         valid, feedback = self._compiled_schema.validate(data)
         if not valid:
-            raise ScoutValidationError(
+            raise ValidationError(
                 f"Script output does not match the schema.\n\n"
                 f"{feedback}\n\n"
                 f"The website may have changed. "
@@ -1695,7 +1723,7 @@ class Scraper:
             raise self._map_generation_error(exc) from exc
 
         if not result.success:
-            raise ScoutGenerationError(
+            raise GenerationError(
                 result.error
                 or "AI failed to generate a valid scraping function "
                 f"after {self._max_attempts} attempts."
@@ -1766,34 +1794,34 @@ class Scraper:
             ),
         )
 
-    def _map_generation_error(self, exc: Exception) -> ScoutError:
-        """Map LLM API errors to ScoutGenerationError."""
+    def _map_generation_error(self, exc: Exception) -> Error:
+        """Map LLM API errors to GenerationError."""
         from pydantic_ai.exceptions import ModelHTTPError
 
         if isinstance(exc, ModelHTTPError):
             status = exc.status_code
             if status == 429:
-                return ScoutGenerationError(
+                return GenerationError(
                     "API rate limit exceeded. "
                     "Retry in a few minutes."
                 )
             if status == 401:
-                return ScoutGenerationError(
+                return GenerationError(
                     "API rejected the API key. "
                     "Check your API key environment variable or "
                     "the api_key= argument."
                 )
             if status and status >= 500:
-                return ScoutGenerationError(
+                return GenerationError(
                     f"API returned a server error ({status}). "
                     "This is usually transient — retry shortly."
                 )
-            return ScoutGenerationError(
+            return GenerationError(
                 f"API error ({status}): {exc}"
             )
         if isinstance(exc, ConnectionError):
-            return ScoutGenerationError(
+            return GenerationError(
                 "Could not reach the API. "
                 "Check your network connection."
             )
-        return ScoutGenerationError(str(exc))
+        return GenerationError(str(exc))

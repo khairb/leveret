@@ -220,7 +220,7 @@ class TestPackageExports:
     def test_in_scout_all(self):
         import scout
 
-        assert "ScoutAutoFixError" in scout.__all__
+        assert "AutoFixError" in scout.__all__
 
     def test_importable_from_top_level(self):
         """Can import directly from scout package."""
