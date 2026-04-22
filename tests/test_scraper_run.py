@@ -241,8 +241,8 @@ class TestCachedExecution:
             with pytest.raises(ScoutScriptRuntimeError, match="crashed during execution"):
                 asyncio.run(s.async_run())
 
-    def test_runtime_error_suggests_regenerate(self, script_path):
-        """Runtime error message suggests regenerate=True."""
+    def test_runtime_error_suggests_auto_fix(self, script_path):
+        """Runtime error message suggests auto_fix='always'."""
         s = _make_scraper(script=str(script_path))
 
         mock_result = _mock_execute_result(
@@ -250,7 +250,7 @@ class TestCachedExecution:
         )
 
         with patch.object(s, "_execute_function", new_callable=AsyncMock, return_value=mock_result):
-            with pytest.raises(ScoutScriptRuntimeError, match="regenerate=True"):
+            with pytest.raises(ScoutScriptRuntimeError, match="auto_fix='always'"):
                 asyncio.run(s.async_run())
 
     def test_domain_mismatch_on_cached_script(self, tmp_path):
@@ -300,8 +300,8 @@ class TestCachedExecution:
             assert s._cached_fn is not None
             asyncio.run(s.async_run())
 
-    def test_regenerate_clears_cache(self, script_path, monkeypatch):
-        """regenerate=True discards cached function and regenerates."""
+    def test_auto_fix_always_clears_cache(self, script_path, monkeypatch):
+        """auto_fix="always" discards cached function and regenerates."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
         s = _make_scraper(script=str(script_path))
 
@@ -313,7 +313,7 @@ class TestCachedExecution:
             asyncio.run(s.async_run())
         assert s._cached_fn is not None
 
-        # regenerate=True should go to generation path (which we mock)
+        # auto_fix="always" should go to generation path (which we mock)
         with patch.object(s, "_run_generate", new_callable=AsyncMock) as mock_gen:
             mock_gen.return_value = ScraperResult(
                 data=[{"name": "New", "price": 2.0}],
@@ -324,7 +324,7 @@ class TestCachedExecution:
             )
             with patch.object(s, "_check_api_key"):
                 with patch.object(s, "_check_playwright"):
-                    result = asyncio.run(s.async_run(regenerate=True))
+                    result = asyncio.run(s.async_run(auto_fix="always"))
 
         assert result.cached is False
         assert s._cached_fn is None  # was cleared before generation
@@ -490,9 +490,9 @@ class TestReturnValueValidation:
         with pytest.raises(ScoutValidationError):
             s._validate_return_value("{{{not json")
 
-    def test_error_message_suggests_regenerate(self):
+    def test_error_message_suggests_auto_fix(self):
         s = _make_scraper()
-        with pytest.raises(ScoutValidationError, match="regenerate=True"):
+        with pytest.raises(ScoutValidationError, match="auto_fix='always'"):
             s._validate_return_value(json.dumps("wrong"))
 
     def test_complex_schema_validation(self):
@@ -615,7 +615,7 @@ class TestConsoleOutput:
                         cached=False,
                         script_path=str(path),
                     )
-                    asyncio.run(s.async_run(regenerate=True))
+                    asyncio.run(s.async_run(auto_fix="always"))
 
         messages = [r.getMessage() for r in caplog.records]
         assert any("Regenerating" in m for m in messages)
@@ -704,8 +704,8 @@ class TestRunWrapper:
         assert isinstance(result, ScraperResult)
         assert result.cached is True
 
-    def test_run_passes_url_and_regenerate(self, tmp_path, monkeypatch):
-        """run() passes url= and regenerate= to async_run()."""
+    def test_run_passes_url_and_auto_fix(self, tmp_path, monkeypatch):
+        """run() passes url= and auto_fix= to async_run()."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
         path = tmp_path / "scraper.py"
         _write_valid_script(path)
@@ -719,10 +719,10 @@ class TestRunWrapper:
                 cached=False,
                 script_path=str(path),
             )
-            s.run(url="https://example.com/other", regenerate=True)
+            s.run(url="https://example.com/other", auto_fix="always")
 
         mock_async.assert_awaited_once_with(
-            url="https://example.com/other", regenerate=True,
+            url="https://example.com/other", auto_fix="always",
         )
 
 

@@ -17,12 +17,12 @@
 ---
 
 ```python
-from scout import Scraper, Field, List
+from scout import Scraper, Field, Items
 
 scraper = Scraper(
     "https://news.ycombinator.com",
     "Extract the top stories",
-    schema=List({
+    schema=Items({
         "title": str,
         "url": str,
         "score": Field(int, min=0),
@@ -55,7 +55,7 @@ scraper = Scraper(
     "2 adults, 2 children, 1 baby. "
     "Filter for washing machine, TV, and WiFi. "
     "Extract all apartments from all pages.",
-    schema=List({
+    schema=Items({
         "title": str,
         "description": str,
         "bedrooms": str,
@@ -105,13 +105,13 @@ Sites redesign. Class names shift. Your scraper breaks and silently returns empt
 Scout catches this. Every run validates against your schema. If the script crashes, times out, returns too few rows, or returns rows that fail validation, Scout raises a specific error you can act on:
 
 ```python
-from scout import ScoutValidationError, ScoutScriptError
+from scout import ValidationError, ScriptError
 
 try:
     result = scraper.run()
-except (ScoutValidationError, ScoutScriptError):
+except (ValidationError, ScriptError):
     # Site changed — regenerate with the same task and schema
-    result = scraper.run(regenerate=True)
+    result = scraper.run(auto_fix="always")
 ```
 
 This works, but it's blunt. A timeout might mean the site is down, not that your scraper is broken. An empty response might mean Cloudflare is blocking you, not that the selectors changed. Regenerating when the problem isn't your script wastes an API call and produces a new script that fails the same way.
@@ -124,7 +124,7 @@ This works, but it's blunt. A timeout might mean the site is down, not that your
 scraper = Scraper(
     "https://example.com/products",
     "Extract all products",
-    schema=List({"name": str, "price": float}, min=10),
+    schema=Items({"name": str, "price": float}, min=10),
     script="scrapers/products.py",
     auto_fix=True,
 )
@@ -141,7 +141,7 @@ When a cached script fails with `auto_fix` enabled, Scout runs it up to three ti
 - **Site is down** (503, connection refused, DNS failure) — raise immediately
 - **Error is intermittent** (different failure each retry) — raise, something environmental is wrong
 
-After regeneration, Scout validates the new script before saving it. If the new script fails with the same error pattern, it raises `ScoutAutoFixError` instead of looping.
+After regeneration, Scout validates the new script before saving it. If the new script fails with the same error pattern, it raises `AutoFixError` instead of looping.
 
 ```python
 result.auto_fixed  # True if auto-fix triggered regeneration on this run
@@ -153,6 +153,17 @@ Three modes control how aggressively Scout regenerates:
 auto_fix="conservative"   # only regenerates on clear-cut cases (crashes, parse errors)
 auto_fix=True             # balanced (default when True) — regenerates timeouts on real pages too
 auto_fix="aggressive"     # regenerates on weaker evidence, tolerates noisier signals
+```
+
+You can override `auto_fix` per-call — the constructor sets the default, `run()` overrides for that run:
+
+```python
+scraper = Scraper(..., auto_fix=True)
+
+scraper.run()                          # uses balanced (from constructor)
+scraper.run(auto_fix="always")         # force regeneration on this run
+scraper.run(auto_fix=False)            # disable auto-fix for this run
+scraper.run()                          # back to balanced
 ```
 
 ## Install
@@ -176,7 +187,7 @@ Schemas are plain Python. Start simple, add constraints when you need them:
 schema = [{"title": str, "price": float}]
 
 # With constraints
-schema = List({
+schema = Items({
     "title": Field(str, min_length=1),
     "price": Field(float, min=0),
     "currency": Field(str, enum=["USD", "EUR", "GBP"]),
@@ -241,20 +252,21 @@ scraper = Scraper(
     script="scraper.py",          # where to save/load the script (None = in-memory only)
     model="claude-haiku-4-5",     # which model writes the scraper
     headless=True,                # False to watch the browser work
-    timeout=600,                  # max seconds for generation
-    max_retries=6,                # how many times the agent can retry during generation
+    timeout=600,                  # max seconds for script execution
+    max_attempts=6,               # how many times the agent can retry during generation
     auto_fix=False,               # True, "conservative", "balanced", or "aggressive"
     api_key=None,                 # or set ANTHROPIC_API_KEY
 )
 
-result = scraper.run()            # generate (if needed) + execute + validate
-result = scraper.run(url="...")   # same scraper, different page
-result = scraper.run(regenerate=True)  # throw away the cached script, regenerate
+result = scraper.run()                    # generate (if needed) + execute + validate
+result = scraper.run(url="...")           # same scraper, different page
+result = scraper.run(auto_fix="always")   # force regeneration on this run
+result = scraper.run(auto_fix=False)      # disable auto-fix for this run
 
-await scraper.async_run()         # async version
+await scraper.async_run()                 # async version
 
-scraper.export("standalone.py")   # save a copy you can run without Scout
-scraper.close()                   # close the browser (automatic with `with`)
+scraper.export("standalone.py")           # save a copy you can run without Scout
+scraper.close()                           # close the browser (automatic with `with`)
 ```
 
 ```python

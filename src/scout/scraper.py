@@ -40,6 +40,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from .schema.compiler import CompiledSchema
 
+from .autofix.types import AutoFixMode
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -258,7 +260,7 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
     if not source.strip():
         raise ScoutScriptLoadError(
             f'Script "{path}" is empty. '
-            f"Regenerate with scraper.run(regenerate=True)."
+            f"Regenerate with scraper.run(auto_fix='always')."
         )
 
     # Syntax check
@@ -268,7 +270,7 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
         raise ScoutScriptLoadError(
             f'Script "{path}" has a syntax error: {exc.msg} '
             f"(line {exc.lineno}). Fix the file or "
-            f"regenerate with scraper.run(regenerate=True)."
+            f"regenerate with scraper.run(auto_fix='always')."
         ) from None
 
     # Find async def scrape
@@ -283,14 +285,14 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
         raise ScoutScriptLoadError(
             f'Script "{path}" has no function named "scrape". '
             f"The file must define: async def scrape(page, start_url, checkpoint). "
-            f"Fix the file or regenerate with scraper.run(regenerate=True)."
+            f"Fix the file or regenerate with scraper.run(auto_fix='always')."
         )
 
     if not isinstance(scrape_func, ast.AsyncFunctionDef):
         raise ScoutScriptLoadError(
             f'Script "{path}" defines "scrape" as a sync function. '
             f"It must be async: async def scrape(page, start_url, checkpoint). "
-            f"Fix the file or regenerate with scraper.run(regenerate=True)."
+            f"Fix the file or regenerate with scraper.run(auto_fix='always')."
         )
 
     # Check signature: exactly (page, start_url, checkpoint).
@@ -305,12 +307,12 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
             f'Script "{path}" has wrong signature for scrape(). '
             f"Expected: scrape(page, start_url, checkpoint). "
             f"Got: scrape({', '.join(actual_params)}). "
-            f"Fix the file or regenerate with scraper.run(regenerate=True)."
+            f"Fix the file or regenerate with scraper.run(auto_fix='always')."
         )
 
     # Execute the source in an isolated namespace. We use compile+exec
     # instead of importlib to avoid bytecode caching issues when the same
-    # file path is overwritten with new content (e.g. regenerate=True).
+    # file path is overwritten with new content (e.g. auto_fix='always').
     compiled_code = compile(source, str(path), "exec")
     namespace: dict[str, Any] = {
         "__file__": str(path),
@@ -321,7 +323,7 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
     except Exception as exc:
         raise ScoutScriptLoadError(
             f'Script "{path}" failed to load: {exc}. '
-            f"Fix the file or regenerate with scraper.run(regenerate=True)."
+            f"Fix the file or regenerate with scraper.run(auto_fix='always')."
         ) from None
 
     fn = namespace.get("scrape")
@@ -363,7 +365,7 @@ def _check_domain_mismatch(
             f"  Script:  {script_url}\n"
             f"  Current: {current_url}\n"
             f"\n"
-            f"  To regenerate for the new site: scraper.run(regenerate=True)\n"
+            f"  To regenerate for the new site: scraper.run(auto_fix='always')\n"
             f'  To use a different script file:  script="<new_path>.py"'
         )
 
@@ -373,7 +375,7 @@ def _check_task_mismatch(script_task: str, current_task: str) -> None:
     if script_task and script_task != current_task:
         logger.warning(
             "Note: Task description has changed since script was generated.\n"
-            "        Using cached script. To regenerate: scraper.run(regenerate=True)"
+            "        Using cached script. To regenerate: scraper.run(auto_fix='always')"
         )
 
 
@@ -438,11 +440,11 @@ class Scraper:
         *,
         schema: Any,
         script: str | Path | None = None,
-        model: ModelName = "anthropic:claude-haiku-4-5",
-        headless: bool = False,
+        model: ModelName = "claude-haiku-4-5",
+        headless: bool = True,
         api_key: str | None = None,
         timeout: int = 600,
-        max_retries: int = 6,
+        max_attempts: int = 6,
         auto_fix: bool | str = False,
     ) -> None:
         # -- url --
@@ -461,7 +463,7 @@ class Scraper:
         # -- schema --
         if schema is None:
             raise ScoutSchemaError(
-                "schema is required — pass a dict, list, or Field/List schema"
+                "schema is required — pass a dict, list, or Field/Items schema"
             )
         compiled: CompiledSchema = compile_schema(schema)
 
@@ -486,10 +488,10 @@ class Scraper:
                 f"timeout must be a positive integer (got {timeout!r})"
             )
 
-        # -- max_retries --
-        if not isinstance(max_retries, int) or max_retries < 1:
+        # -- max_attempts --
+        if not isinstance(max_attempts, int) or max_attempts < 1:
             raise ScoutError(
-                f"max_retries must be at least 1 (got {max_retries!r})"
+                f"max_attempts must be at least 1 (got {max_attempts!r})"
             )
 
         # -- model --
@@ -499,23 +501,11 @@ class Scraper:
         # -- auto_fix --
         auto_fix_mode = None
         if auto_fix is not False:
-            from .autofix.types import AutoFixMode
-
-            _VALID_MODES = {
-                True: AutoFixMode.BALANCED,
-                "balanced": AutoFixMode.BALANCED,
-                "conservative": AutoFixMode.CONSERVATIVE,
-                "aggressive": AutoFixMode.AGGRESSIVE,
-            }
-            if auto_fix not in _VALID_MODES:
-                raise ScoutConfigError(
-                    f"auto_fix must be False, True, 'conservative', "
-                    f"'balanced', or 'aggressive' (got {auto_fix!r})"
-                )
-            auto_fix_mode = _VALID_MODES[auto_fix]
+            auto_fix_mode = self._resolve_auto_fix_value(auto_fix)
 
             # §3/§11: auto_fix without script= has no effect
-            if script_path is None:
+            # (except "always" which forces regeneration regardless)
+            if script_path is None and auto_fix_mode != AutoFixMode.ALWAYS:
                 logger.warning(
                     "auto_fix has no effect without script= — "
                     "every run generates from scratch."
@@ -531,7 +521,7 @@ class Scraper:
         self._headless = headless
         self._api_key = api_key
         self._timeout = timeout
-        self._max_retries = max_retries
+        self._max_attempts = max_attempts
         self._auto_fix_mode = auto_fix_mode
 
         # -- Runtime state --
@@ -552,6 +542,11 @@ class Scraper:
         return self._url
 
     @property
+    def task(self) -> str:
+        """The task description."""
+        return self._task
+
+    @property
     def script_path(self) -> Path | None:
         """Absolute path to the script file, or None."""
         return self._script_path
@@ -564,6 +559,31 @@ class Scraper:
                 parts.append(", cached=True")
         parts.append(")")
         return "".join(parts)
+
+    # -- Auto-fix mode resolution --
+
+    # Mapping from user-facing auto_fix values to AutoFixMode enums.
+    _VALID_AUTO_FIX = {
+        True: AutoFixMode.BALANCED,
+        "balanced": AutoFixMode.BALANCED,
+        "conservative": AutoFixMode.CONSERVATIVE,
+        "aggressive": AutoFixMode.AGGRESSIVE,
+        "always": AutoFixMode.ALWAYS,
+    }
+
+    @staticmethod
+    def _resolve_auto_fix_value(value: bool | str) -> AutoFixMode:
+        """Convert a user-facing auto_fix value to an AutoFixMode enum.
+
+        Raises ScoutConfigError for invalid values.
+        """
+        mode = Scraper._VALID_AUTO_FIX.get(value)
+        if mode is None:
+            raise ScoutConfigError(
+                f"auto_fix must be False, True, 'conservative', "
+                f"'balanced', 'aggressive', or 'always' (got {value!r})"
+            )
+        return mode
 
     # -- Context manager --
 
@@ -658,15 +678,16 @@ class Scraper:
         self,
         *,
         url: str | None = None,
-        regenerate: bool = False,
+        auto_fix: bool | str | None = None,
     ) -> ScraperResult:
         """Generate (if needed) and execute the scraping function.
 
         Args:
             url: Override the constructor URL for this execution only.
                  Must be on the same domain as the original URL.
-            regenerate: Discard any cached function and regenerate
-                from scratch.
+            auto_fix: Override the constructor's auto_fix setting for
+                this run only. Pass ``"always"`` to force regeneration
+                (discards any cached script).
 
         Returns:
             ScraperResult with validated data.
@@ -674,12 +695,23 @@ class Scraper:
         effective_url = self._resolve_url(url)
         start_time = time.monotonic()
 
+        # Resolve effective auto_fix mode for this call
+        if auto_fix is not None:
+            if auto_fix is False:
+                effective_mode = None
+            else:
+                effective_mode = self._resolve_auto_fix_value(auto_fix)
+        else:
+            effective_mode = self._auto_fix_mode
+
+        force_regenerate = (effective_mode == AutoFixMode.ALWAYS)
+
         # -- Cached path: load from disk or memory --
-        if not regenerate and (self._cached_fn is not None or self._has_script_on_disk()):
-            return await self._run_cached(effective_url)
+        if not force_regenerate and (self._cached_fn is not None or self._has_script_on_disk()):
+            return await self._run_cached(effective_url, effective_mode)
 
         # -- Generation path --
-        if regenerate and self._script_path and self._script_path.exists():
+        if force_regenerate and self._script_path and self._script_path.exists():
             logger.info(
                 "Regenerating script (overwriting %s)", self._script_path
             )
@@ -698,7 +730,7 @@ class Scraper:
             )
 
         # Clear in-memory cache when regenerating
-        if regenerate:
+        if force_regenerate:
             self._cached_fn = None
             self._cached_source = None
 
@@ -711,7 +743,7 @@ class Scraper:
         self,
         *,
         url: str | None = None,
-        regenerate: bool = False,
+        auto_fix: bool | str | None = None,
     ) -> ScraperResult:
         """Synchronous version of :meth:`async_run`.
 
@@ -727,7 +759,7 @@ class Scraper:
         # the shared browser.
         if self._context_managed and self._bg_loop is not None:
             future = asyncio.run_coroutine_threadsafe(
-                self.async_run(url=url, regenerate=regenerate),
+                self.async_run(url=url, auto_fix=auto_fix),
                 self._bg_loop,
             )
             return future.result()
@@ -745,7 +777,7 @@ class Scraper:
                 "    result = await scraper.async_run()"
             )
 
-        return asyncio.run(self.async_run(url=url, regenerate=regenerate))
+        return asyncio.run(self.async_run(url=url, auto_fix=auto_fix))
 
     def export(
         self,
@@ -924,7 +956,11 @@ class Scraper:
 
     # -- Internal: cached execution path --
 
-    async def _run_cached(self, effective_url: str) -> ScraperResult:
+    async def _run_cached(
+        self,
+        effective_url: str,
+        auto_fix_mode: AutoFixMode | None = None,
+    ) -> ScraperResult:
         """Execute a cached scraping function."""
         # Load from disk if not in memory
         if self._cached_fn is None:
@@ -944,8 +980,8 @@ class Scraper:
             self._cached_fn = fn
 
         # Auto-fix path: diagnosis handles execution with signal collection
-        if self._auto_fix_mode is not None:
-            return await self._run_cached_with_autofix(effective_url)
+        if auto_fix_mode is not None:
+            return await self._run_cached_with_autofix(effective_url, auto_fix_mode)
 
         # Branch: in-process (context-managed) vs subprocess
         if self._context_managed:
@@ -984,7 +1020,7 @@ class Scraper:
                     f"Script crashed during execution.\n\n"
                     f"  {err_preview}\n\n"
                     f"  The website may have changed. "
-                    f"Try: scraper.run(regenerate=True)"
+                    f"Try: scraper.run(auto_fix='always')"
                 )
 
         # Validate return value against schema
@@ -1008,6 +1044,7 @@ class Scraper:
     async def _run_cached_with_autofix(
         self,
         effective_url: str,
+        auto_fix_mode: AutoFixMode | None = None,
     ) -> ScraperResult:
         """Execute cached script with auto-fix diagnosis (spec §7).
 
@@ -1023,7 +1060,7 @@ class Scraper:
             DiagnosisResult,
         )
 
-        assert self._auto_fix_mode is not None
+        assert auto_fix_mode is not None
 
         if self._context_managed:
             if self._browser_mgr is None:
@@ -1045,12 +1082,12 @@ class Scraper:
 
         logger.debug(
             "Auto-fix: diagnosing cached script (%s mode)...",
-            self._auto_fix_mode.value,
+            auto_fix_mode.value,
         )
 
         # §7: Diagnosis loop — up to 3 attempts with signals
         result = await diagnose(
-            execute_fn, effective_url, self._auto_fix_mode,
+            execute_fn, effective_url, auto_fix_mode,
         )
 
         # Success on any attempt — return data
@@ -1139,7 +1176,7 @@ class Scraper:
         message = (
             f"Cached script failed.\n\n"
             f"{result.message}\n\n"
-            f"  To regenerate: scraper.run(regenerate=True)"
+            f"  To regenerate: scraper.run(auto_fix='always')"
         )
 
         if category in (ErrorCategory.D, ErrorCategory.F2):
@@ -1217,7 +1254,7 @@ class Scraper:
                 f"Script crashed during execution.\n\n"
                 f"  {exc}\n\n"
                 f"  The website may have changed. "
-                f"Try: scraper.run(regenerate=True)"
+                f"Try: scraper.run(auto_fix='always')"
             ) from exc
         finally:
             try:
@@ -1317,7 +1354,7 @@ class Scraper:
                 f"Script output does not match the schema.\n\n"
                 f"{feedback}\n\n"
                 f"The website may have changed. "
-                f"Try: scraper.run(regenerate=True)"
+                f"Try: scraper.run(auto_fix='always')"
             )
         return data
 
@@ -1647,7 +1684,7 @@ class Scraper:
             llm_config=llm_config,
             headless=self._headless,
             script_timeout=self._timeout,
-            max_script_attempts=self._max_retries,
+            max_script_attempts=self._max_attempts,
             compiled_schema=self._compiled_schema,
             approval_mode="auto",
         )
@@ -1661,7 +1698,7 @@ class Scraper:
             raise ScoutGenerationError(
                 result.error
                 or "AI failed to generate a valid scraping function "
-                f"after {self._max_retries} attempts."
+                f"after {self._max_attempts} attempts."
             )
 
         # Validate return value against schema

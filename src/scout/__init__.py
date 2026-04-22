@@ -2,6 +2,18 @@
 
 from .agent.llm import ModelName
 from .errors import (
+    # New short names (preferred)
+    AutoFixError,
+    ConfigError,
+    Error,
+    GenerationError,
+    SchemaError,
+    ScriptError,
+    ScriptLoadError,
+    ScriptRuntimeError,
+    ScriptTimeoutError,
+    ValidationError,
+    # Backward compatibility aliases
     ScoutAutoFixError,
     ScoutConfigError,
     ScoutError,
@@ -13,7 +25,7 @@ from .errors import (
     ScoutScriptTimeoutError,
     ScoutValidationError,
 )
-from .schema.types import Field, List, SchemaType
+from .schema.types import Field, Items, List, SchemaType
 from .scraper import Scraper, ScraperResult
 
 __all__ = [
@@ -22,9 +34,21 @@ __all__ = [
     "ScraperResult",
     "ModelName",
     "Field",
-    "List",
+    "Items",
     "SchemaType",
-    # Errors
+    # Errors (short names)
+    "AutoFixError",
+    "ConfigError",
+    "Error",
+    "GenerationError",
+    "SchemaError",
+    "ScriptError",
+    "ScriptLoadError",
+    "ScriptRuntimeError",
+    "ScriptTimeoutError",
+    "ValidationError",
+    # Backward compatibility
+    "List",
     "ScoutAutoFixError",
     "ScoutConfigError",
     "ScoutError",

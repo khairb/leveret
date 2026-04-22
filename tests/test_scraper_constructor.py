@@ -58,7 +58,7 @@ class TestConstructorHappyPath:
         assert s._headless is True
         assert s._api_key is None
         assert s._timeout == 600
-        assert s._max_retries == 6
+        assert s._max_attempts == 6
         assert s._script_path is None
         assert s._cached_fn is None
         assert s._browser_mgr is None
@@ -75,7 +75,7 @@ class TestConstructorHappyPath:
             headless=False,
             api_key="sk-test-key",
             timeout=300,
-            max_retries=3,
+            max_attempts=3,
         )
         assert s._url == "https://shop.example.com/products"
         assert s._task == "Extract all product listings"
@@ -84,7 +84,7 @@ class TestConstructorHappyPath:
         assert s._headless is False
         assert s._api_key == "sk-test-key"
         assert s._timeout == 300
-        assert s._max_retries == 3
+        assert s._max_attempts == 3
 
     def test_url_and_task_are_positional(self):
         """url and task can be passed positionally."""
@@ -207,7 +207,7 @@ class TestSchemaValidation:
     def test_none_schema(self):
         with pytest.raises(
             ScoutSchemaError,
-            match="schema is required.*dict.*list.*Field/List",
+            match="schema is required.*dict.*list.*Field/Items",
         ):
             Scraper("https://x.com", "task", schema=None)
 
@@ -327,26 +327,26 @@ class TestTimeoutValidation:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# max_retries validation
+# max_attempts validation
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestMaxRetriesValidation:
+class TestMaxAttemptsValidation:
 
     def test_zero(self):
-        with pytest.raises(ScoutError, match="max_retries must be at least 1"):
-            _make(max_retries=0)
+        with pytest.raises(ScoutError, match="max_attempts must be at least 1"):
+            _make(max_attempts=0)
 
     def test_negative(self):
-        with pytest.raises(ScoutError, match="max_retries must be at least 1"):
-            _make(max_retries=-1)
+        with pytest.raises(ScoutError, match="max_attempts must be at least 1"):
+            _make(max_attempts=-1)
 
     def test_float_rejected(self):
-        with pytest.raises(ScoutError, match="max_retries must be at least 1"):
-            _make(max_retries=3.0)
+        with pytest.raises(ScoutError, match="max_attempts must be at least 1"):
+            _make(max_attempts=3.0)
 
     def test_one_is_minimum(self):
-        s = _make(max_retries=1)
-        assert s._max_retries == 1
+        s = _make(max_attempts=1)
+        assert s._max_attempts == 1
 
 
 # ═══════════════════════════════════════════════════════════════════════════

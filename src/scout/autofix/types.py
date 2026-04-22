@@ -217,11 +217,13 @@ class AutoFixMode(enum.Enum):
     - CONSERVATIVE: Only high-confidence categories (B, G). Never D/E.
     - BALANCED: High-confidence + ambiguous when page verified real.
     - AGGRESSIVE: Lower thresholds, tolerates some tainted attempts.
+    - ALWAYS: Skip cache entirely, force fresh generation every run.
     """
 
     CONSERVATIVE = "conservative"
     BALANCED = "balanced"
     AGGRESSIVE = "aggressive"
+    ALWAYS = "always"
 
 
 class AutoFixAction(enum.Enum):

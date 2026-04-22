@@ -645,7 +645,7 @@ class TestRunCachedWithAutofix:
         )
 
         with patch("scout.autofix.diagnose", return_value=mock_result) as mock_diag:
-            result = await s._run_cached_with_autofix(VALID_URL)
+            result = await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
 
         assert result.data == [{"title": "Found"}]
         assert result.cached is True
@@ -673,7 +673,7 @@ class TestRunCachedWithAutofix:
 
         with patch("scout.autofix.diagnose", return_value=mock_result):
             with pytest.raises(ScoutScriptRuntimeError, match="Cached script failed"):
-                await s._run_cached_with_autofix(VALID_URL)
+                await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
 
     @pytest.mark.asyncio
     async def test_diagnosis_raise_category_d(self, tmp_path):
@@ -695,7 +695,7 @@ class TestRunCachedWithAutofix:
 
         with patch("scout.autofix.diagnose", return_value=mock_result):
             with pytest.raises(ScoutScriptTimeoutError, match="Cached script failed"):
-                await s._run_cached_with_autofix(VALID_URL)
+                await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
 
     @pytest.mark.asyncio
     async def test_diagnosis_raise_category_g(self, tmp_path):
@@ -717,7 +717,7 @@ class TestRunCachedWithAutofix:
 
         with patch("scout.autofix.diagnose", return_value=mock_result):
             with pytest.raises(ScoutValidationError, match="Cached script failed"):
-                await s._run_cached_with_autofix(VALID_URL)
+                await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
 
     @pytest.mark.asyncio
     async def test_diagnosis_raise_category_f3(self, tmp_path):
@@ -738,7 +738,7 @@ class TestRunCachedWithAutofix:
 
         with patch("scout.autofix.diagnose", return_value=mock_result):
             with pytest.raises(ScoutError, match="Cached script failed"):
-                await s._run_cached_with_autofix(VALID_URL)
+                await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
 
     @pytest.mark.asyncio
     async def test_diagnosis_raise_category_f2(self, tmp_path):
@@ -760,7 +760,7 @@ class TestRunCachedWithAutofix:
 
         with patch("scout.autofix.diagnose", return_value=mock_result):
             with pytest.raises(ScoutScriptTimeoutError, match="Cached script failed"):
-                await s._run_cached_with_autofix(VALID_URL)
+                await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
 
 
 # -- Track 3: Regeneration flow -------------------------------------------
@@ -816,7 +816,7 @@ class TestRegenerationFlow:
             patch.object(s, "_check_api_key"),
             patch.object(s, "_check_playwright"),
         ):
-            result = await s._run_cached_with_autofix(VALID_URL)
+            result = await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
 
         assert result.auto_fixed is True
         assert result.cached is False
@@ -852,7 +852,7 @@ class TestRegenerationFlow:
             patch.object(s, "_check_api_key"),
             patch.object(s, "_check_playwright"),
         ):
-            await s._run_cached_with_autofix(VALID_URL)
+            await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
 
         # Cache was cleared BEFORE _run_generate was called
         assert fn_before_regen is None
@@ -880,7 +880,7 @@ class TestRegenerationFlow:
                 ScoutAutoFixError,
                 match="could not produce a valid script",
             ):
-                await s._run_cached_with_autofix(VALID_URL)
+                await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
 
     @pytest.mark.asyncio
     async def test_regen_validation_error_raises_validation_error(self, tmp_path):
@@ -904,7 +904,7 @@ class TestRegenerationFlow:
                 ScoutValidationError,
                 match="does not match the schema",
             ):
-                await s._run_cached_with_autofix(VALID_URL)
+                await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
 
     @pytest.mark.asyncio
     async def test_regen_checks_api_key(self, tmp_path):
@@ -926,7 +926,7 @@ class TestRegenerationFlow:
             patch.object(s, "_check_api_key") as mock_key,
             patch.object(s, "_check_playwright"),
         ):
-            await s._run_cached_with_autofix(VALID_URL)
+            await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
 
         mock_key.assert_called_once()
 
@@ -945,7 +945,7 @@ class TestRegenerationFlow:
             patch.object(s, "_make_subprocess_execute_fn", return_value=lambda: None) as mock_sub,
             patch.object(s, "_make_in_process_execute_fn") as mock_ip,
         ):
-            await s._run_cached_with_autofix(VALID_URL)
+            await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
 
         mock_sub.assert_called_once_with(VALID_URL)
         mock_ip.assert_not_called()
@@ -965,7 +965,7 @@ class TestRegenerationFlow:
             patch.object(s, "_make_subprocess_execute_fn") as mock_sub,
             patch.object(s, "_make_in_process_execute_fn", return_value=lambda: None) as mock_ip,
         ):
-            await s._run_cached_with_autofix(VALID_URL)
+            await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
 
         mock_ip.assert_called_once_with(VALID_URL)
         mock_sub.assert_not_called()
@@ -999,9 +999,9 @@ class TestRunCachedAutoFixBranch:
         with patch.object(
             s, "_run_cached_with_autofix", return_value=mock_result,
         ) as mock_af:
-            result = await s._run_cached(VALID_URL)
+            result = await s._run_cached(VALID_URL, s._auto_fix_mode)
 
-        mock_af.assert_awaited_once_with(VALID_URL)
+        mock_af.assert_awaited_once_with(VALID_URL, s._auto_fix_mode)
         assert result.data == [{"title": "Test"}]
 
     @pytest.mark.asyncio
@@ -1025,7 +1025,7 @@ class TestRunCachedAutoFixBranch:
                 # Will fail schema validation but that's fine —
                 # we just need to verify _run_cached_with_autofix was NOT called
                 try:
-                    await s._run_cached(VALID_URL)
+                    await s._run_cached(VALID_URL, s._auto_fix_mode)
                 except Exception:
                     pass
 

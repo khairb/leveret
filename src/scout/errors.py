@@ -1,28 +1,28 @@
 """Scout exception hierarchy.
 
-All Scout exceptions inherit from ScoutError, allowing broad catching
-with ``except ScoutError`` or specific catching with subclasses.
+All Scout exceptions inherit from Error, allowing broad catching
+with ``except Error`` or specific catching with subclasses.
 
 Hierarchy::
 
-    ScoutError
-    ├── ScoutSchemaError
-    ├── ScoutConfigError
-    ├── ScoutGenerationError
-    ├── ScoutAutoFixError
-    ├── ScoutScriptError
-    │   ├── ScoutScriptLoadError
-    │   ├── ScoutScriptRuntimeError
-    │   └── ScoutScriptTimeoutError
-    └── ScoutValidationError
+    Error
+    ├── SchemaError
+    ├── ConfigError
+    ├── GenerationError
+    ├── AutoFixError
+    ├── ScriptError
+    │   ├── ScriptLoadError
+    │   ├── ScriptRuntimeError
+    │   └─�� ScriptTimeoutError
+    └── ValidationError
 """
 
 
-class ScoutError(Exception):
+class Error(Exception):
     """Base exception for all Scout errors."""
 
 
-class ScoutSchemaError(ScoutError):
+class SchemaError(Error):
     """Invalid schema definition.
 
     Raised at schema construction time when the user provides an invalid
@@ -31,7 +31,7 @@ class ScoutSchemaError(ScoutError):
     """
 
 
-class ScoutConfigError(ScoutError):
+class ConfigError(Error):
     """Configuration mismatch.
 
     Raised when a cached script's metadata conflicts with the current
@@ -40,7 +40,7 @@ class ScoutConfigError(ScoutError):
     """
 
 
-class ScoutGenerationError(ScoutError):
+class GenerationError(Error):
     """AI failed to generate a valid scraping function.
 
     Raised when the agent exhausts all retry attempts without producing
@@ -49,7 +49,7 @@ class ScoutGenerationError(ScoutError):
     """
 
 
-class ScoutAutoFixError(ScoutError):
+class AutoFixError(Error):
     """Auto-fix regenerated but the new script failed the same way.
 
     Raised when the auto-fix system regenerated a script, but the new
@@ -62,7 +62,7 @@ class ScoutAutoFixError(ScoutError):
     """
 
 
-class ScoutScriptError(ScoutError):
+class ScriptError(Error):
     """Base class for saved-script execution failures.
 
     Catch this to handle any script failure regardless of cause.
@@ -70,25 +70,25 @@ class ScoutScriptError(ScoutError):
     """
 
 
-class ScoutScriptLoadError(ScoutScriptError):
+class ScriptLoadError(ScriptError):
     """Saved script file is malformed.
 
     The file has a syntax error, is missing the ``scrape`` function,
     or is otherwise not valid Python. Fix the file manually or
-    regenerate with ``regenerate=True``.
+    regenerate with ``auto_fix="always"``.
     """
 
 
-class ScoutScriptRuntimeError(ScoutScriptError):
+class ScriptRuntimeError(ScriptError):
     """Saved script crashed during execution.
 
     The script loaded and started running but raised an exception —
     typically because the website structure changed and selectors
-    no longer match. Regenerate with ``regenerate=True``.
+    no longer match. Regenerate with ``auto_fix="always"``.
     """
 
 
-class ScoutScriptTimeoutError(ScoutScriptError):
+class ScriptTimeoutError(ScriptError):
     """Saved script exceeded the execution timeout.
 
     The script did not complete within the configured timeout.
@@ -96,7 +96,7 @@ class ScoutScriptTimeoutError(ScoutScriptError):
     """
 
 
-class ScoutValidationError(ScoutError):
+class ValidationError(Error):
     """Script output does not match the schema.
 
     The script ran successfully but returned data that fails schema
@@ -104,3 +104,18 @@ class ScoutValidationError(ScoutError):
     encounters a changed website, or when the schema was modified
     after the script was generated.
     """
+
+
+# ── Backward compatibility aliases ──────────────────────────────
+# These ensure existing code using Scout-prefixed names still works.
+
+ScoutError = Error
+ScoutSchemaError = SchemaError
+ScoutConfigError = ConfigError
+ScoutGenerationError = GenerationError
+ScoutAutoFixError = AutoFixError
+ScoutScriptError = ScriptError
+ScoutScriptLoadError = ScriptLoadError
+ScoutScriptRuntimeError = ScriptRuntimeError
+ScoutScriptTimeoutError = ScriptTimeoutError
+ScoutValidationError = ValidationError

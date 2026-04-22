@@ -71,17 +71,17 @@ class Field:
         return f"Field({', '.join(parts)})"
 
 
-class List:
+class Items:
     """A list schema with item type and optional length constraints.
 
     The first positional argument is the item schema — a base type,
-    a ``Field()``, a dict (object schema), or another ``List()``.
+    a ``Field()``, a dict (object schema), or another ``Items()``.
 
     Examples::
 
-        List(str, min=5)                        # at least 5 strings
-        List({"title": str}, min=20)            # at least 20 objects
-        List(str, min=5, max=50)                # bounded list
+        Items(str, min=5)                       # at least 5 strings
+        Items({"title": str}, min=20)           # at least 20 objects
+        Items(str, min=5, max=50)               # bounded list
     """
 
     __slots__ = ("item", "min", "max")
@@ -103,7 +103,11 @@ class List:
             parts.append(f"min={self.min!r}")
         if self.max is not None:
             parts.append(f"max={self.max!r}")
-        return f"List({', '.join(parts)})"
+        return f"Items({', '.join(parts)})"
+
+
+# Backward compatibility alias
+List = Items
 
 
 # Type alias for schema definitions accepted by the parser.
@@ -111,7 +115,7 @@ class List:
 SchemaType = Union[
     type,       # str, int, float, bool, dict
     Field,
-    List,
+    Items,
     dict,       # {"key": SchemaType, ...}
     list,       # [SchemaType] — always exactly one element
 ]
