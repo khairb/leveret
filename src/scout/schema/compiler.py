@@ -14,6 +14,7 @@ from .formatter import format_errors
 from .nodes import Node
 from .parse import parse_schema
 from .prompt import render_schema_prompt
+from .tolerance import Tolerance, apply_tolerance
 from .validate import validate
 
 
@@ -29,8 +30,17 @@ class CompiledSchema:
     root: Node
     prompt: str
 
-    def validate(self, data: Any) -> tuple[bool, str]:
+    def validate(
+        self, data: Any, tolerance: Tolerance | None = None,
+    ) -> tuple[bool, str]:
         """Validate data against this schema.
+
+        Args:
+            data: The data to validate.
+            tolerance: Optional tolerance level for list validation.
+                When set to ``BALANCED`` or ``TOLERANT``, per-item
+                errors are filtered if enough items pass. When
+                ``None`` or ``STRICT``, all errors are kept.
 
         Returns:
             ``(True, "")`` if the data matches the schema.
@@ -41,6 +51,11 @@ class CompiledSchema:
         errors = validate(data, self.root)
         if not errors:
             return True, ""
+
+        if tolerance is not None:
+            errors = apply_tolerance(errors, self.root, data, tolerance)
+            if not errors:
+                return True, ""
 
         total_items = len(data) if isinstance(data, list) else None
         return False, format_errors(errors, total_items, node_tree=self.root)

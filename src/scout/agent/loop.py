@@ -90,6 +90,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..schema.compiler import CompiledSchema
+    from ..schema.tolerance import Tolerance
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,7 @@ class AgentLoop:
         compiled_schema: CompiledSchema | None = None,
         sandbox: bool = False,
         launch_options: dict | None = None,
+        tolerance: Tolerance | None = None,
     ) -> None:
         self._llm_config = llm_config or LLMConfig()
         self._max_steps = max_steps
@@ -175,6 +177,7 @@ class AgentLoop:
         self._compiled_schema = compiled_schema
         self._sandbox = sandbox
         self._launch_options = launch_options
+        self._tolerance = tolerance
 
     # ── Main entry point ──────────────────────────────────────
 
@@ -664,6 +667,7 @@ class AgentLoop:
                                     valid, schema_feedback = (
                                         self._compiled_schema.validate(
                                             return_data,
+                                            tolerance=self._tolerance,
                                         )
                                     )
                                     tracer.log_system_event(

@@ -35,6 +35,7 @@ from .errors import (
 )
 from .agent.llm import ModelName
 from .schema.compiler import compile_schema
+from .schema.tolerance import Tolerance
 from ._logging import logger
 
 if TYPE_CHECKING:
@@ -515,6 +516,7 @@ class Scraper:
         task: str,
         *,
         schema: Any,
+        tolerance: str | Tolerance = "balanced",
         script: str | Path | None = None,
         model: ModelName = "claude-haiku-4-5",
         headless: bool = True,
@@ -559,6 +561,9 @@ class Scraper:
                 "    schema=Items({'title': str}, min=10)         # list with constraints"
             )
         compiled: CompiledSchema = compile_schema(schema)
+
+        # -- tolerance --
+        resolved_tolerance = self._resolve_tolerance_value(tolerance)
 
         # -- script (path normalization) --
         script_path: Path | None = None
@@ -621,6 +626,7 @@ class Scraper:
         self._url = url
         self._task = task
         self._compiled_schema = compiled
+        self._tolerance = resolved_tolerance
         self._script_path = script_path
         self._model = model
         self._headless = headless
@@ -761,6 +767,29 @@ class Scraper:
                 f"auto_fix must be False, True, 'conservative', "
                 f"'balanced', 'aggressive', 'always', or "
                 f"'regenerate' (got {value!r})"
+            )
+        return mode
+
+    # Mapping from user-facing tolerance values to Tolerance enums.
+    _VALID_TOLERANCE: dict[str, Tolerance] = {
+        "strict": Tolerance.STRICT,
+        "balanced": Tolerance.BALANCED,
+        "tolerant": Tolerance.TOLERANT,
+    }
+
+    @staticmethod
+    def _resolve_tolerance_value(value: str | Tolerance) -> Tolerance:
+        """Convert a user-facing tolerance value to a Tolerance enum.
+
+        Raises ConfigError for invalid values.
+        """
+        if isinstance(value, Tolerance):
+            return value
+        mode = Scraper._VALID_TOLERANCE.get(value)
+        if mode is None:
+            raise ConfigError(
+                f"tolerance must be 'strict', 'balanced', or 'tolerant' "
+                f"(got {value!r})"
             )
         return mode
 
@@ -1712,7 +1741,9 @@ class Scraper:
             except (ValueError, TypeError):
                 data = None
 
-        valid, feedback = self._compiled_schema.validate(data)
+        valid, feedback = self._compiled_schema.validate(
+            data, tolerance=self._tolerance,
+        )
         if not valid:
             if self._schema_changed:
                 raise ValidationError(
@@ -1831,7 +1862,9 @@ class Scraper:
                     )
 
                 # Schema validation (Category G)
-                valid, feedback = self._compiled_schema.validate(data)
+                valid, feedback = self._compiled_schema.validate(
+                    data, tolerance=self._tolerance,
+                )
                 if not valid:
                     return AttemptResult(
                         success=False,
@@ -1943,7 +1976,9 @@ class Scraper:
 
                 # Schema validation (Category G)
                 parsed = json.loads(rv_json)
-                valid, feedback = self._compiled_schema.validate(parsed)
+                valid, feedback = self._compiled_schema.validate(
+                    parsed, tolerance=self._tolerance,
+                )
                 if not valid:
                     return AttemptResult(
                         success=False,
@@ -2065,6 +2100,7 @@ class Scraper:
             approval_mode="auto",
             sandbox=self._sandbox,
             launch_options=self._get_resolved_launch_options(),
+            tolerance=self._tolerance,
         )
 
         try:
