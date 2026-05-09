@@ -145,13 +145,13 @@ class TestPrerequisiteChecks:
     def test_api_key_missing_raises(self, monkeypatch):
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         s = _make_scraper()
-        with pytest.raises(ScoutError, match="API key not found"):
+        with pytest.raises(ScoutConfigError, match="API key not found"):
             s._check_api_key()
 
     def test_api_key_error_is_actionable(self, monkeypatch):
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         s = _make_scraper()
-        with pytest.raises(ScoutError, match="ANTHROPIC_API_KEY"):
+        with pytest.raises(ScoutConfigError, match="ANTHROPIC_API_KEY"):
             s._check_api_key()
 
     def test_playwright_installed(self):
@@ -167,7 +167,7 @@ class TestPrerequisiteChecks:
     def test_playwright_not_installed(self):
         s = _make_scraper()
         with patch.dict("sys.modules", {"patchright": None}):
-            with pytest.raises(ScoutError, match="Patchright is not installed"):
+            with pytest.raises(ScoutConfigError, match="Patchright is not installed"):
                 s._check_playwright()
 
 
@@ -831,3 +831,81 @@ class TestEdgeCases:
             with patch.object(s, "_execute_function", new_callable=AsyncMock, return_value=mock_result):
                 result = s.run()
             assert result.data == [{"name": f"P{i}", "price": float(i)}]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# GenerationError.is_transient
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestGenerationErrorTransient:
+    """GenerationError exposes is_transient for programmatic retry decisions."""
+
+    def test_transient_on_rate_limit(self):
+        from scout.errors import GenerationError
+        e = GenerationError("rate limited", status_code=429)
+        assert e.is_transient is True
+
+    def test_transient_on_server_error(self):
+        from scout.errors import GenerationError
+        e = GenerationError("server error", status_code=500)
+        assert e.is_transient is True
+        e2 = GenerationError("server error", status_code=503)
+        assert e2.is_transient is True
+
+    def test_not_transient_on_auth_error(self):
+        from scout.errors import GenerationError
+        e = GenerationError("auth failed", status_code=401)
+        assert e.is_transient is False
+
+    def test_not_transient_without_status_code(self):
+        from scout.errors import GenerationError
+        e = GenerationError("agent failed")
+        assert e.is_transient is False
+        assert e.status_code is None
+
+    def test_status_code_preserved(self):
+        from scout.errors import GenerationError
+        e = GenerationError("error", status_code=429)
+        assert e.status_code == 429
+        assert str(e) == "error"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Script backup on overwrite
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestScriptBackup:
+    """_save_script creates a .bak backup before overwriting."""
+
+    def test_backup_created_on_overwrite(self, tmp_path):
+        from scout.scraper import _save_script
+        path = tmp_path / "scraper.py"
+
+        # First write
+        _save_script(
+            "async def scrape(page, start_url, checkpoint):\n    return []",
+            path, "https://example.com", "task", "model",
+        )
+        original_content = path.read_text()
+
+        # Second write (overwrite)
+        _save_script(
+            "async def scrape(page, start_url, checkpoint):\n    return [1]",
+            path, "https://example.com", "task", "model",
+        )
+
+        bak = tmp_path / "scraper.py.bak"
+        assert bak.exists()
+        assert bak.read_text() == original_content
+
+    def test_no_backup_on_first_write(self, tmp_path):
+        from scout.scraper import _save_script
+        path = tmp_path / "scraper.py"
+
+        _save_script(
+            "async def scrape(page, start_url, checkpoint):\n    return []",
+            path, "https://example.com", "task", "model",
+        )
+
+        bak = tmp_path / "scraper.py.bak"
+        assert not bak.exists()

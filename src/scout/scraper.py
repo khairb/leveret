@@ -222,6 +222,15 @@ def _save_script(
     )
     content = docstring + "\n" + code
 
+    # Back up existing script before overwriting (best-effort).
+    # This protects user edits during regenerate() and auto-fix.
+    if path.exists():
+        bak = path.with_suffix(".py.bak")
+        try:
+            shutil.copy2(path, bak)
+        except OSError:
+            pass
+
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
     except FileExistsError:
@@ -901,7 +910,9 @@ class Scraper:
                     )
                 logger.warning(
                     "Script '%s' has been manually edited. "
-                    "Regenerating will overwrite your changes.",
+                    "Regenerating will overwrite your changes. "
+                    "A backup will be saved to '%s.bak'.",
+                    self._script_path,
                     self._script_path,
                 )
             logger.info(
@@ -1165,7 +1176,9 @@ class Scraper:
 
         logger.warning(
             "Script '%s' has been manually edited since generation. "
-            "Regenerating will overwrite your changes.",
+            "Regenerating will overwrite your changes. "
+            "A backup will be saved to '%s.bak'.",
+            self._script_path,
             self._script_path,
         )
 
@@ -1187,7 +1200,7 @@ class Scraper:
         if os.environ.get(env_var):
             return
 
-        raise Error(
+        raise ConfigError(
             f"API key not found for provider '{provider}'.\n\n"
             f"  Set the environment variable:\n"
             f"    export {env_var}=...\n\n"
@@ -1200,7 +1213,7 @@ class Scraper:
         try:
             import patchright  # noqa: F401
         except ImportError:
-            raise Error(
+            raise ConfigError(
                 "Patchright is not installed.\n\n"
                 "  Run:\n"
                 "    pip install patchright\n"
@@ -1225,7 +1238,7 @@ class Scraper:
                         install_dir = Path(line.split(":", 1)[1].strip())
                         marker = install_dir / "INSTALLATION_COMPLETE"
                         if not install_dir.exists() or not marker.exists():
-                            raise Error(
+                            raise ConfigError(
                                 "Chromium browser is not installed.\n\n"
                                 "  Patchright is installed, but the browser "
                                 "binary is missing.\n\n"
@@ -2165,21 +2178,25 @@ class Scraper:
             if status == 429:
                 return GenerationError(
                     "API rate limit exceeded. "
-                    "Retry in a few minutes."
+                    "Retry in a few minutes.",
+                    status_code=429,
                 )
             if status == 401:
                 return GenerationError(
                     "API rejected the API key. "
                     "Check your API key environment variable or "
-                    "the api_key= argument."
+                    "the api_key= argument.",
+                    status_code=401,
                 )
             if status and status >= 500:
                 return GenerationError(
                     f"API returned a server error ({status}). "
-                    "This is usually transient — retry shortly."
+                    "This is usually transient — retry shortly.",
+                    status_code=status,
                 )
             return GenerationError(
-                f"API error ({status}): {exc}"
+                f"API error ({status}): {exc}",
+                status_code=status,
             )
         if isinstance(exc, ConnectionError):
             return GenerationError(

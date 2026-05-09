@@ -46,7 +46,31 @@ class GenerationError(Error):
     Raised when the agent exhausts all retry attempts without producing
     a function that passes validation, or when the LLM API returns
     an unrecoverable error.
+
+    Attributes:
+        status_code: HTTP status code from the API, if the failure was
+            an API error. ``None`` for non-API failures (agent exhausted
+            retries, connection error, etc.).
+        is_transient: ``True`` when the failure is likely temporary
+            (rate limit, server error) and retrying may succeed.
+            ``False`` for permanent failures (auth error, agent failure).
     """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+    @property
+    def is_transient(self) -> bool:
+        """Whether retrying the same call may succeed."""
+        if self.status_code is None:
+            return False
+        return self.status_code == 429 or self.status_code >= 500
 
 
 class SandboxViolationError(Error):
