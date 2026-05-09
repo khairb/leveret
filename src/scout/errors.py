@@ -49,6 +49,19 @@ class GenerationError(Error):
     """
 
 
+class SandboxViolationError(Error):
+    """AI-generated code was rejected by the sandbox.
+
+    Raised when the sandbox (RestrictedPython) blocks the generated code
+    twice — once is tolerated (the AI retries), but a second violation
+    triggers a hard stop. Repeated violations may indicate prompt
+    injection from the target website.
+
+    If you trust the target site and believe this is a false positive,
+    disable the sandbox: ``Scraper(..., sandbox=False)``.
+    """
+
+
 class AutoFixError(Error):
     """Auto-fix regenerated but the new script failed the same way.
 

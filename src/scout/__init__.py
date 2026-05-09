@@ -5,6 +5,7 @@ from .errors import (
     ConfigError,
     Error,
     GenerationError,
+    SandboxViolationError,
     SchemaError,
     ScriptError,
     ScriptLoadError,
@@ -47,6 +48,7 @@ __all__ = [
     "ScriptError",
     "ScriptLoadError",
     "ScriptRuntimeError",
+    "SandboxViolationError",
     "ScriptTimeoutError",
     "ValidationError",
 ]

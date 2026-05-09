@@ -549,13 +549,20 @@ class AgentLoop:
                                 if is_sandbox_violation:
                                     sandbox_rejections += 1
                                     if sandbox_rejections >= 2:
-                                        result.error = (
+                                        from ..errors import (
+                                            SandboxViolationError,
+                                        )
+                                        raise SandboxViolationError(
                                             "Sandbox rejected the generated "
-                                            "code twice. Aborting for safety."
+                                            "code twice. Aborting for "
+                                            "safety — repeated violations "
+                                            "may indicate prompt injection "
+                                            "from the target website.\n\n"
+                                            "If you trust this site, disable "
+                                            "the sandbox:\n"
+                                            "  Scraper(..., sandbox=False)"
                                             f"\n\nLast error:\n{stderr}"
                                         )
-                                        result.success = False
-                                        return result
 
                                 feedback = (
                                     "Function crashed with exit code "
