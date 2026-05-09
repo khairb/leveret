@@ -168,6 +168,13 @@ def print_final_call() -> None:
     )
 
 
+def print_exploration_required() -> None:
+    print(
+        f"\n  {_c(_YELLOW, 'Exploration required:')} "
+        f"agent must explore the page before submitting"
+    )
+
+
 def print_debug_required() -> None:
     print(
         f"\n  {_c(_YELLOW, 'Debug required:')} "

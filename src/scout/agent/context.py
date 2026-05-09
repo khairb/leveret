@@ -27,7 +27,7 @@ _ZOOM_START = "__ZOOM_START__"
 _ZOOM_END = "__ZOOM_END__"
 
 # ── Turn-based stub collapse ──────────────────────────────────
-_STUB_AFTER_TURNS = 3
+_STUB_AFTER_TURNS = 5
 _TURN_TAG_RE = _re.compile(r"__TURN_(\d+)__")
 
 

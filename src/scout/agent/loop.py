@@ -59,6 +59,7 @@ from .bridge import (
     create_zoom_section_function,
 )
 from .llm import LLMConfig, call_llm
+from .planner import generate_exploration_plan
 from .requirements import generate_requirements, revise_requirements
 from .validator import AttemptRecord, validate_output
 from .prompt import (
@@ -210,7 +211,24 @@ class AgentLoop:
                 schema_prompt=schema_prompt,
                 sandbox=self._sandbox,
             )
-            initial_msg = build_initial_user_message(task, url)
+            # ── Exploration planner ────────────────────────
+            exploration_checklist = None
+            if self._compiled_schema is not None:
+                try:
+                    exploration_checklist = await generate_exploration_plan(
+                        task=task,
+                        compiled_schema=self._compiled_schema,
+                        llm_config=self._validator_config,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Planner failed — continuing without checklist",
+                        exc_info=True,
+                    )
+
+            initial_msg = build_initial_user_message(
+                task, url, exploration_checklist=exploration_checklist,
+            )
 
             # Start trace.
             tracer.start(
@@ -243,6 +261,7 @@ class AgentLoop:
             turn_number = 0
             needs_debugging = False
             debugging_turn_count = 0  # turns since last rejection
+            explore_gate_msg_index: int | None = None
             active_script_result: InProcessScriptResult | None = None
             exploration_page = runtime.page  # Save original page ref
             checkpoint_base_dir = Path(
@@ -448,6 +467,46 @@ class AgentLoop:
                         tracer.log_script_extracted(script, valid, error_msg)
                         console.print_script_found(valid, error_msg)
                         if valid:
+                            # Gate: require at least 2 python
+                            # tool calls before accepting a
+                            # structurally valid script.
+                            if python_step_count < 2:
+                                remaining = (
+                                    self._max_script_attempts
+                                    - script_attempts
+                                )
+                                explore_msg = (
+                                    "Do not rush to submit the "
+                                    "final script \u2014 you have "
+                                    "limited attempts"
+                                )
+                                if remaining < 3:
+                                    explore_msg += (
+                                        f", and only {remaining}"
+                                        f" remain; use them "
+                                        f"carefully"
+                                    )
+                                explore_msg += (
+                                    ". Before writing the "
+                                    "function, verify that your "
+                                    "approach works. Use the "
+                                    "python tool to test your "
+                                    "selectors and confirm they "
+                                    "return the expected data."
+                                )
+                                tracer.log_system_event(
+                                    "exploration_required",
+                                    text=explore_msg,
+                                )
+                                console.print_exploration_required()
+                                conversation.add_user_message(
+                                    explore_msg,
+                                )
+                                explore_gate_msg_index = (
+                                    len(conversation.messages) - 1
+                                )
+                                continue
+
                             # Agent submitted a script — clear
                             # debugging state.
                             needs_debugging = False
@@ -842,6 +901,17 @@ class AgentLoop:
                     step_count += 1
                     if block.name == "python":
                         python_step_count += 1
+                        # Remove the exploration gate message
+                        # once the threshold is met so it
+                        # doesn't confuse smaller models.
+                        if (
+                            python_step_count >= 2
+                            and explore_gate_msg_index is not None
+                        ):
+                            conversation.remove_message(
+                                explore_gate_msg_index,
+                            )
+                            explore_gate_msg_index = None
                         if needs_debugging:
                             debugging_turn_count += 1
 

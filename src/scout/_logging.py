@@ -22,5 +22,9 @@ def _setup_default_handler() -> None:
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)
 
+    # Silence noisy third-party debug logs (anthropic SDK, httpx, httpcore).
+    for name in ("anthropic", "httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
 
 _setup_default_handler()

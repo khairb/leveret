@@ -187,6 +187,26 @@ variants** — not just the one you happened to test first.
 A selector that works on one instance but fails silently on ten others is \
 not a working selector. Generalize from evidence, not from assumption.
 
+### Exploration Budget: Sample Navigation, Don't Exhaust It
+
+Extracting data from the current page is cheap — a single \
+`querySelectorAll` grabs hundreds of items instantly. Do that freely. \
+But **navigating to individual item pages** (profiles, detail pages, \
+product pages) costs a page load, a `show_page`, and zoom calls per item. \
+Doing that for every item during exploration is wasted work — the final \
+function will repeat it all anyway.
+
+**Cap detail-page visits at 5–10 diverse samples.** Pick items from the \
+start, middle, and end of the list, or items of visibly different types. \
+Once your selectors work on 5 diverse detail pages, they will work on 500 \
+— the pages are rendered from the same template with different data. \
+Expand your sample only if you discover genuinely different page templates.
+
+The same applies to any navigation that multiplies linearly with data \
+volume: paginating through every page, testing every filter combination, \
+or expanding every collapsible section. Test boundaries and a few interior \
+states, then let the final function handle the full sweep.
+
 ### Phase 3: GENERATE
 - **Think out loud** to plan the complete function before writing it.
 - When you are confident, **stop calling tools** and respond with a normal \
@@ -540,19 +560,43 @@ turns. Your notes here will be your lasting reference.
 ──"""
 
 
-def build_initial_user_message(task: str, url: str) -> str:
+def build_initial_user_message(
+    task: str, url: str, exploration_checklist: str | None = None,
+) -> str:
     """Build the first user message with the task and page URL.
 
     Args:
         task: Natural language description of what to extract.
         url: The current page URL.
+        exploration_checklist: Optional checklist from the planner agent.
 
     Returns:
         The initial user message string.
     """
-    return (
+    parts = [
         f"## Task\n\n{task}\n\n"
         f"## Current Page\n\n"
         f"**URL:** {url}\n\n"
-        f"The page is loaded. Call `await show_page(page)` to view its content."
-    )
+        f"The page is loaded. Call `await show_page(page)` to view its content.",
+    ]
+
+    if exploration_checklist:
+        parts.append(
+            "\n\n---\n\n"
+            "## Exploration Checklist\n\n"
+            "Before you write the final script, you need to understand the "
+            "website well enough to get it right. The checklist below lists "
+            "the things you need to figure out first.\n\n"
+            "You can call the `python` tool as many times as you need — "
+            "exploration is cheap. Use `show_page`, `zoom_section`, test "
+            "selectors, click around, try things. There is no limit.\n\n"
+            "Writing the final script is a different story. You have a "
+            "limited number of attempts — if your script is rejected, you "
+            "lose an attempt and have to debug and resubmit. So do not "
+            "start writing the final script until you have worked through "
+            "every item on this checklist and confirmed it with real "
+            "interactions on the page.\n\n"
+            f"{exploration_checklist}"
+        )
+
+    return "".join(parts)
