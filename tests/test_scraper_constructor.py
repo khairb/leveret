@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from scout.errors import ScoutError, ScoutSchemaError
+from scout.errors import ScoutConfigError, ScoutError, ScoutSchemaError
 from scout.schema.types import Field, List
 from scout.scraper import Scraper, ScraperResult, _normalize_domain
 
@@ -151,19 +151,19 @@ class TestURLValidation:
             _make(url="   ")
 
     def test_no_scheme(self):
-        with pytest.raises(ScoutError, match=r'url must be a valid HTTP\(S\) URL'):
+        with pytest.raises(ScoutError, match="url must start with https://"):
             _make(url="example.com")
 
     def test_ftp_scheme(self):
-        with pytest.raises(ScoutError, match=r'url must be a valid HTTP\(S\) URL'):
+        with pytest.raises(ScoutError, match="url must start with https://"):
             _make(url="ftp://example.com")
 
     def test_file_scheme(self):
-        with pytest.raises(ScoutError, match=r'url must be a valid HTTP\(S\) URL'):
+        with pytest.raises(ScoutError, match="url must start with https://"):
             _make(url="file:///etc/passwd")
 
     def test_just_scheme(self):
-        with pytest.raises(ScoutError, match=r'url must be a valid URL'):
+        with pytest.raises(ScoutError, match="url must include a hostname"):
             _make(url="https://")
 
     def test_not_a_string(self):
@@ -207,7 +207,7 @@ class TestSchemaValidation:
     def test_none_schema(self):
         with pytest.raises(
             ScoutSchemaError,
-            match="schema is required.*dict.*list.*Field/Items",
+            match="schema is required",
         ):
             Scraper("https://x.com", "task", schema=None)
 
@@ -370,6 +370,35 @@ class TestModelValidation:
     def test_valid_model(self):
         s = _make(model="claude-sonnet-4-5-20250514")
         assert s._model == "claude-sonnet-4-5-20250514"
+
+    def test_valid_provider_prefixed_model(self):
+        s = _make(model="openai:gpt-4o")
+        assert s._model == "openai:gpt-4o"
+
+    def test_gpt_without_prefix_raises(self):
+        with pytest.raises(ScoutConfigError, match="OpenAI"):
+            _make(model="gpt-4o")
+
+    def test_gemini_without_prefix_raises(self):
+        with pytest.raises(ScoutConfigError, match="Google"):
+            _make(model="gemini-2.0-flash")
+
+    def test_llama_without_prefix_raises(self):
+        with pytest.raises(ScoutConfigError, match="Groq"):
+            _make(model="llama-3.3-70b-versatile")
+
+    def test_mistral_without_prefix_raises(self):
+        with pytest.raises(ScoutConfigError, match="Mistral"):
+            _make(model="mistral-large-latest")
+
+    def test_deepseek_without_prefix_raises(self):
+        with pytest.raises(ScoutConfigError, match="DeepSeek"):
+            _make(model="deepseek-chat")
+
+    def test_suggests_provider_prefix(self):
+        """Error message includes the correct provider:model format."""
+        with pytest.raises(ScoutConfigError, match="openai:gpt-4o"):
+            _make(model="gpt-4o")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

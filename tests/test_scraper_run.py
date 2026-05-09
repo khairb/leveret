@@ -75,6 +75,27 @@ def _mock_execute_result(
     return (stdout, return_value_json, stderr, returncode)
 
 
+# ── Positional argument guard ────────────────────────────────────
+
+class TestPositionalArgGuard:
+
+    def test_run_positional_url_raises(self):
+        """run('https://...') gives a helpful error, not a TypeError."""
+        s = _make_scraper()
+        with pytest.raises(ScoutError, match="does not accept positional"):
+            s.run("https://example.com/other")
+
+    def test_run_positional_suggests_keyword(self):
+        s = _make_scraper()
+        with pytest.raises(ScoutError, match=r"url="):
+            s.run("https://example.com/other")
+
+    def test_async_run_positional_raises(self):
+        s = _make_scraper()
+        with pytest.raises(ScoutError, match="does not accept positional"):
+            asyncio.run(s.async_run("https://example.com/other"))
+
+
 # ── URL resolution ───────────────────────────────────────────────
 
 class TestURLResolution:

@@ -473,7 +473,11 @@ class Scraper:
         # -- schema --
         if schema is None:
             raise SchemaError(
-                "schema is required — pass a dict, list, or Field/Items schema"
+                "schema is required.\n\n"
+                "  Quick examples:\n"
+                "    schema={'title': str, 'price': float}       # single object\n"
+                "    schema=[{'title': str, 'price': float}]     # list of objects\n"
+                "    schema=Items({'title': str}, min=10)         # list with constraints"
             )
         compiled: CompiledSchema = compile_schema(schema)
 
@@ -507,6 +511,18 @@ class Scraper:
         # -- model --
         if not isinstance(model, str) or not model.strip():
             raise Error("model must not be empty")
+
+        # Detect common model names used without the provider: prefix.
+        # e.g. "gpt-4o" → should be "openai:gpt-4o"
+        if ":" not in model:
+            suggestion = self._suggest_model_provider(model)
+            if suggestion:
+                raise ConfigError(
+                    f"Model {model!r} looks like it belongs to "
+                    f"{suggestion[0]}.\n\n"
+                    f"  Use the provider:model format:\n"
+                    f'    model="{suggestion[1]}"'
+                )
 
         # -- auto_fix --
         auto_fix_mode = None
@@ -607,6 +623,29 @@ class Scraper:
         "always": AutoFixMode.ALWAYS,
         "regenerate": AutoFixMode.ALWAYS,
     }
+
+    # Well-known model prefixes → (provider display name, provider prefix).
+    _MODEL_PROVIDER_HINTS: list[tuple[list[str], str, str]] = [
+        (["gpt-", "o1-", "o3-", "o4-"], "OpenAI", "openai"),
+        (["gemini-", "gemma-"], "Google", "google-gla"),
+        (["llama-", "mixtral-", "llama3"], "Groq", "groq"),
+        (["mistral-", "codestral-", "pixtral-"], "Mistral", "mistral"),
+        (["deepseek-"], "DeepSeek", "deepseek"),
+        (["command-"], "Cohere", "cohere"),
+    ]
+
+    @staticmethod
+    def _suggest_model_provider(model: str) -> tuple[str, str] | None:
+        """Check if a model name matches a known non-Anthropic provider.
+
+        Returns (provider_name, suggested_format) or None.
+        """
+        lower = model.lower()
+        for prefixes, provider_name, provider_prefix in Scraper._MODEL_PROVIDER_HINTS:
+            for prefix in prefixes:
+                if lower.startswith(prefix):
+                    return (provider_name, f"{provider_prefix}:{model}")
+        return None
 
     @staticmethod
     def _resolve_auto_fix_value(value: bool | str) -> AutoFixMode:
@@ -714,7 +753,7 @@ class Scraper:
 
     async def async_run(
         self,
-        *,
+        *args: Any,
         url: str | None = None,
         auto_fix: bool | str | None = None,
     ) -> ScraperResult:
@@ -730,6 +769,13 @@ class Scraper:
         Returns:
             ScraperResult with validated data.
         """
+        if args:
+            hint = args[0]
+            raise Error(
+                f"run() does not accept positional arguments.\n\n"
+                f"  You wrote:    scraper.run({hint!r})\n"
+                f"  Did you mean: scraper.run(url={hint!r})"
+            )
         effective_url = self._resolve_url(url)
         start_time = time.monotonic()
 
@@ -779,7 +825,7 @@ class Scraper:
 
     def run(
         self,
-        *,
+        *args: Any,
         url: str | None = None,
         auto_fix: bool | str | None = None,
     ) -> ScraperResult:
@@ -793,6 +839,13 @@ class Scraper:
         (e.g. Jupyter) without a context manager.
         Use ``await scraper.async_run()`` instead.
         """
+        if args:
+            hint = args[0]
+            raise Error(
+                f"run() does not accept positional arguments.\n\n"
+                f"  You wrote:    scraper.run({hint!r})\n"
+                f"  Did you mean: scraper.run(url={hint!r})"
+            )
         # Context-managed: dispatch to the background loop that owns
         # the shared browser.
         if self._context_managed and self._bg_loop is not None:

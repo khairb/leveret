@@ -176,6 +176,30 @@ export ANTHROPIC_API_KEY=sk-ant-...   # only needed when generating
 
 Scout uses [Patchright](https://github.com/AmaanAnis999/Patchright) — a Playwright-compatible browser that's harder to detect than vanilla Playwright, so it gets through more bot detection than you'd expect.
 
+## Models
+
+Scout defaults to Claude Haiku, but works with any model supported by [Pydantic AI](https://ai.pydantic.dev/models/). Use the `provider:model` format:
+
+```python
+# Anthropic (default provider — no prefix needed)
+Scraper(..., model="claude-haiku-4-5")
+Scraper(..., model="claude-sonnet-4-5")
+
+# OpenAI
+Scraper(..., model="openai:gpt-4o")
+Scraper(..., model="openai:gpt-4o-mini")
+
+# Google
+Scraper(..., model="google-gla:gemini-2.0-flash")
+
+# Groq, Mistral, DeepSeek, etc.
+Scraper(..., model="groq:llama-3.3-70b-versatile")
+Scraper(..., model="mistral:mistral-large-latest")
+Scraper(..., model="deepseek:deepseek-chat")
+```
+
+Each provider uses its own API key environment variable (`OPENAI_API_KEY`, `GOOGLE_API_KEY`, `GROQ_API_KEY`, etc.) or you can pass `api_key=` directly.
+
 ## Schemas
 
 The schema tells Scout what shape your data should be. Scout validates every result against it — if the output doesn't match during generation, the agent retries until it does.
@@ -203,6 +227,14 @@ schema = {
         "author": str,
     }],
 }
+```
+
+`Items` is also available as `List` if you prefer that name:
+
+```python
+from scout import Scraper, Field, List
+
+schema = List({"title": str, "price": float}, min=10)
 ```
 
 When validation fails during generation, the agent sees specific, grouped feedback:
@@ -265,6 +297,10 @@ result = scraper.run(auto_fix=False)      # disable auto-fix for this run
 
 await scraper.async_run()                 # async version
 
+result = scraper.regenerate()             # force-regenerate, discard cached script
+result = await scraper.async_regenerate() # async version
+
+scraper.has_script                        # True if a cached script exists (no AI needed)
 scraper.export("standalone.py")           # save a copy you can run without Scout
 scraper.close()                           # close the browser (automatic with `with`)
 ```
@@ -277,6 +313,16 @@ result.auto_fixed    # True = auto-fix regenerated the script on this run
 result.timestamp     # when the scrape happened (ISO 8601)
 result.script_path   # where the script lives on disk
 ```
+
+## CLI
+
+Scout also works from the command line:
+
+```bash
+python -m scout "https://news.ycombinator.com" "Extract the top stories" -o scrapers/hn.py
+```
+
+Run `python -m scout --help` for all options.
 
 ## Deploying to production
 
