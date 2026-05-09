@@ -1560,9 +1560,23 @@ async def _run_script_in_process(
                 compile_restricted_agent_code,
                 build_restricted_globals,
                 build_safe_pre_imports,
+                SandboxError,
             )
-            exec_globals = build_restricted_globals(build_safe_pre_imports())
-            exec(compile_restricted_agent_code(script), exec_globals)
+            try:
+                exec_globals = build_restricted_globals(build_safe_pre_imports())
+                exec(compile_restricted_agent_code(script), exec_globals)
+            except SandboxError as exc:
+                result.stderr = (
+                    f"Sandbox validation error: {exc}\n\n"
+                    "The generated code contains blocked patterns. "
+                    "Avoid exec(), eval(), and restricted imports "
+                    "(os, subprocess, sys, etc.)."
+                )
+                result.returncode = 1
+                result.context = context
+                result.pw = pw
+                result.page = page
+                return result
         else:
             exec_globals: dict[str, Any] = {"__builtins__": __builtins__}
             # Pre-imports (same as subprocess wrapper).
