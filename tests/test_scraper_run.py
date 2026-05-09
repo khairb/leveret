@@ -94,12 +94,12 @@ class TestURLResolution:
 
     def test_override_no_scheme_raises(self):
         s = _make_scraper()
-        with pytest.raises(ScoutError, match="url must be a valid"):
+        with pytest.raises(ScoutError, match="url must start with https://"):
             s._resolve_url("not-a-url")
 
     def test_override_no_hostname_raises(self):
         s = _make_scraper()
-        with pytest.raises(ScoutError, match="url must be a valid"):
+        with pytest.raises(ScoutError, match="url must include a hostname"):
             s._resolve_url("http://")
 
     def test_override_valid_https(self):
@@ -146,7 +146,7 @@ class TestPrerequisiteChecks:
     def test_playwright_not_installed(self):
         s = _make_scraper()
         with patch.dict("sys.modules", {"patchright": None}):
-            with pytest.raises(ScoutError, match="Playwright browsers not installed"):
+            with pytest.raises(ScoutError, match="Patchright is not installed"):
                 s._check_playwright()
 
 
@@ -242,7 +242,7 @@ class TestCachedExecution:
                 asyncio.run(s.async_run())
 
     def test_runtime_error_suggests_auto_fix(self, script_path):
-        """Runtime error message suggests auto_fix='always'."""
+        """Runtime error message suggests scraper.regenerate()."""
         s = _make_scraper(script=str(script_path))
 
         mock_result = _mock_execute_result(
@@ -250,7 +250,7 @@ class TestCachedExecution:
         )
 
         with patch.object(s, "_execute_function", new_callable=AsyncMock, return_value=mock_result):
-            with pytest.raises(ScoutScriptRuntimeError, match="auto_fix='always'"):
+            with pytest.raises(ScoutScriptRuntimeError, match="scraper.regenerate"):
                 asyncio.run(s.async_run())
 
     def test_domain_mismatch_on_cached_script(self, tmp_path):
@@ -387,7 +387,7 @@ class TestGeneration:
         s = _make_scraper()
 
         with patch.dict("sys.modules", {"patchright": None}):
-            with pytest.raises(ScoutError, match="Playwright browsers"):
+            with pytest.raises(ScoutError, match="Patchright is not installed"):
                 asyncio.run(s.async_run())
 
     def test_generation_no_prereqs_for_cached(self, tmp_path):
@@ -490,9 +490,9 @@ class TestReturnValueValidation:
         with pytest.raises(ScoutValidationError):
             s._validate_return_value("{{{not json")
 
-    def test_error_message_suggests_auto_fix(self):
+    def test_error_message_suggests_regenerate(self):
         s = _make_scraper()
-        with pytest.raises(ScoutValidationError, match="auto_fix='always'"):
+        with pytest.raises(ScoutValidationError, match="scraper.regenerate"):
             s._validate_return_value(json.dumps("wrong"))
 
     def test_complex_schema_validation(self):

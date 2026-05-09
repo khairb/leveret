@@ -260,7 +260,7 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
     if not source.strip():
         raise ScriptLoadError(
             f'Script "{path}" is empty. '
-            f"Regenerate with scraper.run(auto_fix='always')."
+            f"Regenerate with scraper.regenerate()."
         )
 
     # Syntax check
@@ -270,7 +270,7 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
         raise ScriptLoadError(
             f'Script "{path}" has a syntax error: {exc.msg} '
             f"(line {exc.lineno}). Fix the file or "
-            f"regenerate with scraper.run(auto_fix='always')."
+            f"regenerate with scraper.regenerate()."
         ) from None
 
     # Find async def scrape
@@ -285,14 +285,14 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
         raise ScriptLoadError(
             f'Script "{path}" has no function named "scrape". '
             f"The file must define: async def scrape(page, start_url, checkpoint). "
-            f"Fix the file or regenerate with scraper.run(auto_fix='always')."
+            f"Fix the file or regenerate with scraper.regenerate()."
         )
 
     if not isinstance(scrape_func, ast.AsyncFunctionDef):
         raise ScriptLoadError(
             f'Script "{path}" defines "scrape" as a sync function. '
             f"It must be async: async def scrape(page, start_url, checkpoint). "
-            f"Fix the file or regenerate with scraper.run(auto_fix='always')."
+            f"Fix the file or regenerate with scraper.regenerate()."
         )
 
     # Check signature: exactly (page, start_url, checkpoint).
@@ -307,7 +307,7 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
             f'Script "{path}" has wrong signature for scrape(). '
             f"Expected: scrape(page, start_url, checkpoint). "
             f"Got: scrape({', '.join(actual_params)}). "
-            f"Fix the file or regenerate with scraper.run(auto_fix='always')."
+            f"Fix the file or regenerate with scraper.regenerate()."
         )
 
     # Execute the source in an isolated namespace. We use compile+exec
@@ -323,7 +323,7 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
     except Exception as exc:
         raise ScriptLoadError(
             f'Script "{path}" failed to load: {exc}. '
-            f"Fix the file or regenerate with scraper.run(auto_fix='always')."
+            f"Fix the file or regenerate with scraper.regenerate()."
         ) from None
 
     fn = namespace.get("scrape")
@@ -365,7 +365,7 @@ def _check_domain_mismatch(
             f"  Script:  {script_url}\n"
             f"  Current: {current_url}\n"
             f"\n"
-            f"  To regenerate for the new site: scraper.run(auto_fix='always')\n"
+            f"  To regenerate for the new site: scraper.regenerate()\n"
             f'  To use a different script file:  script="<new_path>.py"'
         )
 
@@ -375,7 +375,7 @@ def _check_task_mismatch(script_task: str, current_task: str) -> None:
     if script_task and script_task != current_task:
         logger.warning(
             "Note: Task description has changed since script was generated.\n"
-            "        Using cached script. To regenerate: scraper.run(auto_fix='always')"
+            "        Using cached script. To regenerate: scraper.regenerate()"
         )
 
 
@@ -450,11 +450,21 @@ class Scraper:
         # -- url --
         if not isinstance(url, str) or not url.strip():
             raise Error(f'url must be a valid HTTP(S) URL (got {url!r})')
+        url = url.strip()
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
-            raise Error(f'url must be a valid HTTP(S) URL (got {url!r})')
+            # Detect missing scheme — "example.com" instead of "https://example.com"
+            if not parsed.scheme and "." in url:
+                raise Error(
+                    f"url must start with https:// or http://\n\n"
+                    f"  Got:          {url!r}\n"
+                    f"  Did you mean: 'https://{url}'?"
+                )
+            raise Error(
+                f"url must start with https:// or http:// (got {url!r})"
+            )
         if not parsed.hostname:
-            raise Error(f'url must be a valid URL (got {url!r})')
+            raise Error(f'url must include a hostname (got {url!r})')
 
         # -- task --
         if not isinstance(task, str) or not task.strip():
@@ -534,6 +544,22 @@ class Scraper:
         self._cm_page_count: int = 0
         self._cm_start_time: float = 0.0
 
+        # -- Developer hints --
+        if script_path is None:
+            logger.info(
+                "Tip: No script= path set. Each run() will generate a new "
+                "script from scratch (costs API credits every time). "
+                "Add script='scrapers/my_scraper.py' to cache it."
+            )
+
+        # -- Fail-fast: check browser at construction time --
+        # The browser check is a one-time setup issue (install command).
+        # Checking early surfaces this before the developer waits for a
+        # run() call. The API key check stays at run() time because the
+        # key may be set between construction and execution.
+        if script_path is None or not script_path.exists():
+            self._check_playwright()
+
     # -- Public properties --
 
     @property
@@ -579,6 +605,7 @@ class Scraper:
         "conservative": AutoFixMode.CONSERVATIVE,
         "aggressive": AutoFixMode.AGGRESSIVE,
         "always": AutoFixMode.ALWAYS,
+        "regenerate": AutoFixMode.ALWAYS,
     }
 
     @staticmethod
@@ -591,7 +618,8 @@ class Scraper:
         if mode is None:
             raise ConfigError(
                 f"auto_fix must be False, True, 'conservative', "
-                f"'balanced', 'aggressive', or 'always' (got {value!r})"
+                f"'balanced', 'aggressive', 'always', or "
+                f"'regenerate' (got {value!r})"
             )
         return mode
 
@@ -780,12 +808,25 @@ class Scraper:
             loop = None
 
         if loop is not None:
-            raise Error(
-                "scraper.run() cannot be called inside a running event loop "
-                "(e.g. Jupyter, async web server).\n\n"
-                "  Use instead:\n"
-                "    result = await scraper.async_run()"
-            )
+            # Inside a running event loop (Jupyter, async server, etc.)
+            # Try nest_asyncio to make run() work seamlessly in notebooks.
+            try:
+                import nest_asyncio
+                nest_asyncio.apply()
+                return loop.run_until_complete(
+                    self.async_run(url=url, auto_fix=auto_fix)
+                )
+            except ImportError:
+                raise Error(
+                    "scraper.run() cannot be used inside a running event "
+                    "loop (e.g. Jupyter notebook, async web server).\n\n"
+                    "  Option 1 — install nest-asyncio (recommended for "
+                    "notebooks):\n"
+                    "    pip install nest-asyncio\n"
+                    "    # Then scraper.run() will work automatically.\n\n"
+                    "  Option 2 — use the async API:\n"
+                    "    result = await scraper.async_run()"
+                ) from None
 
         return asyncio.run(self.async_run(url=url, auto_fix=auto_fix))
 
@@ -880,14 +921,21 @@ class Scraper:
             raise Error(
                 f"url must be a valid HTTP(S) URL (got {override_url!r})"
             )
+        override_url = override_url.strip()
         parsed = urlparse(override_url)
         if parsed.scheme not in ("http", "https"):
+            if not parsed.scheme and "." in override_url:
+                raise Error(
+                    f"url must start with https:// or http://\n\n"
+                    f"  Got:          {override_url!r}\n"
+                    f"  Did you mean: 'https://{override_url}'?"
+                )
             raise Error(
-                f"url must be a valid HTTP(S) URL (got {override_url!r})"
+                f"url must start with https:// or http:// (got {override_url!r})"
             )
         if not parsed.hostname:
             raise Error(
-                f"url must be a valid URL (got {override_url!r})"
+                f"url must include a hostname (got {override_url!r})"
             )
         return override_url
 
@@ -943,15 +991,51 @@ class Scraper:
         )
 
     def _check_playwright(self) -> None:
-        """Verify Playwright/Patchright browsers are installed."""
+        """Verify Patchright package and browser binaries are installed."""
         try:
             import patchright  # noqa: F401
         except ImportError:
             raise Error(
-                "Playwright browsers not installed.\n\n"
-                "  Run this command to install:\n"
-                "    playwright install chromium"
+                "Patchright is not installed.\n\n"
+                "  Run:\n"
+                "    pip install patchright\n"
+                "    patchright install chromium"
             ) from None
+
+        # Check that the browser binary is actually installed, not just
+        # the Python package.  Use the CLI's --dry-run to find the
+        # expected install location, then verify it exists.
+        try:
+            import subprocess
+            from patchright._impl._driver import compute_driver_executable
+            node, cli_js = compute_driver_executable()
+            result = subprocess.run(
+                [str(node), str(cli_js), "install", "--dry-run", "chromium"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0 and "Install location:" in result.stdout:
+                # Parse the first install location line
+                for line in result.stdout.splitlines():
+                    if "Install location:" in line:
+                        install_dir = Path(line.split(":", 1)[1].strip())
+                        marker = install_dir / "INSTALLATION_COMPLETE"
+                        if not install_dir.exists() or not marker.exists():
+                            raise Error(
+                                "Chromium browser is not installed.\n\n"
+                                "  Patchright is installed, but the browser "
+                                "binary is missing.\n\n"
+                                "  Run:\n"
+                                "    patchright install chromium\n\n"
+                                "  This downloads Chromium (~150 MB, "
+                                "one-time setup)."
+                            )
+                        break  # First location (chromium) is enough
+        except Error:
+            raise
+        except Exception:
+            # Can't verify — proceed and let the browser launch fail
+            # with its own error if the binary is truly missing.
+            pass
 
     # -- Internal: browser lifecycle --
 
@@ -1048,7 +1132,7 @@ class Scraper:
                     f"Script crashed during execution.\n\n"
                     f"  {err_preview}\n\n"
                     f"  The website may have changed. "
-                    f"Try: scraper.run(auto_fix='always')"
+                    f"Try: scraper.regenerate()"
                 )
 
         # Validate return value against schema
@@ -1204,7 +1288,7 @@ class Scraper:
         message = (
             f"Cached script failed.\n\n"
             f"{result.message}\n\n"
-            f"  To regenerate: scraper.run(auto_fix='always')"
+            f"  To regenerate: scraper.regenerate()"
         )
 
         if category in (ErrorCategory.D, ErrorCategory.F2):
@@ -1282,7 +1366,7 @@ class Scraper:
                 f"Script crashed during execution.\n\n"
                 f"  {exc}\n\n"
                 f"  The website may have changed. "
-                f"Try: scraper.run(auto_fix='always')"
+                f"Try: scraper.regenerate()"
             ) from exc
         finally:
             try:
@@ -1382,7 +1466,7 @@ class Scraper:
                 f"Script output does not match the schema.\n\n"
                 f"{feedback}\n\n"
                 f"The website may have changed. "
-                f"Try: scraper.run(auto_fix='always')"
+                f"Try: scraper.regenerate()"
             )
         return data
 

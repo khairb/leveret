@@ -75,7 +75,7 @@ class ScriptLoadError(ScriptError):
 
     The file has a syntax error, is missing the ``scrape`` function,
     or is otherwise not valid Python. Fix the file manually or
-    regenerate with ``auto_fix="always"``.
+    regenerate with ``scraper.regenerate()``.
     """
 
 
@@ -84,7 +84,7 @@ class ScriptRuntimeError(ScriptError):
 
     The script loaded and started running but raised an exception —
     typically because the website structure changed and selectors
-    no longer match. Regenerate with ``auto_fix="always"``.
+    no longer match. Regenerate with ``scraper.regenerate()``.
     """
 
 

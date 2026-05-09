@@ -57,9 +57,43 @@ def parse_schema(schema: Any) -> Node:
     if schema is dict:
         return FreestyleDictNode()
 
+    # ── Common mistakes with specific guidance ──
+
+    if isinstance(schema, str):
+        raise ScoutSchemaError(
+            f"Schema must be a type (like str), not a string value.\n\n"
+            f"  You passed: schema={schema!r}\n"
+            f"  Did you mean: schema=str\n"
+            f"  Or for a dict: schema={{'field_name': str}}"
+        )
+
+    if isinstance(schema, (int, float)):
+        raise ScoutSchemaError(
+            f"Schema must be a type (like {type(schema).__name__}), "
+            f"not a value.\n\n"
+            f"  You passed: schema={schema!r}\n"
+            f"  Did you mean: schema={type(schema).__name__}"
+        )
+
+    if schema is list:
+        raise ScoutSchemaError(
+            "Schema cannot be bare 'list'. Specify the item type.\n\n"
+            "  Examples:\n"
+            "    schema=[{'title': str}]          # list of objects\n"
+            "    schema=Items({'title': str})      # same, with constraints\n"
+            "    schema=[str]                      # list of strings"
+        )
+
     raise ScoutSchemaError(
-        f"Invalid schema value: expected a type (str, int, float, bool, dict), "
-        f"Field(), List(), dict, or list, got {type(schema).__name__}"
+        f"Invalid schema: expected a type (str, int, float, bool, dict), "
+        f"Field(), Items(), dict, or list.\n\n"
+        f"  Got: {type(schema).__name__}"
+        + (f" value {schema!r}" if not callable(schema) else "")
+        + "\n\n"
+        f"  Quick examples:\n"
+        f"    schema={{'title': str, 'price': float}}  # single object\n"
+        f"    schema=[{{'title': str}}]                 # list of objects\n"
+        f"    schema=Items({{'title': str}}, min=10)    # list with constraints"
     )
 
 

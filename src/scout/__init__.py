@@ -37,6 +37,7 @@ __all__ = [
     "ScraperResult",
     "Field",
     "Items",
+    "List",
     # Errors
     "AutoFixError",
     "ConfigError",

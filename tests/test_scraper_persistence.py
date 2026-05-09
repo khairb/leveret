@@ -372,7 +372,7 @@ class TestLoadScriptErrors:
     def test_error_message_suggests_regeneration(self, tmp_path):
         path = tmp_path / "scraper.py"
         path.write_text("x = 1\n")
-        with pytest.raises(ScoutScriptLoadError, match="auto_fix='always'"):
+        with pytest.raises(ScoutScriptLoadError, match="scraper.regenerate"):
             _load_script(path)
 
     def test_file_not_found(self, tmp_path):
@@ -432,7 +432,7 @@ class TestDomainMismatch:
                 "https://b.com",
             )
         msg = str(exc_info.value)
-        assert "auto_fix='always'" in msg
+        assert "scraper.regenerate()" in msg
         assert "script=" in msg
 
     def test_www_normalization_ok(self):
@@ -483,7 +483,7 @@ class TestTaskMismatch:
         with caplog.at_level(logging.WARNING, logger="scout"):
             _check_task_mismatch("Extract prices", "Extract reviews")
         assert "Task description has changed" in caplog.text
-        assert "auto_fix='always'" in caplog.text
+        assert "scraper.regenerate()" in caplog.text
 
     def test_empty_script_task_no_warning(self, caplog):
         """If metadata has no task, skip the check."""

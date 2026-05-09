@@ -165,7 +165,7 @@ class TestParseErrors:
             parse_schema([])
 
     def test_invalid_value_type(self):
-        with pytest.raises(ScoutSchemaError, match="Invalid schema value"):
+        with pytest.raises(ScoutSchemaError, match="not a value"):
             parse_schema(42)
 
     def test_invalid_value_in_object_shows_field_name(self):
