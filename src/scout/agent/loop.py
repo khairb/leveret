@@ -234,6 +234,7 @@ class AgentLoop:
             step_count = 0
             python_step_count = 0
             script_attempts = 0
+            sandbox_rejections = 0
             attempt_history: list[AttemptRecord] = []
             requirements: str | None = None
             turn_number = 0
@@ -536,6 +537,26 @@ class AgentLoop:
                             feedback = ""
 
                             if returncode != 0:
+                                # Detect sandbox violations and enforce
+                                # hard stop after 1 retry. Letting the AI
+                                # iterate indefinitely on blocked code is
+                                # a security risk (prompt injection could
+                                # probe for bypass patterns).
+                                is_sandbox_violation = (
+                                    self._sandbox
+                                    and "SANDBOX VIOLATION" in stderr
+                                )
+                                if is_sandbox_violation:
+                                    sandbox_rejections += 1
+                                    if sandbox_rejections >= 2:
+                                        result.error = (
+                                            "Sandbox rejected the generated "
+                                            "code twice. Aborting for safety."
+                                            f"\n\nLast error:\n{stderr}"
+                                        )
+                                        result.success = False
+                                        return result
+
                                 feedback = (
                                     "Function crashed with exit code "
                                     f"{returncode}. Fix the error and "
@@ -1567,7 +1588,7 @@ async def _run_script_in_process(
                 exec(compile_restricted_agent_code(script), exec_globals)
             except SandboxError as exc:
                 result.stderr = (
-                    f"Sandbox validation error: {exc}\n\n"
+                    f"SANDBOX VIOLATION: {exc}\n\n"
                     "The generated code contains blocked patterns. "
                     "Avoid exec(), eval(), and restricted imports "
                     "(os, subprocess, sys, etc.)."
