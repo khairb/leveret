@@ -515,6 +515,7 @@ class Scraper:
         auto_fix: bool | str = False,
         sandbox: bool = True,
         protect_script: bool = False,
+        launch_options: dict | None = None,
     ) -> None:
         # -- url --
         if not isinstance(url, str) or not url.strip():
@@ -620,6 +621,7 @@ class Scraper:
         self._auto_fix_mode = auto_fix_mode
         self._sandbox = sandbox
         self._protect_script = protect_script
+        self._launch_options = launch_options
 
         # -- Runtime state --
         self._cached_fn: Any = None
@@ -692,6 +694,13 @@ class Scraper:
         return hashlib.sha256(
             self._compiled_schema.prompt.encode()
         ).hexdigest()[:16]
+
+    def _get_resolved_launch_options(self) -> dict:
+        """Resolve launch options, merging user options with stealth defaults."""
+        from .browser import resolve_launch_options
+        return resolve_launch_options(
+            self._launch_options, headless=self._headless,
+        )
 
     # -- Auto-fix mode resolution --
 
@@ -1536,7 +1545,10 @@ class Scraper:
 
         # Launch browser on first in-process call
         if self._browser_mgr is None:
-            self._browser_mgr = BrowserManager(headless=self._headless)
+            self._browser_mgr = BrowserManager(
+                    headless=self._headless,
+                    launch_options=self._get_resolved_launch_options(),
+                )
             await self._browser_mgr.start()
             logger.info(
                 "Launching browser (will reuse for subsequent runs)"
@@ -1630,6 +1642,7 @@ class Scraper:
         wrapper_code = generate_subprocess_wrapper(
             function_source, url, cp_dir,
             sandbox=self._sandbox,
+            launch_options=self._get_resolved_launch_options(),
         )
 
         script_dir = Path(tempfile.mkdtemp(prefix="scrape_run_"))
@@ -1733,6 +1746,7 @@ class Scraper:
             wrapper_code = generate_subprocess_wrapper(
                 function_source, effective_url, cp_dir,
                 collect_page_signals=True,
+                launch_options=self._get_resolved_launch_options(),
             )
 
             script_dir = Path(tempfile.mkdtemp(prefix="scrape_run_"))
@@ -1840,7 +1854,10 @@ class Scraper:
 
             # Ensure browser is launched
             if self._browser_mgr is None:
-                self._browser_mgr = BrowserManager(headless=self._headless)
+                self._browser_mgr = BrowserManager(
+                    headless=self._headless,
+                    launch_options=self._get_resolved_launch_options(),
+                )
                 await self._browser_mgr.start()
                 logger.info(
                     "Launching browser (will reuse for subsequent runs)"
@@ -2034,6 +2051,7 @@ class Scraper:
             compiled_schema=self._compiled_schema,
             approval_mode="auto",
             sandbox=self._sandbox,
+            launch_options=self._get_resolved_launch_options(),
         )
 
         try:

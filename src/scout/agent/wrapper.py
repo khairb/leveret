@@ -112,21 +112,17 @@ async def _raw_checkpoint(page, label, *, data_preview=None):
 _ENGINE_RUNNER = """\
 async def _run():
     start_url = {url!r}
+    _launch_opts = {launch_options!r}
     profile_dir = tempfile.mkdtemp(prefix="scraper_profile_")
     try:
         async with async_playwright() as p:
             context = await p.chromium.launch_persistent_context(
                 user_data_dir=profile_dir,
-                channel="chrome",
-                headless=False,
-                no_viewport=True,
-                bypass_csp=True,
-                locale="en-US",
-                timezone_id="America/New_York",
-                args={stealth_args!r},
+                **_launch_opts,
             )
             page = context.pages[0] if context.pages else await context.new_page()
-            await page.set_viewport_size({{"width": 1920, "height": 1080}})
+            _viewport = _launch_opts.get("viewport") or {{"width": 1920, "height": 1080}}
+            await page.set_viewport_size(_viewport)
             _goto_response = await page.goto(start_url, wait_until="domcontentloaded")
 
 {call_section}
@@ -148,6 +144,7 @@ def generate_subprocess_wrapper(
     *,
     collect_page_signals: bool = False,
     sandbox: bool = False,
+    launch_options: dict | None = None,
 ) -> str:
     """Generate the subprocess wrapper script.
 
@@ -169,8 +166,12 @@ def generate_subprocess_wrapper(
             cookies) on script failure. The signals are serialized as JSON
             between ``PAGE_SIGNALS_START/END`` markers in stdout. Used by
             the auto-fix diagnosis loop (spec §6/§7).
+        launch_options: Resolved browser launch options dict. Forwarded
+            as ``**kwargs`` to ``launch_persistent_context()``.
     """
-    stealth_args = list(BrowserManager._STEALTH_ARGS)
+    if launch_options is None:
+        from ..browser import resolve_launch_options
+        launch_options = resolve_launch_options(None, headless=False)
     checkpoint_code = _CHECKPOINT_TEMPLATE.format(checkpoint_dir=checkpoint_dir)
 
     if collect_page_signals:
@@ -180,7 +181,7 @@ def generate_subprocess_wrapper(
 
     runner = _ENGINE_RUNNER.format(
         url=url,
-        stealth_args=stealth_args,
+        launch_options=launch_options,
         call_section=call_section,
     )
 
@@ -393,7 +394,8 @@ def generate_standalone_script(
     Combines the agent's function with a lightweight engine wrapper.
     The user can ``python scraper.py`` with no Scout dependency.
     """
-    stealth_args = list(BrowserManager._STEALTH_ARGS)
+    from ..browser import resolve_launch_options
+    default_opts = resolve_launch_options(None, headless=False)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     safe_task = task.replace('"""', r'\"\"\"')
 
@@ -404,7 +406,7 @@ def generate_standalone_script(
 
     runner = _ENGINE_RUNNER.format(
         url=url,
-        stealth_args=stealth_args,
+        launch_options=default_opts,
         call_section=call_section,
     )
 

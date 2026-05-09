@@ -14,6 +14,7 @@ from .errors import (
     ValidationError,
 )
 from .autofix.types import AutoFixMode
+from .browser import LaunchOptions
 from .schema.types import Field, Items
 from .scraper import Scraper, ScraperResult
 
@@ -41,6 +42,7 @@ __all__ = [
     "Items",
     "List",
     "AutoFixMode",
+    "LaunchOptions",
     # Errors
     "AutoFixError",
     "ConfigError",

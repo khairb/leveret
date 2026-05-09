@@ -153,6 +153,10 @@ Three modes control how aggressively Scout regenerates:
 auto_fix="conservative"   # only regenerates on clear-cut cases (crashes, parse errors)
 auto_fix=True             # balanced (default when True) — regenerates timeouts on real pages too
 auto_fix="aggressive"     # regenerates on weaker evidence, tolerates noisier signals
+
+# For type-safe code, use the AutoFixMode enum:
+from scout import AutoFixMode
+auto_fix=AutoFixMode.BALANCED
 ```
 
 You can override `auto_fix` per-call — the constructor sets the default, `run()` overrides for that run:
@@ -274,6 +278,30 @@ async with scraper:
     result = await scraper.async_run(url="https://example.com/product/42")
 ```
 
+## Browser configuration
+
+Scout uses [Patchright](https://github.com/AmaanAnis999/Patchright) with stealth defaults (real Chrome channel, anti-bot flags, US locale/timezone). Override any setting via `launch_options` — a dict of kwargs forwarded directly to Patchright's `launch_persistent_context()`:
+
+```python
+from scout import Scraper, LaunchOptions
+
+scraper = Scraper(
+    "https://example.de/produkte",
+    "Produkte extrahieren",
+    schema=Items({"name": str, "preis": float}),
+    launch_options=LaunchOptions(
+        proxy={"server": "http://user:pass@proxy:8080"},
+        locale="de-DE",
+        timezone_id="Europe/Berlin",
+        ignore_https_errors=True,
+    ),
+)
+```
+
+`LaunchOptions` is a TypedDict — your IDE autocompletes every option. A plain dict works too. Any option from the [Playwright docs](https://playwright.dev/python/docs/api/class-browsertype#browser-type-launch-persistent-context) is accepted. Scout merges your options with its stealth defaults (your values win).
+
+Common options: `proxy`, `locale`, `timezone_id`, `storage_state` (pre-load cookies), `viewport`, `extra_http_headers`, `geolocation`, `is_mobile`.
+
 ## API
 
 ```python
@@ -287,6 +315,8 @@ scraper = Scraper(
     timeout=600,                  # max seconds for script execution
     max_attempts=6,               # how many times the agent can retry during generation
     auto_fix=False,               # True, "conservative", "balanced", or "aggressive"
+    protect_script=False,         # True = block regeneration if script was manually edited
+    launch_options=None,          # browser config — any Playwright launch_persistent_context() kwarg
     api_key=None,                 # or set ANTHROPIC_API_KEY
 )
 
@@ -298,6 +328,7 @@ result = scraper.run(auto_fix=False)      # disable auto-fix for this run
 await scraper.async_run()                 # async version
 
 result = scraper.regenerate()             # force-regenerate, discard cached script
+result = scraper.regenerate(force=True)   # overwrite even if manually edited
 result = await scraper.async_regenerate() # async version
 
 scraper.has_script                        # True if a cached script exists (no AI needed)
@@ -316,7 +347,7 @@ result.script_path   # where the script lives on disk
 
 ## CLI
 
-Scout also works from the command line:
+Scout has a command-line interface for one-shot script generation. This is a lower-level tool that drives the AI agent directly — it generates a script file but doesn't validate output against a schema or cache for reuse. For production workflows, use the Python API.
 
 ```bash
 python -m scout "https://news.ycombinator.com" "Extract the top stories" -o scrapers/hn.py

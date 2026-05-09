@@ -558,9 +558,13 @@ class BrowserManager:
 
     Uses ``launch_persistent_context`` with real Chrome channel, a temporary
     user-data dir, and stealth flags to avoid common bot fingerprinting.
+
+    Browser configuration is controlled via a resolved options dict
+    produced by :func:`scout.browser.resolve_launch_options`.
     """
 
     # Chrome args that reduce automation fingerprint.
+    # Kept here for backward compat — canonical source is browser.STEALTH_ARGS.
     _STEALTH_ARGS: list[str] = [
         "--disable-blink-features=AutomationControlled",
         "--no-first-run",
@@ -577,7 +581,9 @@ class BrowserManager:
         viewport: dict | None = None,
         user_agent: str | None = None,
         launch_args: list[str] | None = None,
+        launch_options: dict | None = None,
     ) -> None:
+        self._launch_options = launch_options
         self._config = {
             "headless": headless,
             "browser_type": browser_type,
@@ -609,21 +615,27 @@ class BrowserManager:
         # Create a temporary profile directory for persistent context.
         self._profile_dir = tempfile.mkdtemp(prefix="scraping_agent_profile_")
 
-        # Merge stealth args with any user-supplied args.
-        args = list(self._STEALTH_ARGS) + self._config["launch_args"]
-
         launcher = getattr(self._pw, self._config["browser_type"])
-        # launch_persistent_context combines browser + context into one object.
-        self._context = await launcher.launch_persistent_context(
-            user_data_dir=self._profile_dir,
-            channel="chrome",
-            headless=self._config["headless"],
-            no_viewport=True,
-            bypass_csp=True,
-            locale="en-US",
-            timezone_id="America/New_York",
-            args=args,
-        )
+
+        if self._launch_options is not None:
+            # New path: use pre-resolved launch options from Scraper.
+            # The dict is ready to unpack — just add user_data_dir.
+            opts = dict(self._launch_options)
+            opts["user_data_dir"] = self._profile_dir
+            self._context = await launcher.launch_persistent_context(**opts)
+        else:
+            # Legacy path: construct from individual config params.
+            args = list(self._STEALTH_ARGS) + self._config["launch_args"]
+            self._context = await launcher.launch_persistent_context(
+                user_data_dir=self._profile_dir,
+                channel="chrome",
+                headless=self._config["headless"],
+                no_viewport=True,
+                bypass_csp=True,
+                locale="en-US",
+                timezone_id="America/New_York",
+                args=args,
+            )
 
         # Lower the default timeout so a single hung operation doesn't eat
         # the entire execution budget.  Legitimate interactions complete in
@@ -634,7 +646,10 @@ class BrowserManager:
 
         # Set viewport explicitly (avoids Playwright emulation detection).
         self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()
-        await self._page.set_viewport_size(self._config["viewport"])
+        viewport = self._launch_options.get("viewport") if self._launch_options else None
+        await self._page.set_viewport_size(
+            viewport or self._config["viewport"]
+        )
 
         return self._page
 
@@ -784,6 +799,7 @@ class ScrapingRuntime:
         viewport: dict | None = None,
         user_agent: str | None = None,
         launch_args: list[str] | None = None,
+        launch_options: dict | None = None,
         # Execution config
         default_timeout: float = 30.0,
         max_history: int = 200,
@@ -802,6 +818,7 @@ class ScrapingRuntime:
             viewport=viewport,
             user_agent=user_agent,
             launch_args=launch_args,
+            launch_options=launch_options,
         )
         self._repl = repl or LocalREPL()
         self._hook = post_exec_hook

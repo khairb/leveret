@@ -656,3 +656,79 @@ class TestSpecExamples:
             }, min=20),
         )
         assert scraper._compiled_schema is not None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Round 3: AutoFixMode export, List deprecation, protect_script, warnings
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestAutoFixModeExport:
+    """AutoFixMode enum is importable and usable."""
+
+    def test_import_from_scout(self):
+        from scout import AutoFixMode
+        assert hasattr(AutoFixMode, "BALANCED")
+        assert hasattr(AutoFixMode, "CONSERVATIVE")
+        assert hasattr(AutoFixMode, "AGGRESSIVE")
+        assert hasattr(AutoFixMode, "ALWAYS")
+
+    def test_usable_in_constructor(self):
+        from scout import AutoFixMode
+        s = _make(
+            auto_fix=AutoFixMode.BALANCED,
+            script="test.py",
+        )
+        from scout.autofix.types import AutoFixMode as AFM
+        assert s._auto_fix_mode == AFM.BALANCED
+
+
+class TestListDeprecation:
+    """List alias emits DeprecationWarning."""
+
+    def test_list_warns(self):
+        import warnings
+        from scout.schema.types import List
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = List({"title": str}, min=5)
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "Items" in str(w[0].message)
+
+    def test_list_returns_items(self):
+        import warnings
+        from scout.schema.types import Items, List
+        with warnings.catch_warnings(record=True):
+            warnings.simplefilter("always")
+            result = List({"title": str}, min=5)
+            assert isinstance(result, Items)
+            assert result.min == 5
+
+
+class TestProtectScript:
+    """protect_script parameter stores correctly."""
+
+    def test_default_false(self):
+        s = _make()
+        assert s._protect_script is False
+
+    def test_explicit_true(self):
+        s = _make(protect_script=True, script="test.py")
+        assert s._protect_script is True
+
+
+class TestScriptNoneWarning:
+    """script=None emits a warning-level log."""
+
+    def test_warns_on_no_script(self, caplog):
+        import logging
+        with caplog.at_level(logging.WARNING, logger="scout"):
+            _make(script=None)
+        assert any(
+            "No script= path set" in r.message for r in caplog.records
+        )
+        warning_records = [
+            r for r in caplog.records
+            if "No script= path set" in r.message
+        ]
+        assert warning_records[0].levelno == logging.WARNING

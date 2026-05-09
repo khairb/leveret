@@ -151,6 +151,7 @@ class AgentLoop:
         validator_config: LLMConfig | None = None,
         compiled_schema: CompiledSchema | None = None,
         sandbox: bool = False,
+        launch_options: dict | None = None,
     ) -> None:
         self._llm_config = llm_config or LLMConfig()
         self._max_steps = max_steps
@@ -169,6 +170,7 @@ class AgentLoop:
         )
         self._compiled_schema = compiled_schema
         self._sandbox = sandbox
+        self._launch_options = launch_options
 
     # ── Main entry point ──────────────────────────────────────
 
@@ -495,6 +497,7 @@ class AgentLoop:
                                     timeout=self._script_timeout,
                                     checkpoint_dir=run_dir,
                                     sandbox=self._sandbox,
+                                    launch_options=self._launch_options,
                                 )
                             )
                             # Track for cleanup (finally block).
@@ -1152,6 +1155,7 @@ class AgentLoop:
                 include_screenshot=False,
             ),
             post_exec_hook=hook,
+            launch_options=self._launch_options,
             # diagnostics_dir is set later once tracer creates run_dir.
         )
 
@@ -1488,6 +1492,7 @@ async def _run_script_in_process(
     timeout: int = 600,
     checkpoint_dir: Path | None = None,
     sandbox: bool = False,
+    launch_options: dict | None = None,
 ) -> InProcessScriptResult:
     """Run the agent's scrape function in-process with a second browser.
 
@@ -1515,22 +1520,28 @@ async def _run_script_in_process(
     context = None
     try:
         pw = await async_playwright().start()
-        context = await pw.chromium.launch_persistent_context(
-            user_data_dir=profile_dir,
-            channel="chrome",
-            headless=False,
-            no_viewport=True,
-            bypass_csp=True,
-            locale="en-US",
-            timezone_id="America/New_York",
-            args=stealth_args,
-        )
+        if launch_options is not None:
+            opts = dict(launch_options)
+            opts["user_data_dir"] = profile_dir
+            context = await pw.chromium.launch_persistent_context(**opts)
+        else:
+            context = await pw.chromium.launch_persistent_context(
+                user_data_dir=profile_dir,
+                channel="chrome",
+                headless=False,
+                no_viewport=True,
+                bypass_csp=True,
+                locale="en-US",
+                timezone_id="America/New_York",
+                args=stealth_args,
+            )
         page = (
             context.pages[0]
             if context.pages
             else await context.new_page()
         )
-        await page.set_viewport_size({"width": 1920, "height": 1080})
+        _vp = (launch_options or {}).get("viewport") or {"width": 1920, "height": 1080}
+        await page.set_viewport_size(_vp)
         await page.goto(start_url, wait_until="domcontentloaded")
 
         # ── Build checkpoint function (same logic as wrapper) ──
