@@ -553,15 +553,23 @@ class AgentLoop:
                                             SandboxViolationError,
                                         )
                                         raise SandboxViolationError(
-                                            "Sandbox rejected the generated "
-                                            "code twice. Aborting for "
-                                            "safety — repeated violations "
-                                            "may indicate prompt injection "
-                                            "from the target website.\n\n"
-                                            "If you trust this site, disable "
-                                            "the sandbox:\n"
+                                            "Scout detected a potential "
+                                            "security threat.\n\n"
+                                            "The AI-generated code "
+                                            "attempted to use restricted "
+                                            "operations twice. This can "
+                                            "happen when a website tries "
+                                            "to manipulate the AI into "
+                                            "generating unsafe code "
+                                            "(prompt injection).\n\n"
+                                            "Scout's sandbox is enabled "
+                                            "by default to protect you. "
+                                            "If you trust this website "
+                                            "and believe this is a false "
+                                            "positive, you can disable "
+                                            "the sandbox:\n\n"
                                             "  Scraper(..., sandbox=False)"
-                                            f"\n\nLast error:\n{stderr}"
+                                            f"\n\nDetails:\n{stderr}"
                                         )
 
                                 feedback = (

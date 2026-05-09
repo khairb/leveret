@@ -474,7 +474,7 @@ class Scraper:
         timeout: int = 600,
         max_attempts: int = 6,
         auto_fix: bool | str = False,
-        sandbox: bool = False,
+        sandbox: bool = True,
     ) -> None:
         # -- url --
         if not isinstance(url, str) or not url.strip():

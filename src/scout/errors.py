@@ -50,15 +50,18 @@ class GenerationError(Error):
 
 
 class SandboxViolationError(Error):
-    """AI-generated code was rejected by the sandbox.
+    """Potential security threat detected in AI-generated code.
 
-    Raised when the sandbox (RestrictedPython) blocks the generated code
-    twice — once is tolerated (the AI retries), but a second violation
-    triggers a hard stop. Repeated violations may indicate prompt
-    injection from the target website.
+    Scout runs AI-generated scraping code in a sandbox that restricts
+    access to the filesystem, network, and system utilities. This error
+    is raised when the AI repeatedly generates code that violates these
+    restrictions — which may indicate that the target website is
+    attempting to manipulate the AI through prompt injection.
 
-    If you trust the target site and believe this is a false positive,
-    disable the sandbox: ``Scraper(..., sandbox=False)``.
+    The sandbox is enabled by default. If you trust the target website
+    and believe this is a false positive, you can disable it::
+
+        Scraper(..., sandbox=False)
     """
 
 
