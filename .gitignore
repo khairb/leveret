@@ -30,3 +30,5 @@ Thumbs.db
 # Scout runtime outputs
 traces/
 test_outputs/
+
+my-notes*
