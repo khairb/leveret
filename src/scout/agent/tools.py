@@ -107,6 +107,62 @@ TOOL_SCHEMAS: list[dict] = [
             "required": ["code"],
         },
     },
+    {
+        "name": "last_resort_antibot_escape",
+        "description": (
+            "LAST RESORT ONLY — Signal that the target website has an "
+            "anti-bot or CAPTCHA system that you cannot bypass after "
+            "exhausting every possible strategy. Calling this tool "
+            "terminates the run immediately.\n\n"
+            "Do NOT call this tool unless you have genuinely tried "
+            "everything: waiting for challenges to resolve, navigating "
+            "around blocked pages, trying alternative URLs or entry "
+            "points, adjusting timing, and using different interaction "
+            "patterns. This is your absolute last option when the "
+            "website is fundamentally inaccessible to automation."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "provider": {
+                    "type": "string",
+                    "description": (
+                        "The anti-bot provider or CAPTCHA system "
+                        "blocking access (e.g. 'Cloudflare', "
+                        "'reCAPTCHA', 'DataDome', 'Akamai', "
+                        "'unknown')."
+                    ),
+                },
+                "strategies_tried": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "List of every strategy you attempted to "
+                        "bypass the block. Be specific — e.g. "
+                        "'waited 10s for Cloudflare challenge to "
+                        "auto-resolve', 'tried navigating to /api "
+                        "endpoint directly', 'attempted different "
+                        "interaction timing'."
+                    ),
+                },
+                "page_evidence": {
+                    "type": "string",
+                    "description": (
+                        "What you observed on the page that confirms "
+                        "the block — e.g. 'Cloudflare challenge page "
+                        "with title Just a moment, challenge form "
+                        "present, no way to proceed without human "
+                        "CAPTCHA solving'."
+                    ),
+                },
+            },
+            "required": [
+                "provider",
+                "strategies_tried",
+                "page_evidence",
+            ],
+        },
+    },
 ]
 
 

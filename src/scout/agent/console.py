@@ -332,6 +332,21 @@ def print_compression(
     )
 
 
+def print_antibot_escape(
+    provider: str,
+    strategies: list[str],
+    evidence: str,
+) -> None:
+    """Print when the agent triggers last_resort_antibot_escape."""
+    print(_header("ANTI-BOT BLOCK — RUN TERMINATED"))
+    print(f"  {_c(_RED, 'Provider:')} {provider}")
+    print(f"  {_c(_RED, 'Strategies exhausted:')}")
+    for s in strategies:
+        print(f"    {_DIM}- {s}{_RESET}")
+    print(f"  {_c(_RED, 'Evidence:')} {evidence}")
+    print()
+
+
 def print_show_page_analysis(
     variant: str,
     similarity: float,

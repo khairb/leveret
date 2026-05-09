@@ -118,6 +118,8 @@ class AgentResult:
     python_steps: int = 0
     success: bool = False
     last_resort: bool = False
+    blocked_by_antibot: bool = False
+    antibot_details: str | None = None
     error: str | None = None
     run_dir: str | None = None
 
@@ -895,6 +897,48 @@ class AgentLoop:
                     )
                     continue
 
+                # ── Anti-bot escape hatch ────────────────────
+                # Check if the agent called last_resort_antibot_escape.
+                # This terminates the run immediately.
+                antibot_block = next(
+                    (b for b in tool_uses
+                     if b.name == "last_resort_antibot_escape"),
+                    None,
+                )
+                if antibot_block is not None:
+                    args = antibot_block.input or {}
+                    provider = args.get("provider", "unknown")
+                    strategies = args.get("strategies_tried", [])
+                    evidence = args.get("page_evidence", "")
+                    details = (
+                        f"Provider: {provider}\n"
+                        f"Strategies tried ({len(strategies)}):\n"
+                        + "".join(
+                            f"  - {s}\n" for s in strategies
+                        )
+                        + f"Evidence: {evidence}"
+                    )
+                    console.print_antibot_escape(
+                        provider, strategies, evidence,
+                    )
+                    tracer.log_tool_call(
+                        antibot_block.name,
+                        antibot_block.input,
+                        antibot_block.id,
+                    )
+                    tracer.log_system_event(
+                        "antibot_escape",
+                        provider=provider,
+                        strategies_tried=strategies,
+                        page_evidence=evidence,
+                    )
+                    result.blocked_by_antibot = True
+                    result.antibot_details = details
+                    result.error = (
+                        f"Blocked by anti-bot system ({provider})"
+                    )
+                    break
+
                 # Execute each tool call.
                 tool_results: list[dict] = []
                 for block in tool_uses:
@@ -1091,7 +1135,10 @@ class AgentLoop:
             # If we exited the loop without a script, make one
             # final LLM call with no tools available — the agent
             # has no choice but to generate the script.
-            if not result.success:
+            # Skip this if the agent signaled an anti-bot block —
+            # there is no point forcing a script when the site is
+            # inaccessible.
+            if not result.success and not result.blocked_by_antibot:
                 tracer.log_system_event("final_call_no_tools")
                 console.print_final_call()
 

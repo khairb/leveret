@@ -101,6 +101,11 @@ class Tracer:
         self._run_dir.mkdir(parents=True, exist_ok=True)
         self._trace_path = self._run_dir / "trace.md"
 
+        # Save system prompt as standalone file for trace_viewer.
+        (self._run_dir / "system_prompt.txt").write_text(
+            system_prompt, encoding="utf-8",
+        )
+
         # Write initial header (stats will be rewritten in finish()).
         lines = [
             f"# Agent Trace — {ts}",
