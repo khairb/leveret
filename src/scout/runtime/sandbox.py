@@ -77,6 +77,39 @@ class ScoutTransformer(RestrictingNodeTransformer):
     def visit_AugAssign(self, node):
         return self.node_contents_visit(node)
 
+    # ── Allow match/case (Python 3.10+) ──
+    #    RestrictedPython's generic_visit blocks unknown node types.
+
+    def visit_Match(self, node):
+        return self.node_contents_visit(node)
+
+    def visit_match_case(self, node):
+        return self.node_contents_visit(node)
+
+    def visit_MatchValue(self, node):
+        return self.node_contents_visit(node)
+
+    def visit_MatchSingleton(self, node):
+        return self.node_contents_visit(node)
+
+    def visit_MatchSequence(self, node):
+        return self.node_contents_visit(node)
+
+    def visit_MatchMapping(self, node):
+        return self.node_contents_visit(node)
+
+    def visit_MatchClass(self, node):
+        return self.node_contents_visit(node)
+
+    def visit_MatchStar(self, node):
+        return self.node_contents_visit(node)
+
+    def visit_MatchAs(self, node):
+        return self.node_contents_visit(node)
+
+    def visit_MatchOr(self, node):
+        return self.node_contents_visit(node)
+
     # ── Allow underscore-prefixed variable names ──
     #    AI frequently generates _items, _count, _temp, etc.
 
