@@ -13,6 +13,7 @@ from .errors import (
     ScriptTimeoutError,
     ValidationError,
 )
+from .autofix.types import AutoFixMode
 from .schema.types import Field, Items
 from .scraper import Scraper, ScraperResult
 
@@ -39,6 +40,7 @@ __all__ = [
     "Field",
     "Items",
     "List",
+    "AutoFixMode",
     # Errors
     "AutoFixError",
     "ConfigError",

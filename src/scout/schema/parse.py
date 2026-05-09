@@ -11,7 +11,7 @@ from typing import Any
 
 from ..errors import ScoutSchemaError
 from .nodes import FreestyleDictNode, ListNode, Node, ObjectNode, ScalarNode
-from .types import Field, List
+from .types import Field, Items
 
 
 def parse_schema(schema: Any) -> Node:
@@ -39,7 +39,7 @@ def parse_schema(schema: Any) -> Node:
             )
         return ListNode(item=parse_schema(schema[0]))
 
-    if isinstance(schema, List):
+    if isinstance(schema, Items):
         _validate_list_constraints(schema)
         return ListNode(
             item=parse_schema(schema.item),
@@ -128,10 +128,10 @@ def _parse_field_value(value: Any, field_name: str) -> tuple[Node, bool]:
     except ScoutSchemaError:
         # Check if this is a raw Python value (like 42) that the user
         # accidentally used instead of a type
-        if not isinstance(value, (type, dict, list, List)):
+        if not isinstance(value, (type, dict, list, Items)):
             raise ScoutSchemaError(
                 f"Invalid schema value for field {field_name!r}: expected a type "
-                f"(str, int, float, bool, dict), Field(), List(), dict, or list, "
+                f"(str, int, float, bool, dict), Field(), Items(), dict, or list, "
                 f"got {type(value).__name__} value {value!r}"
             ) from None
         raise
@@ -179,9 +179,17 @@ def _validate_field_constraints(field: Field) -> None:
     # Type-specific constraint compatibility
     if t == str:
         if field.min is not None or field.max is not None:
+            # Build a suggested fix showing the corrected Field() call
+            suggestions = []
+            if field.min is not None:
+                suggestions.append(f"min_length={field.min!r}")
+            if field.max is not None:
+                suggestions.append(f"max_length={field.max!r}")
+            fix = f"Field(str, {', '.join(suggestions)})"
             raise ScoutSchemaError(
-                "'min'/'max' are not valid for str. "
-                "Use 'min_length'/'max_length'."
+                f"'min'/'max' are not valid for str — "
+                f"use 'min_length'/'max_length'.\n\n"
+                f"  Did you mean: {fix}"
             )
         _validate_enum_constraints(field)
         _validate_string_length_constraints(field)
@@ -269,8 +277,8 @@ def _validate_numeric_range_constraints(field: Field) -> None:
         )
 
 
-def _validate_list_constraints(lst: List) -> None:
-    """Validate that List constraints are internally consistent.
+def _validate_list_constraints(lst: Items) -> None:
+    """Validate that Items constraints are internally consistent.
 
     Raises:
         ScoutSchemaError: If constraints are invalid.

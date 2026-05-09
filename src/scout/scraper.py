@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import ast
 import errno
+import hashlib
 import inspect
 import json
 import os
@@ -151,6 +152,8 @@ def _get_scout_version() -> str:
 
 def _build_metadata_docstring(
     url: str, task: str, model: str, timestamp: str,
+    schema_hash: str = "",
+    content_hash: str = "",
 ) -> str:
     """Build the metadata docstring for a saved script file."""
     return (
@@ -162,7 +165,9 @@ def _build_metadata_docstring(
         f"generated:     {timestamp}\n"
         f"model:         {model}\n"
         f"scout_version: {_get_scout_version()}\n"
-        '"""\n'
+        + (f"schema_hash:   {schema_hash}\n" if schema_hash else "")
+        + (f"content_hash:  {content_hash}\n" if content_hash else "")
+        + '"""\n'
     )
 
 
@@ -201,6 +206,7 @@ def _save_script(
     url: str,
     task: str,
     model: str,
+    schema_hash: str = "",
 ) -> None:
     """Write a script file with metadata docstring.
 
@@ -208,7 +214,12 @@ def _save_script(
     Error with actionable messages.
     """
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-    docstring = _build_metadata_docstring(url, task, model, timestamp)
+    content_hash = hashlib.sha256(code.strip().encode()).hexdigest()[:16]
+    docstring = _build_metadata_docstring(
+        url, task, model, timestamp,
+        schema_hash=schema_hash,
+        content_hash=content_hash,
+    )
     content = docstring + "\n" + code
 
     try:
@@ -407,6 +418,34 @@ def _check_task_mismatch(script_task: str, current_task: str) -> None:
         )
 
 
+def _is_script_user_edited(path: Path) -> bool:
+    """Check if a script file was edited after Scout generated it.
+
+    Compares the current function code hash against the content_hash
+    stored in the script's metadata. Returns False if no hash is stored
+    (pre-Round-3 scripts) or if the file can't be read.
+    """
+    try:
+        source = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+    metadata = _parse_script_metadata(source)
+    stored_hash = metadata.get("content_hash", "")
+    if not stored_hash:
+        return False  # No hash stored — can't compare
+
+    # Extract function code (everything after the metadata docstring)
+    m = _METADATA_RE.search(source)
+    if m:
+        function_code = source[m.end():].strip()
+    else:
+        function_code = source
+
+    current_hash = hashlib.sha256(function_code.encode()).hexdigest()[:16]
+    return current_hash != stored_hash
+
+
 # ---------------------------------------------------------------------------
 # ScraperResult
 # ---------------------------------------------------------------------------
@@ -475,6 +514,7 @@ class Scraper:
         max_attempts: int = 6,
         auto_fix: bool | str = False,
         sandbox: bool = True,
+        protect_script: bool = False,
     ) -> None:
         # -- url --
         if not isinstance(url, str) or not url.strip():
@@ -579,10 +619,12 @@ class Scraper:
         self._max_attempts = max_attempts
         self._auto_fix_mode = auto_fix_mode
         self._sandbox = sandbox
+        self._protect_script = protect_script
 
         # -- Runtime state --
         self._cached_fn: Any = None
         self._cached_source: str | None = None
+        self._schema_changed: bool = False
         self._context_managed: bool = False
         self._browser_mgr: Any = None
         self._bg_loop: Any = None
@@ -592,8 +634,8 @@ class Scraper:
 
         # -- Developer hints --
         if script_path is None:
-            logger.info(
-                "Tip: No script= path set. Each run() will generate a new "
+            logger.warning(
+                "No script= path set — each run() will generate a new "
                 "script from scratch (costs API credits every time). "
                 "Add script='scrapers/my_scraper.py' to cache it."
             )
@@ -642,6 +684,15 @@ class Scraper:
         parts.append(")")
         return "".join(parts)
 
+    def _get_schema_hash(self) -> str:
+        """Compute a short hash of the compiled schema prompt.
+
+        Used to detect when the user changed the schema after generation.
+        """
+        return hashlib.sha256(
+            self._compiled_schema.prompt.encode()
+        ).hexdigest()[:16]
+
     # -- Auto-fix mode resolution --
 
     # Mapping from user-facing auto_fix values to AutoFixMode enums.
@@ -678,11 +729,14 @@ class Scraper:
         return None
 
     @staticmethod
-    def _resolve_auto_fix_value(value: bool | str) -> AutoFixMode:
+    def _resolve_auto_fix_value(value: bool | str | AutoFixMode) -> AutoFixMode:
         """Convert a user-facing auto_fix value to an AutoFixMode enum.
 
         Raises ConfigError for invalid values.
         """
+        # Accept AutoFixMode enum values directly
+        if isinstance(value, AutoFixMode):
+            return value
         mode = Scraper._VALID_AUTO_FIX.get(value)
         if mode is None:
             raise ConfigError(
@@ -826,6 +880,21 @@ class Scraper:
 
         # -- Generation path --
         if force_regenerate and self._script_path and self._script_path.exists():
+            # Warn if user edited the script (protection is checked in
+            # regenerate(); this covers run(auto_fix="always") directly)
+            if _is_script_user_edited(self._script_path):
+                if self._protect_script:
+                    raise ConfigError(
+                        f"Script '{self._script_path}' has been manually "
+                        f"edited and protect_script=True.\n\n"
+                        f"  To overwrite:  scraper.regenerate(force=True)\n"
+                        f"  To keep edits: set protect_script=False"
+                    )
+                logger.warning(
+                    "Script '%s' has been manually edited. "
+                    "Regenerating will overwrite your changes.",
+                    self._script_path,
+                )
             logger.info(
                 "Regenerating script (overwriting %s)", self._script_path
             )
@@ -847,6 +916,7 @@ class Scraper:
         if force_regenerate:
             self._cached_fn = None
             self._cached_source = None
+            self._schema_changed = False
 
         self._check_api_key()
         self._check_playwright()
@@ -914,21 +984,35 @@ class Scraper:
         return asyncio.run(self.async_run(url=url, auto_fix=auto_fix))
 
     async def async_regenerate(
-        self, *, url: str | None = None,
+        self, *, url: str | None = None, force: bool = False,
     ) -> ScraperResult:
         """Force-regenerate the scraping script, discarding any cached version.
+
+        Args:
+            url: Override the constructor URL for this execution only.
+            force: Override ``protect_script`` for this call. Required
+                when ``protect_script=True`` and the script has been
+                edited by the user.
 
         Equivalent to ``async_run(auto_fix="always")``.
         """
+        self._check_script_protection(force=force)
         return await self.async_run(url=url, auto_fix="always")
 
     def regenerate(
-        self, *, url: str | None = None,
+        self, *, url: str | None = None, force: bool = False,
     ) -> ScraperResult:
         """Force-regenerate the scraping script, discarding any cached version.
 
+        Args:
+            url: Override the constructor URL for this execution only.
+            force: Override ``protect_script`` for this call. Required
+                when ``protect_script=True`` and the script has been
+                edited by the user.
+
         Equivalent to ``run(auto_fix="always")``.
         """
+        self._check_script_protection(force=force)
         return self.run(url=url, auto_fix="always")
 
     def export(
@@ -1046,6 +1130,35 @@ class Scraper:
         "together": "TOGETHER_API_KEY",
         "fireworks": "FIREWORKS_API_KEY",
     }
+
+    def _check_script_protection(self, *, force: bool = False) -> None:
+        """Check if the script is protected from overwriting.
+
+        Raises ConfigError if ``protect_script=True`` and the script
+        exists and was edited by the user, unless ``force=True``.
+        Always warns (regardless of protect_script) if user edits are
+        detected.
+        """
+        if self._script_path is None or not self._script_path.exists():
+            return
+
+        if not _is_script_user_edited(self._script_path):
+            return
+
+        if self._protect_script and not force:
+            raise ConfigError(
+                f"Script '{self._script_path}' has been manually edited "
+                f"and protect_script=True.\n\n"
+                f"  To overwrite anyway:  scraper.regenerate(force=True)\n"
+                f"  To keep your edits:   set protect_script=False or "
+                f"edit the script directly"
+            )
+
+        logger.warning(
+            "Script '%s' has been manually edited since generation. "
+            "Regenerating will overwrite your changes.",
+            self._script_path,
+        )
 
     def _check_api_key(self) -> None:
         """Verify an API key is available before generation."""
@@ -1173,6 +1286,17 @@ class Scraper:
             _check_task_mismatch(
                 metadata.get("task", ""), self._task,
             )
+
+            # Check for schema changes since generation
+            stored_schema_hash = metadata.get("schema_hash", "")
+            if stored_schema_hash:
+                current_hash = self._get_schema_hash()
+                if stored_schema_hash != current_hash:
+                    self._schema_changed = True
+                    logger.warning(
+                        "Schema has changed since this script was generated. "
+                        "If the script fails, regenerate: scraper.regenerate()"
+                    )
 
             self._cached_fn = fn
 
@@ -1311,6 +1435,21 @@ class Scraper:
 
         # §9/§10: REGENERATE — generate a new script
         assert result.action == AutoFixAction.REGENERATE
+
+        # Respect protect_script: if user edited the script, don't
+        # auto-overwrite — raise the original error instead.
+        if (
+            self._protect_script
+            and self._script_path
+            and self._script_path.exists()
+            and _is_script_user_edited(self._script_path)
+        ):
+            logger.info(
+                "Auto-fix: would regenerate, but script is protected "
+                "(manually edited + protect_script=True). Raising error."
+            )
+            self._raise_autofix_error(result)
+
         logger.info(
             "Auto-fix: regenerating script with %s...",
             self._model,
@@ -1319,6 +1458,7 @@ class Scraper:
         # §10: Clear cached function before regeneration
         self._cached_fn = None
         self._cached_source = None
+        self._schema_changed = False
 
         # Pre-flight checks for generation
         self._check_api_key()
@@ -1548,6 +1688,14 @@ class Scraper:
 
         valid, feedback = self._compiled_schema.validate(data)
         if not valid:
+            if self._schema_changed:
+                raise ValidationError(
+                    f"Script output does not match the schema.\n\n"
+                    f"{feedback}\n\n"
+                    f"The schema has changed since this script was "
+                    f"generated. Regenerate to match the new schema:\n"
+                    f"  scraper.regenerate()"
+                )
             raise ValidationError(
                 f"Script output does not match the schema.\n\n"
                 f"{feedback}\n\n"
@@ -1894,10 +2042,19 @@ class Scraper:
             raise self._map_generation_error(exc) from exc
 
         if not result.success:
+            model_hint = ""
+            lower_model = self._model.lower()
+            if "haiku" in lower_model or "mini" in lower_model or "flash" in lower_model:
+                model_hint = (
+                    "\n\n  The page may be too complex for this model. "
+                    "Try a more capable one:\n"
+                    '    model="claude-sonnet-4-5"'
+                )
             raise GenerationError(
-                result.error
+                (result.error
                 or "AI failed to generate a valid scraping function "
-                f"after {self._max_attempts} attempts."
+                f"after {self._max_attempts} attempts.")
+                + model_hint
             )
 
         # Validate return value against schema
@@ -1911,6 +2068,7 @@ class Scraper:
                 effective_url,
                 self._task,
                 self._model,
+                schema_hash=self._get_schema_hash(),
             )
             elapsed = time.monotonic() - start_time
             # Count lines in the function

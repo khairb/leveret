@@ -7,6 +7,7 @@ happens in Layer 2 (parsing).
 
 from __future__ import annotations
 
+import warnings
 from typing import Any, Union
 
 
@@ -106,8 +107,23 @@ class Items:
         return f"Items({', '.join(parts)})"
 
 
-# Backward compatibility alias
-List = Items
+class _DeprecatedList:
+    """Wrapper that emits a deprecation warning when List() is called."""
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Items:
+        warnings.warn(
+            "List is deprecated — use Items instead. "
+            "List will be removed in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return Items(*args, **kwargs)
+
+    def __instancecheck__(self, instance: Any) -> bool:
+        return isinstance(instance, Items)
+
+
+List = _DeprecatedList()
 
 
 # Type alias for schema definitions accepted by the parser.

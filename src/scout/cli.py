@@ -1,9 +1,16 @@
-"""CLI entry point for the scraping agent.
+"""CLI entry point for the scraping agent (lower-level interface).
+
+This CLI drives the ``AgentLoop`` directly — it generates scripts
+without schema validation, caching, or auto-fix.  For production
+use, prefer the Python API (``Scraper`` class), which adds:
+  - Schema validation of output
+  - Script caching (generate once, run forever)
+  - Auto-fix diagnosis and regeneration
 
 Usage::
 
-    python -m scout.cli "https://example.com/products" "Extract all product names and prices"
-    python -m scout.cli "https://news.ycombinator.com" "Extract top 10 story titles and URLs" --headless
+    python -m scout "https://example.com/products" "Extract all product names and prices"
+    python -m scout "https://news.ycombinator.com" "Extract top 10 story titles and URLs" --headless
 """
 
 from __future__ import annotations
