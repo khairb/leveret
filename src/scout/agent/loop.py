@@ -165,7 +165,8 @@ class AgentLoop:
         self._max_script_attempts = max_script_attempts
         self._approval_mode = approval_mode
         self._validator_config = validator_config or LLMConfig(
-            model="anthropic:claude-haiku-4-5",
+            model=self._llm_config.model,
+            api_key=self._llm_config.api_key,
             max_tokens=8192,
         )
         self._compiled_schema = compiled_schema
@@ -280,6 +281,7 @@ class AgentLoop:
                         comp_meta = await conversation.compress_history(
                             task_description=task,
                             model=self._llm_config.model,
+                            llm_config=self._llm_config,
                         )
                         if comp_meta:
                             console.print_compression(

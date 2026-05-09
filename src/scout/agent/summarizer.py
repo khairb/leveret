@@ -27,11 +27,7 @@ logger = logging.getLogger(__name__)
 #  Summarizer configuration
 # ═══════════════════════════════════════════════════════════════
 
-_SUMMARIZER_CONFIG = LLMConfig(
-    model="anthropic:claude-haiku-4-5",
-    max_tokens=8192,
-    temperature=0.0,
-)
+_SUMMARIZER_MAX_TOKENS = 8192
 
 # Maximum tokens per summarizer call before splitting.
 _SPLIT_THRESHOLD = 20_000
@@ -383,6 +379,7 @@ async def _call_summarizer(
     start_turn: int,
     end_turn: int,
     *,
+    llm_config: LLMConfig,
     split_note: str = "",
 ) -> str:
     """Run a single summarizer call and return the summary text."""
@@ -397,8 +394,15 @@ async def _call_summarizer(
     if split_note:
         user_prompt += split_note
 
+    summarizer_config = LLMConfig(
+        model=llm_config.model,
+        api_key=llm_config.api_key,
+        max_tokens=_SUMMARIZER_MAX_TOKENS,
+        temperature=0.0,
+    )
+
     response = await call_llm(
-        _SUMMARIZER_CONFIG,
+        summarizer_config,
         system=_SUMMARIZER_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_prompt}],
     )
@@ -444,16 +448,19 @@ async def run_summarizer(
     messages: list[dict],
     task_description: str,
     fallback_start_turn: int = 1,
+    *,
+    llm_config: LLMConfig,
 ) -> str:
     """Compress a sequence of messages into a dense sequential summary.
 
     Automatically splits into parallel calls if the message window
-    exceeds the reliability threshold for a single Haiku call.
+    exceeds the reliability threshold for a single call.
 
     Args:
         messages: The compressible message window.
         task_description: The original task (for context).
         fallback_start_turn: Turn number to use if detection fails.
+        llm_config: LLM configuration (model and credentials).
 
     Returns:
         The formatted summary text (without the header/marker —
@@ -468,9 +475,10 @@ async def run_summarizer(
     )
 
     if token_estimate < _SPLIT_THRESHOLD:
-        # Single call — within Haiku's reliable extraction window
+        # Single call — within the reliable extraction window
         return await _call_summarizer(
             messages, task_description, start_turn, end_turn,
+            llm_config=llm_config,
         )
 
     if token_estimate < _THREE_WAY_SPLIT_THRESHOLD:
@@ -496,11 +504,13 @@ async def run_summarizer(
             _call_summarizer(
                 first_half, task_description,
                 first_start, first_end,
+                llm_config=llm_config,
                 split_note=_SPLIT_FIRST_HALF_NOTE,
             ),
             _call_summarizer(
                 second_half, task_description,
                 second_start, second_end,
+                llm_config=llm_config,
                 split_note=_SPLIT_SECOND_HALF_NOTE,
             ),
         )
@@ -527,14 +537,17 @@ async def run_summarizer(
     s1, s2, s3 = await asyncio.gather(
         _call_summarizer(
             part_1, task_description, t1_start, t1_end,
+            llm_config=llm_config,
             split_note=_SPLIT_FIRST_HALF_NOTE,
         ),
         _call_summarizer(
             part_2, task_description, t2_start, t2_end,
+            llm_config=llm_config,
             split_note=_SPLIT_SECOND_HALF_NOTE,
         ),
         _call_summarizer(
             part_3, task_description, t3_start, t3_end,
+            llm_config=llm_config,
             split_note=_SPLIT_SECOND_HALF_NOTE,
         ),
     )

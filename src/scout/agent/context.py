@@ -184,12 +184,19 @@ class ConversationManager:
         self,
         task_description: str,
         model: str,
+        *,
+        llm_config: "LLMConfig | None" = None,
     ) -> dict[str, Any] | None:
         """Compress older exploration messages into a sequential summary.
 
         Identifies the compressible window (between the last summary and
         the 5th-last interaction), calls the summarizer, and replaces the
         window with a notice + summary block.
+
+        Args:
+            task_description: The original scraping task.
+            model: Model name string (used for compression thresholds).
+            llm_config: LLM configuration passed to the summarizer.
 
         Returns a dict with compression metadata (for logging), or
         ``None`` if compression was skipped.
@@ -290,6 +297,7 @@ class ConversationManager:
             summarizable,
             task_description,
             fallback_start_turn=start_turn,
+            llm_config=llm_config,
         )
 
         # ── Replace compressible window with summary ��────────────
