@@ -261,9 +261,7 @@ from expectations.
 
 ### Available Modules
 
-`json`, `re`, `math`, `os`, `time`, `datetime`, `urljoin`, `urlparse` \
-are pre-imported in the execution environment. You can import additional \
-standard library modules at the top of your code block if needed.
+{available_modules_section}
 
 ---
 
@@ -394,17 +392,40 @@ full page state for debugging. Use clear, descriptive labels \
 """
 
 
-def build_system_prompt(*, schema_prompt: str) -> str:
+_MODULES_DEFAULT = (
+    "`json`, `re`, `math`, `os`, `time`, `datetime`, `urljoin`, `urlparse` "
+    "are pre-imported in the execution environment. You can import additional "
+    "standard library modules at the top of your code block if needed."
+)
+
+_MODULES_SANDBOX = (
+    "`json`, `re`, `math`, `time`, `asyncio`, `datetime`, `urljoin`, "
+    "`urlparse`, `StringIO`, `BytesIO` are pre-imported.\n\n"
+    "You may also import: `collections`, `itertools`, `functools`, "
+    "`html`, `html.parser`, `base64`, `hashlib`, `csv`, `string`, "
+    "`textwrap`, `unicodedata`, `copy`, `decimal`, `random`, "
+    "`enum`, `dataclasses`, `typing`, `calendar`, `contextlib`, "
+    "`operator`, `statistics`, `difflib`, `pprint`, `zlib`, "
+    "`fractions`, `binascii`, `hmac`, `abc`.\n\n"
+    "Do not use `os`, `sys`, `subprocess`, `shutil`, `tempfile`, `pathlib`, "
+    "`socket`, `io`, `uuid`, or other system modules — they are not available."
+)
+
+
+def build_system_prompt(*, schema_prompt: str, sandbox: bool = False) -> str:
     """Assemble the complete system prompt.
 
     Args:
         schema_prompt: The rendered ``## Output Schema`` section
             (Structure + Requirements) from ``compile_schema()``.
+        sandbox: When True, list only sandbox-allowed modules.
     """
     guide = _load_patchright_guide()
+    modules_section = _MODULES_SANDBOX if sandbox else _MODULES_DEFAULT
     return _SYSTEM_PROMPT_TEMPLATE.format(
         patchright_guide=guide,
         schema_section=schema_prompt,
+        available_modules_section=modules_section,
     )
 
 

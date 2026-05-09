@@ -101,12 +101,19 @@ def _unescape_metadata(value: str) -> str:
 # Pre-import namespace for in-process execution
 # ---------------------------------------------------------------------------
 
-def _build_pre_import_namespace() -> dict[str, Any]:
+def _build_pre_import_namespace(*, sandbox: bool = False) -> dict[str, Any]:
     """Build namespace with pre-imported modules for in-process execution.
 
     Matches the pre-imports from the subprocess wrapper template so that
     agent-authored functions work identically in both execution modes.
+
+    When ``sandbox=True``, excludes ``os``, ``shutil``, ``tempfile`` and
+    uses the safe asyncio proxy.
     """
+    if sandbox:
+        from .runtime.sandbox import build_safe_pre_imports
+        return build_safe_pre_imports()
+
     import math
     from urllib.parse import urljoin
 
@@ -235,7 +242,9 @@ def _describe_os_error(exc: OSError) -> str:
     return str(exc)
 
 
-def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
+def _load_script(
+    path: Path, *, sandbox: bool = False,
+) -> tuple[Callable[..., Any], dict[str, str]]:
     """Load a saved script file, validate it, and return the scrape function.
 
     Returns:
@@ -313,11 +322,30 @@ def _load_script(path: Path) -> tuple[Callable[..., Any], dict[str, str]]:
     # Execute the source in an isolated namespace. We use compile+exec
     # instead of importlib to avoid bytecode caching issues when the same
     # file path is overwritten with new content (e.g. auto_fix='always').
-    compiled_code = compile(source, str(path), "exec")
-    namespace: dict[str, Any] = {
-        "__file__": str(path),
-        **_build_pre_import_namespace(),
-    }
+    if sandbox:
+        from .runtime.sandbox import (
+            compile_restricted_agent_code,
+            build_restricted_globals,
+            build_safe_pre_imports,
+            SandboxError,
+        )
+        try:
+            compiled_code = compile_restricted_agent_code(
+                source, filename=str(path),
+            )
+        except SandboxError as exc:
+            raise ScriptLoadError(
+                f'Script "{path}" failed sandbox validation: {exc}'
+            ) from None
+        namespace = build_restricted_globals(build_safe_pre_imports())
+        namespace["__file__"] = str(path)
+    else:
+        compiled_code = compile(source, str(path), "exec")
+        namespace = {
+            "__file__": str(path),
+            **_build_pre_import_namespace(),
+        }
+
     try:
         exec(compiled_code, namespace)  # noqa: S102
     except Exception as exc:
@@ -446,6 +474,7 @@ class Scraper:
         timeout: int = 600,
         max_attempts: int = 6,
         auto_fix: bool | str = False,
+        sandbox: bool = False,
     ) -> None:
         # -- url --
         if not isinstance(url, str) or not url.strip():
@@ -549,6 +578,7 @@ class Scraper:
         self._timeout = timeout
         self._max_attempts = max_attempts
         self._auto_fix_mode = auto_fix_mode
+        self._sandbox = sandbox
 
         # -- Runtime state --
         self._cached_fn: Any = None
@@ -1130,7 +1160,9 @@ class Scraper:
         # Load from disk if not in memory
         if self._cached_fn is None:
             assert self._script_path is not None
-            fn, metadata = _load_script(self._script_path)
+            fn, metadata = _load_script(
+                self._script_path, sandbox=self._sandbox,
+            )
 
             # Config mismatch checks
             script_url = metadata.get("url", "")
@@ -1457,6 +1489,7 @@ class Scraper:
         cp_dir = tempfile.mkdtemp(prefix="scrape_cp_")
         wrapper_code = generate_subprocess_wrapper(
             function_source, url, cp_dir,
+            sandbox=self._sandbox,
         )
 
         script_dir = Path(tempfile.mkdtemp(prefix="scrape_run_"))
@@ -1852,6 +1885,7 @@ class Scraper:
             max_script_attempts=self._max_attempts,
             compiled_schema=self._compiled_schema,
             approval_mode="auto",
+            sandbox=self._sandbox,
         )
 
         try:
@@ -1898,19 +1932,34 @@ class Scraper:
         # Cache function and source in memory for reuse
         self._cached_source = result.final_script
         if self._script_path:
-            fn, _meta = _load_script(self._script_path)
+            fn, _meta = _load_script(
+                self._script_path, sandbox=self._sandbox,
+            )
             self._cached_fn = fn
         else:
             # No script on disk — compile and cache from source directly
             try:
-                ns = {
-                    "__file__": "<scout-generated>",
-                    **_build_pre_import_namespace(),
-                }
-                exec(  # noqa: S102
-                    compile(result.final_script, "<scout-generated>", "exec"),
-                    ns,
-                )
+                if self._sandbox:
+                    from .runtime.sandbox import (
+                        compile_restricted_agent_code,
+                        build_restricted_globals,
+                        build_safe_pre_imports,
+                    )
+                    ns = build_restricted_globals(build_safe_pre_imports())
+                    ns["__file__"] = "<scout-generated>"
+                    exec(  # noqa: S102
+                        compile_restricted_agent_code(result.final_script),
+                        ns,
+                    )
+                else:
+                    ns = {
+                        "__file__": "<scout-generated>",
+                        **_build_pre_import_namespace(),
+                    }
+                    exec(  # noqa: S102
+                        compile(result.final_script, "<scout-generated>", "exec"),
+                        ns,
+                    )
                 fn = ns.get("scrape")
                 if fn is not None and callable(fn):
                     self._cached_fn = fn

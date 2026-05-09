@@ -150,6 +150,7 @@ class AgentLoop:
         approval_mode: str = "human",
         validator_config: LLMConfig | None = None,
         compiled_schema: CompiledSchema | None = None,
+        sandbox: bool = False,
     ) -> None:
         self._llm_config = llm_config or LLMConfig()
         self._max_steps = max_steps
@@ -167,6 +168,7 @@ class AgentLoop:
             max_tokens=8192,
         )
         self._compiled_schema = compiled_schema
+        self._sandbox = sandbox
 
     # ── Main entry point ──────────────────────────────────────
 
@@ -203,6 +205,7 @@ class AgentLoop:
             )
             system_prompt = build_system_prompt(
                 schema_prompt=schema_prompt,
+                sandbox=self._sandbox,
             )
             initial_msg = build_initial_user_message(task, url)
 
@@ -490,6 +493,7 @@ class AgentLoop:
                                     start_url=url,
                                     timeout=self._script_timeout,
                                     checkpoint_dir=run_dir,
+                                    sandbox=self._sandbox,
                                 )
                             )
                             # Track for cleanup (finally block).
@@ -1342,6 +1346,7 @@ async def _run_script_subprocess(
     url: str,
     timeout: int = 120,
     checkpoint_dir: Path | None = None,
+    sandbox: bool = False,
 ) -> tuple[str, str | None, str, int]:
     """Run the agent's scrape function in a fresh subprocess.
 
@@ -1355,7 +1360,9 @@ async def _run_script_subprocess(
         returning.
     """
     cp_dir = str(checkpoint_dir) if checkpoint_dir else "/tmp/scrape_checkpoints"
-    wrapper_code = generate_subprocess_wrapper(script, url, cp_dir)
+    wrapper_code = generate_subprocess_wrapper(
+        script, url, cp_dir, sandbox=sandbox,
+    )
 
     script_dir = Path(tempfile.mkdtemp(prefix="scrape_run_"))
     script_path = script_dir / "script.py"
@@ -1444,6 +1451,7 @@ async def _run_script_in_process(
     start_url: str,
     timeout: int = 600,
     checkpoint_dir: Path | None = None,
+    sandbox: bool = False,
 ) -> InProcessScriptResult:
     """Run the agent's scrape function in-process with a second browser.
 
@@ -1547,21 +1555,30 @@ async def _run_script_in_process(
 
         # ── Define the scrape function in a clean namespace ──
         import io as _io
-        exec_globals: dict[str, Any] = {"__builtins__": __builtins__}
-        # Pre-imports (same as subprocess wrapper).
-        exec(
-            compile(
-                "import json, re, math, os, time, asyncio, "
-                "tempfile, shutil\n"
-                "from datetime import datetime\n"
-                "from urllib.parse import urljoin, urlparse\n",
-                "<script-imports>",
-                "exec",
-            ),
-            exec_globals,
-        )
-        # Compile and exec the agent's script code.
-        exec(compile(script, "<agent-script>", "exec"), exec_globals)
+        if sandbox:
+            from ..runtime.sandbox import (
+                compile_restricted_agent_code,
+                build_restricted_globals,
+                build_safe_pre_imports,
+            )
+            exec_globals = build_restricted_globals(build_safe_pre_imports())
+            exec(compile_restricted_agent_code(script), exec_globals)
+        else:
+            exec_globals: dict[str, Any] = {"__builtins__": __builtins__}
+            # Pre-imports (same as subprocess wrapper).
+            exec(
+                compile(
+                    "import json, re, math, os, time, asyncio, "
+                    "tempfile, shutil\n"
+                    "from datetime import datetime\n"
+                    "from urllib.parse import urljoin, urlparse\n",
+                    "<script-imports>",
+                    "exec",
+                ),
+                exec_globals,
+            )
+            # Compile and exec the agent's script code.
+            exec(compile(script, "<agent-script>", "exec"), exec_globals)
 
         scrape_fn = exec_globals.get("scrape")
         if scrape_fn is None:

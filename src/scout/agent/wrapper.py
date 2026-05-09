@@ -147,6 +147,7 @@ def generate_subprocess_wrapper(
     checkpoint_dir: str,
     *,
     collect_page_signals: bool = False,
+    sandbox: bool = False,
 ) -> str:
     """Generate the subprocess wrapper script.
 
@@ -183,20 +184,65 @@ def generate_subprocess_wrapper(
         call_section=call_section,
     )
 
-    parts = [
-        "#!/usr/bin/env python3",
-        "# Scout engine wrapper — auto-generated, do not edit.\n",
-        _PRE_IMPORTS,
-        "from patchright.async_api import async_playwright\n",
-        "# ── Checkpoint ──\n",
-        checkpoint_code,
-        "# ── Agent Code ──\n",
-        agent_code,
-        "\n# ── Engine Runner ──\n",
-        runner,
-        "asyncio.run(_run())",
-    ]
+    if sandbox:
+        # In sandbox mode, the agent code runs in a restricted namespace
+        # that does NOT have os/shutil/tempfile. The checkpoint and engine
+        # runner still have full access (they're trusted wrapper code).
+        sandbox_setup = _build_sandbox_setup(agent_code)
+        parts = [
+            "#!/usr/bin/env python3",
+            "# Scout engine wrapper — auto-generated, do not edit.\n",
+            _PRE_IMPORTS,
+            "from patchright.async_api import async_playwright\n",
+            "# ── Checkpoint ──\n",
+            checkpoint_code,
+            "# ── Sandbox: Agent Code in restricted namespace ──\n",
+            sandbox_setup,
+            "\n# ── Engine Runner ──\n",
+            runner,
+            "asyncio.run(_run())",
+        ]
+    else:
+        parts = [
+            "#!/usr/bin/env python3",
+            "# Scout engine wrapper — auto-generated, do not edit.\n",
+            _PRE_IMPORTS,
+            "from patchright.async_api import async_playwright\n",
+            "# ── Checkpoint ──\n",
+            checkpoint_code,
+            "# ── Agent Code ──\n",
+            agent_code,
+            "\n# ── Engine Runner ──\n",
+            runner,
+            "asyncio.run(_run())",
+        ]
     return "\n".join(parts) + "\n"
+
+
+def _build_sandbox_setup(agent_code: str) -> str:
+    """Embed agent code as a string that runs in a restricted namespace.
+
+    The restricted namespace has:
+    - Import whitelist (no os, subprocess, etc.)
+    - Safe asyncio proxy (no create_subprocess_exec, etc.)
+    - No os, shutil, tempfile access
+    - Restricted builtins (no exec, eval, open, etc.)
+    """
+    # Embed agent code safely using repr() for proper escaping
+    escaped_code = repr(agent_code)
+    return f"""\
+from scout.runtime.sandbox import (
+    compile_restricted_agent_code,
+    build_restricted_globals,
+    build_safe_pre_imports,
+)
+
+_agent_source = {escaped_code}
+_agent_compiled = compile_restricted_agent_code(_agent_source, "<agent>")
+_agent_ns = build_restricted_globals(build_safe_pre_imports())
+exec(_agent_compiled, _agent_ns)
+scrape = _agent_ns["scrape"]
+"""
 
 
 def _build_call_section_basic() -> str:
