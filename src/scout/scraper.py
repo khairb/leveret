@@ -527,6 +527,7 @@ class Scraper:
         sandbox: bool = True,
         protect_script: bool = False,
         launch_options: dict | None = None,
+        demo: bool = False,
     ) -> None:
         # -- url --
         if not isinstance(url, str) or not url.strip():
@@ -637,6 +638,7 @@ class Scraper:
         self._sandbox = sandbox
         self._protect_script = protect_script
         self._launch_options = launch_options
+        self._demo = demo
 
         # -- Runtime state --
         self._cached_fn: Any = None
@@ -714,7 +716,7 @@ class Scraper:
         """Resolve launch options, merging user options with stealth defaults."""
         from .browser import resolve_launch_options
         return resolve_launch_options(
-            self._launch_options, headless=self._headless,
+            self._launch_options, headless=self._headless, demo=self._demo,
         )
 
     # -- Auto-fix mode resolution --
@@ -2101,6 +2103,7 @@ class Scraper:
             sandbox=self._sandbox,
             launch_options=self._get_resolved_launch_options(),
             tolerance=self._tolerance,
+            demo=self._demo,
         )
 
         try:

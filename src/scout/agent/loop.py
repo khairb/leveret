@@ -83,6 +83,7 @@ from .show_page_context import (
 )
 from .tools import TOOL_SCHEMAS, ToolResult, execute_tool
 from .trace import Tracer
+from .demo_overlay import DemoOverlay
 from . import console
 
 # Import for type checking only — CompiledSchema is optional at init.
@@ -157,12 +158,13 @@ class AgentLoop:
         sandbox: bool = False,
         launch_options: dict | None = None,
         tolerance: Tolerance | None = None,
+        demo: bool = False,
     ) -> None:
         self._llm_config = llm_config or LLMConfig()
         self._max_steps = max_steps
         self._max_python_steps = max_python_steps
         self._max_syntax_retries = max_syntax_retries
-        self._headless = headless
+        self._headless = headless if not demo else False
         self._browser_type = browser_type
         self._default_timeout = default_timeout
         self._trace_dir = Path(trace_dir)
@@ -176,8 +178,19 @@ class AgentLoop:
         )
         self._compiled_schema = compiled_schema
         self._sandbox = sandbox
-        self._launch_options = launch_options
         self._tolerance = tolerance
+        self._demo = demo
+        self._overlay: DemoOverlay | None = None
+
+        # Resolve launch options — ensures demo flag affects browser config
+        # even when AgentLoop is used directly (e.g. from CLI).
+        if launch_options is None:
+            from ..browser import resolve_launch_options
+            self._launch_options = resolve_launch_options(
+                None, headless=self._headless, demo=self._demo,
+            )
+        else:
+            self._launch_options = launch_options
 
     # ── Main entry point ──────────────────────────────────────
 
@@ -219,12 +232,22 @@ class AgentLoop:
             # ── Exploration planner ────────────────────────
             exploration_checklist = None
             if self._compiled_schema is not None:
+                if self._overlay:
+                    await self._overlay.push_planning()
                 try:
                     exploration_checklist = await generate_exploration_plan(
                         task=task,
                         compiled_schema=self._compiled_schema,
                         llm_config=self._validator_config,
                     )
+                    if self._overlay and exploration_checklist:
+                        # Parse checklist lines into items for the overlay.
+                        items = [
+                            line.lstrip("- ").lstrip("0123456789.").strip()
+                            for line in exploration_checklist.splitlines()
+                            if line.strip() and not line.strip().startswith("#")
+                        ]
+                        await self._overlay.push_plan(items)
                 except Exception:
                     logger.warning(
                         "Planner failed — continuing without checklist",
@@ -293,6 +316,8 @@ class AgentLoop:
                 turn_number += 1
                 self._turn_ref[0] = turn_number
                 console.print_turn_start(turn_number)
+                if self._overlay:
+                    await self._overlay.push_turn(turn_number)
 
                 # ── History compression check ─────────────────
                 # Compress if the last LLM call's input tokens
@@ -355,6 +380,8 @@ class AgentLoop:
                 for b in content_blocks:
                     if b.type == "text" and b.text.strip():
                         console.print_agent_text(b.text)
+                        if self._overlay:
+                            await self._overlay.push_thinking(b.text)
 
                 # Store the assistant message.
                 conversation.add_assistant_message(
@@ -471,6 +498,8 @@ class AgentLoop:
                         valid, error_msg = _validate_script(script)
                         tracer.log_script_extracted(script, valid, error_msg)
                         console.print_script_found(valid, error_msg)
+                        if self._overlay:
+                            await self._overlay.push_script_found(valid, error_msg)
                         if valid:
                             # Gate: require at least 2 python
                             # tool calls before accepting a
@@ -524,6 +553,10 @@ class AgentLoop:
                                 and self._approval_mode == "auto"
                             ):
                                 console.print_generating_requirements()
+                                if self._overlay:
+                                    await self._overlay.push_validation(
+                                        "reqs", "Generating requirements\u2026",
+                                    )
                                 requirements = (
                                     await generate_requirements(
                                         task=task,
@@ -536,6 +569,11 @@ class AgentLoop:
                                 console.print_requirements_generated(
                                     requirements,
                                 )
+                                if self._overlay:
+                                    await self._overlay.push_validation_update(
+                                        "reqs", status="ok",
+                                        label="Requirements generated",
+                                    )
                                 tracer.log_system_event(
                                     "requirements_generated",
                                     requirements=requirements,
@@ -554,6 +592,8 @@ class AgentLoop:
                             # Run the function in a fresh in-process
                             # browser (page stays alive for debugging).
                             console.print_running_script()
+                            if self._overlay:
+                                await self._overlay.push_script_running()
                             run_number = script_attempts + 1
                             run_dir = checkpoint_base_dir / f"run_{run_number}"
                             script_run = (
@@ -585,6 +625,10 @@ class AgentLoop:
                             console.print_script_output(
                                 combined_output, stderr, returncode,
                             )
+                            if self._overlay:
+                                await self._overlay.push_script_output(
+                                    combined_output, returncode,
+                                )
                             console.print_checkpoints_summary(checkpoints)
                             tracer.log_system_event(
                                 "script_executed",
@@ -652,6 +696,10 @@ class AgentLoop:
                                 # Runs before the LLM validator.
                                 schema_passed = True
                                 if self._compiled_schema is not None:
+                                    if self._overlay:
+                                        await self._overlay.push_validation(
+                                            "schema", "Validating against schema\u2026",
+                                        )
                                     if return_value_json is not None:
                                         try:
                                             return_data = json.loads(
@@ -674,6 +722,13 @@ class AgentLoop:
                                         "schema_validation",
                                         valid=valid,
                                     )
+                                    if self._overlay:
+                                        await self._overlay.push_validation_update(
+                                            "schema",
+                                            status="ok" if valid else "err",
+                                            label="Schema " + ("passed" if valid else "failed"),
+                                            detail=schema_feedback if not valid else "",
+                                        )
                                     if not valid:
                                         schema_passed = False
                                         feedback = schema_feedback
@@ -683,6 +738,10 @@ class AgentLoop:
                                     # skip the LLM validator.
                                     pass
                                 elif self._approval_mode == "auto":
+                                    if self._overlay:
+                                        await self._overlay.push_validation(
+                                            "llm", "Validating output\u2026",
+                                        )
                                     approved, feedback = (
                                         await validate_output(
                                             task=task,
@@ -713,16 +772,29 @@ class AgentLoop:
                                     )
                                     if approved:
                                         console.print_validator_approved()
+                                        if self._overlay:
+                                            await self._overlay.push_validation_update(
+                                                "llm", status="ok",
+                                                label="Output validated",
+                                            )
                                     else:
                                         console.print_validator_rejected(
                                             feedback,
                                         )
+                                        if self._overlay:
+                                            await self._overlay.push_validation_update(
+                                                "llm", status="err",
+                                                label="Validation failed",
+                                                detail=feedback[:200] if feedback else "",
+                                            )
                                 else:
                                     approved, feedback = (
                                         await console.ask_user_approval()
                                     )
 
                             if approved:
+                                if self._overlay:
+                                    await self._overlay.push_approved()
                                 result.final_script = script
                                 result.return_value = return_value_json
                                 result.success = True
@@ -769,6 +841,8 @@ class AgentLoop:
                                 script_attempts,
                                 self._max_script_attempts,
                             )
+                            if self._overlay:
+                                await self._overlay.push_rejected(feedback)
 
                             # Revise requirements after 2 validator
                             # rejections — execution evidence may
@@ -967,6 +1041,12 @@ class AgentLoop:
                         block.name, block.input,
                         step_count, self._max_steps,
                     )
+                    if self._overlay and block.name == "python":
+                        await self._overlay.push_tool_call(
+                            block.input.get("code", ""),
+                            step=step_count,
+                            max_steps=self._max_steps,
+                        )
                     tracer.log_tool_call(block.name, block.input, block.id)
 
                     tool_start = time.time()
@@ -1022,6 +1102,24 @@ class AgentLoop:
                         tool_duration_ms,
                         tool_result.content,
                     )
+                    if self._overlay and block.name == "python":
+                        # Extract output/error from tool result content.
+                        _out = ""
+                        _err = ""
+                        if "Output:\n" in tool_result.content:
+                            _oi = tool_result.content.find("Output:\n") + 8
+                            _oe = tool_result.content.find("\n\n", _oi)
+                            _out = tool_result.content[_oi:_oe if _oe != -1 else _oi + 500].strip()
+                        if "Error:\n" in tool_result.content:
+                            _ei = tool_result.content.find("Error:\n") + 7
+                            _ee = tool_result.content.find("\n\n", _ei)
+                            _err = tool_result.content[_ei:_ee if _ee != -1 else _ei + 500].strip()
+                        await self._overlay.push_tool_result(
+                            is_error=tool_result.is_error,
+                            duration_s=f"{tool_duration_ms / 1000:.1f}",
+                            output=_out,
+                            error=_err,
+                        )
 
                     tool_results.append({
                         "type": "tool_result",
@@ -1090,6 +1188,11 @@ class AgentLoop:
                 )
                 sp_result = self._show_page_result_ref[0]
                 if is_show_page_turn and sp_result is not None:
+                    if self._overlay:
+                        await self._overlay.push_page_update(
+                            url=runtime.page.url if runtime.page else "",
+                            sections=len(sp_result.sections),
+                        )
                     self._show_page_result_ref[0] = None
                     pending_is_variant_a = (
                         show_page_state.should_force_full_analysis(
@@ -1251,6 +1354,13 @@ class AgentLoop:
             except Exception:
                 logger.exception("Failed to finalize trace")
 
+        if self._overlay:
+            try:
+                await self._overlay.push_done(
+                    result.success, result.error or "",
+                )
+            except Exception:
+                pass
         console.print_result(result)
         return result
 
@@ -1321,6 +1431,15 @@ class AgentLoop:
             raise RuntimeError(
                 f"Failed to navigate to {url}: {initial_result.error}"
             )
+
+        # Demo overlay — load into the separate popup window immediately
+        # so the user sees the panel while the page finishes loading.
+        if self._demo and runtime.overlay_page:
+            self._overlay = DemoOverlay()
+            await self._overlay.init(runtime.overlay_page)
+            await self._overlay.push_boot(url=url)
+        else:
+            self._overlay = None
 
         # Wait for dynamic content to load before capturing page state.
         await asyncio.sleep(10)
@@ -1643,8 +1762,10 @@ async def _run_script_in_process(
     context = None
     try:
         pw = await async_playwright().start()
+        is_demo = bool(launch_options and launch_options.get("_demo"))
+
         if launch_options is not None:
-            opts = dict(launch_options)
+            opts = {k: v for k, v in launch_options.items() if k != "_demo"}
             opts["user_data_dir"] = profile_dir
             context = await pw.chromium.launch_persistent_context(**opts)
         else:
@@ -1663,8 +1784,9 @@ async def _run_script_in_process(
             if context.pages
             else await context.new_page()
         )
-        _vp = (launch_options or {}).get("viewport") or {"width": 1920, "height": 1080}
-        await page.set_viewport_size(_vp)
+        if not is_demo:
+            _vp = (launch_options or {}).get("viewport") or {"width": 1920, "height": 1080}
+            await page.set_viewport_size(_vp)
         await page.goto(start_url, wait_until="domcontentloaded")
 
         # ── Build checkpoint function (same logic as wrapper) ──

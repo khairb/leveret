@@ -595,6 +595,7 @@ class BrowserManager:
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
+        self._overlay_page: Optional[Page] = None
         self._profile_dir: Optional[str] = None
 
     @property
@@ -609,6 +610,10 @@ class BrowserManager:
     def context(self) -> Optional[BrowserContext]:
         return self._context
 
+    @property
+    def overlay_page(self) -> Optional[Page]:
+        return self._overlay_page
+
     async def start(self) -> Page:
         self._pw = await async_playwright().start()
 
@@ -617,10 +622,15 @@ class BrowserManager:
 
         launcher = getattr(self._pw, self._config["browser_type"])
 
+        # Strip the _demo sentinel before passing to Playwright.
+        self._demo = bool(
+            self._launch_options and self._launch_options.get("_demo")
+        )
+
         if self._launch_options is not None:
             # New path: use pre-resolved launch options from Scraper.
             # The dict is ready to unpack — just add user_data_dir.
-            opts = dict(self._launch_options)
+            opts = {k: v for k, v in self._launch_options.items() if k != "_demo"}
             opts["user_data_dir"] = self._profile_dir
             self._context = await launcher.launch_persistent_context(**opts)
         else:
@@ -644,23 +654,109 @@ class BrowserManager:
         self._context.set_default_timeout(10_000)           # 10 s for most ops
         self._context.set_default_navigation_timeout(15_000) # 15 s for goto/reload
 
-        # Set viewport explicitly (avoids Playwright emulation detection).
         self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()
-        viewport = self._launch_options.get("viewport") if self._launch_options else None
-        await self._page.set_viewport_size(
-            viewport or self._config["viewport"]
-        )
+
+        # In demo mode: create a separate overlay window and position
+        # both windows side-by-side (80% website, 20% overlay panel).
+        if self._demo:
+            await self._setup_demo_windows()
+        else:
+            viewport = self._launch_options.get("viewport") if self._launch_options else None
+            await self._page.set_viewport_size(
+                viewport or self._config["viewport"]
+            )
 
         return self._page
+
+    async def _setup_demo_windows(self) -> None:
+        """Position the main window and open a separate overlay window."""
+        from ..browser import compute_demo_layout
+
+        # Query actual screen size.
+        try:
+            screen = await self._page.evaluate(
+                "({ w: screen.availWidth, h: screen.availHeight })"
+            )
+            layout = compute_demo_layout(screen["w"], screen["h"])
+        except Exception:
+            layout = compute_demo_layout(1920, 1080)
+
+        pw = layout["page_width"]
+        ph = layout["height"]
+        panelw = layout["panel_width"]
+        panelx = layout["panel_x"]
+
+        # Position and size the main (website) window.
+        try:
+            await self._page.evaluate(
+                f"window.moveTo(0, 0); window.resizeTo({pw}, {ph})"
+            )
+        except Exception:
+            pass
+
+        # Open the overlay in a separate popup window.
+        try:
+            async with self._context.expect_page(timeout=5000) as page_info:
+                await self._page.evaluate(
+                    f"window.open('about:blank', 'scout-overlay', "
+                    f"'width={panelw},height={ph},left={panelx},top=0')"
+                )
+            raw_value = page_info.value
+            logger.info(
+                "[demo] page_info.value type: %s", type(raw_value).__name__,
+            )
+            if hasattr(raw_value, '__await__'):
+                self._overlay_page = await raw_value
+            else:
+                self._overlay_page = raw_value
+            logger.info(
+                "[demo] overlay window opened (%dx%d at x=%d)",
+                panelw, ph, panelx,
+            )
+            # Fine-tune position (window.open features can be imprecise).
+            try:
+                await self._overlay_page.evaluate(
+                    f"window.moveTo({panelx}, 0); "
+                    f"window.resizeTo({panelw}, {ph})"
+                )
+            except Exception:
+                pass
+            # Set dark background immediately to avoid white flash
+            # while the full overlay UI loads later.
+            try:
+                await self._overlay_page.set_content(
+                    '<html><body style="background:#1c1c1e;margin:0">'
+                    '</body></html>',
+                    wait_until="commit",
+                )
+            except Exception:
+                pass
+        except Exception as exc:
+            # Fallback: open as a tab (functional, just not a separate window).
+            logger.warning(
+                "Could not open overlay popup (%s) — falling back to tab", exc,
+            )
+            try:
+                self._overlay_page = await self._context.new_page()
+            except Exception:
+                logger.warning("Could not create overlay page at all")
+                self._overlay_page = None
 
     async def new_page(self) -> Page:
         if not self._context:
             raise RuntimeError("Browser not started.")
         page = await self._context.new_page()
-        await page.set_viewport_size(self._config["viewport"])
+        if not self._demo:
+            await page.set_viewport_size(self._config["viewport"])
         return page
 
     async def stop(self) -> None:
+        if self._overlay_page:
+            try:
+                await self._overlay_page.close()
+            except Exception:
+                pass
+            self._overlay_page = None
         if self._context:
             await self._context.close()
         if self._pw:
@@ -844,6 +940,11 @@ class ScrapingRuntime:
     @property
     def context(self) -> Optional[BrowserContext]:
         return self._browser_mgr.context
+
+    @property
+    def overlay_page(self) -> Optional[Page]:
+        """Separate browser page for the demo overlay (None when not in demo mode)."""
+        return self._browser_mgr.overlay_page
 
     @property
     def repl(self) -> BaseREPL:

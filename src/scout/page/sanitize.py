@@ -1036,7 +1036,7 @@ def _format_html(
     for tag_name in ELEMENTS_TO_REMOVE:
         for element in soup.find_all(tag_name):
             element.decompose()
-    
+
     # Empty elements that should keep their shell but lose contents
     for tag_name in ELEMENTS_TO_EMPTY:
         for element in soup.find_all(tag_name):

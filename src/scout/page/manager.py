@@ -229,6 +229,7 @@ class PageStateManager:
         timings["get_html"] = _ms_since(t)
 
         # 3. Sanitize HTML — remove scripts, styles, event handlers,
+        #    the demo overlay (if present),
         #    unstable CSS classes, framework attributes.  Preserves
         #    data-iid / data-hidden attributes stamped by detection.
         #    truncate_repeating=False because the sectioner handles

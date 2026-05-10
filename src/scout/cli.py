@@ -45,6 +45,11 @@ def main() -> None:
         help="Run the browser in headless mode",
     )
     parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Demo mode: headful browser with properly sized window",
+    )
+    parser.add_argument(
         "--max-steps",
         type=int,
         default=60,
@@ -114,6 +119,7 @@ def main() -> None:
         approval_mode=args.approve_mode,
         validator_config=validator_config,
         max_script_attempts=6,
+        demo=args.demo,
     )
 
     # The loop now handles all live output via console.py.
