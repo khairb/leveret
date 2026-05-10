@@ -415,15 +415,32 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   .plan-body .plan-content hr {
     border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 8px 0;
   }
-  .plan-spinner {
-    display: flex; align-items: center; gap: 8px;
-    padding: 10px 12px; font-size: 12px; color: #636366;
+  .plan-progress {
+    padding: 10px 12px;
   }
-  .plan-spinner::before {
-    content: ''; width: 12px; height: 12px;
-    border: 1.5px solid rgba(255,255,255,0.06);
-    border-top-color: rgba(255,255,255,0.3);
-    border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0;
+  .plan-progress-label {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .plan-progress-text {
+    font-size: 11.5px; color: #8e8e93; font-weight: 500;
+  }
+  .plan-progress-pct {
+    font-size: 10px; color: rgba(255,255,255,0.2);
+    font-variant-numeric: tabular-nums;
+  }
+  .plan-progress-track {
+    width: 100%; height: 3px; border-radius: 2px;
+    background: rgba(255,255,255,0.06); overflow: hidden;
+  }
+  .plan-progress-fill {
+    height: 100%; border-radius: 2px; width: 0%;
+    background: linear-gradient(90deg, #5e5ce6, #bf5af2);
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .plan-progress-fill.complete {
+    background: linear-gradient(90deg, #30d158, #34c759);
+    transition: width 0.3s cubic-bezier(0.0, 0, 0.2, 1);
   }
 
   /* ═══════════ Validation card ═══════════ */
@@ -1029,48 +1046,82 @@ _OVERLAY_JS = r"""
         }
         const prev = feed.querySelector('.plan-loading');
         if (prev) prev.remove();
+        if (window.__planProgressTimer) { clearInterval(window.__planProgressTimer); window.__planProgressTimer = null; }
         const d = document.createElement('div');
         d.className = 'plan-loading plan';
-        d.innerHTML = '<div class="plan-card"><div class="plan-spinner">'
-          + esc(ev.message || 'Generating plan\u2026') + '</div></div>';
-        feed.appendChild(d); scrollDown(); return;
+        d.innerHTML = '<div class="plan-card"><div class="plan-progress">'
+          + '<div class="plan-progress-label">'
+          + '<span class="plan-progress-text">' + esc(ev.message || 'Planning exploration\u2026') + '</span>'
+          + '<span class="plan-progress-pct">0%</span>'
+          + '</div>'
+          + '<div class="plan-progress-track"><div class="plan-progress-fill"></div></div>'
+          + '</div></div>';
+        feed.appendChild(d); scrollDown();
+        // Asymptotic progress: progress = cap * (1 - e^(-k*t))
+        // cap=90, k tuned so it feels fast early then slows
+        const fill = d.querySelector('.plan-progress-fill');
+        const pctLabel = d.querySelector('.plan-progress-pct');
+        const startTime = Date.now();
+        const cap = 90;
+        const k = 0.12; // controls speed — higher = faster start
+        window.__planProgressTimer = setInterval(() => {
+          const elapsed = (Date.now() - startTime) / 1000;
+          const progress = Math.min(cap, cap * (1 - Math.exp(-k * elapsed)));
+          const rounded = Math.round(progress);
+          fill.style.width = rounded + '%';
+          pctLabel.textContent = rounded + '%';
+        }, 200);
+        return;
       }
 
       if (t === 'plan') {
-        const spinner = feed.querySelector('.plan-loading');
-        if (spinner) spinner.remove();
-        const items = ev.items || [];
-        const d = document.createElement('div');
-        d.className = 'plan open';
-        // Build list HTML with nesting support
-        let listHtml = '<ul>';
-        let inSub = false;
-        for (const item of items) {
-          const isSub = item.startsWith('  ');
-          const text = isSub ? item.trim() : item;
-          if (isSub && !inSub) { listHtml += '<ul>'; inSub = true; }
-          else if (!isSub && inSub) { listHtml += '</ul>'; inSub = false; }
-          const cbMatch = text.match(/^\[([ xX])\] (.+)$/);
-          if (cbMatch) {
-            const chk = cbMatch[1] !== ' ';
-            listHtml += '<li class="cb"><span class="cb-box' + (chk ? ' checked' : '') + '">'
-              + (chk ? '\u2713' : '') + '</span>' + esc(cbMatch[2]) + '</li>';
-          } else {
-            listHtml += '<li>' + esc(text) + '</li>';
-          }
+        // Completion sprint — snap progress to 100% then swap in the plan card
+        if (window.__planProgressTimer) { clearInterval(window.__planProgressTimer); window.__planProgressTimer = null; }
+        const loader = feed.querySelector('.plan-loading');
+        if (loader) {
+          const fill = loader.querySelector('.plan-progress-fill');
+          const pctLabel = loader.querySelector('.plan-progress-pct');
+          if (fill) { fill.classList.add('complete'); fill.style.width = '100%'; }
+          if (pctLabel) pctLabel.textContent = '100%';
         }
-        if (inSub) listHtml += '</ul>';
-        listHtml += '</ul>';
-        let html = '<div class="plan-card"><div class="plan-header">'
-          + '<span class="plan-icon">\uD83D\uDCCB</span>'
-          + '<span class="plan-title">Exploration Plan</span>'
-          + '<span class="plan-chevron">\u203A</span>'
-          + '</div><div class="plan-body"><div class="plan-content">'
-          + listHtml
-          + '</div></div></div>';
-        d.innerHTML = html;
-        d.querySelector('.plan-header').addEventListener('click', () => d.classList.toggle('open'));
-        feed.appendChild(d); scrollDown(); return;
+        // Brief pause at 100% so user registers completion, then swap
+        const showPlan = () => {
+          if (loader) loader.remove();
+          const items = ev.items || [];
+          const d = document.createElement('div');
+          d.className = 'plan open';
+          // Build list HTML with nesting support
+          let listHtml = '<ul>';
+          let inSub = false;
+          for (const item of items) {
+            const isSub = item.startsWith('  ');
+            const text = isSub ? item.trim() : item;
+            if (isSub && !inSub) { listHtml += '<ul>'; inSub = true; }
+            else if (!isSub && inSub) { listHtml += '</ul>'; inSub = false; }
+            const cbMatch = text.match(/^\[([ xX])\] (.+)$/);
+            if (cbMatch) {
+              const chk = cbMatch[1] !== ' ';
+              listHtml += '<li class="cb"><span class="cb-box' + (chk ? ' checked' : '') + '">'
+                + (chk ? '\u2713' : '') + '</span>' + esc(cbMatch[2]) + '</li>';
+            } else {
+              listHtml += '<li>' + esc(text) + '</li>';
+            }
+          }
+          if (inSub) listHtml += '</ul>';
+          listHtml += '</ul>';
+          let html = '<div class="plan-card"><div class="plan-header">'
+            + '<span class="plan-icon">\uD83D\uDCCB</span>'
+            + '<span class="plan-title">Exploration Plan</span>'
+            + '<span class="plan-chevron">\u203A</span>'
+            + '</div><div class="plan-body"><div class="plan-content">'
+            + listHtml
+            + '</div></div></div>';
+          d.innerHTML = html;
+          d.querySelector('.plan-header').addEventListener('click', () => d.classList.toggle('open'));
+          feed.appendChild(d); scrollDown();
+        };
+        setTimeout(showPlan, loader ? 400 : 0);
+        return;
       }
     },
   };
