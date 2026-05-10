@@ -207,10 +207,23 @@ class AgentLoop:
         result = AgentResult()
         runtime: ScrapingRuntime | None = None
         tracer = Tracer(output_dir=self._trace_dir)
+        planning_task: asyncio.Task[str] | None = None
 
         try:
             # ── Phase 0: Initialization ───────────────────────
             console.print_init(url, task, self._llm_config.model)
+
+            # Kick off planning in the background — it only needs the
+            # task + schema (no page state), so it can run while the
+            # browser launches, navigates, and waits for dynamic content.
+            if self._compiled_schema is not None:
+                planning_task = asyncio.create_task(
+                    generate_exploration_plan(
+                        task=task,
+                        compiled_schema=self._compiled_schema,
+                        llm_config=self._validator_config,
+                    )
+                )
 
             runtime, psm, initial_page_view = await self._initialize(url)
 
@@ -229,24 +242,24 @@ class AgentLoop:
                 schema_prompt=schema_prompt,
                 sandbox=self._sandbox,
             )
-            # ── Exploration planner ────────────────────────
+            # ── Exploration planner (await background result) ──
             exploration_checklist = None
-            if self._compiled_schema is not None:
-                if self._overlay:
-                    await self._overlay.push_planning()
+            if planning_task is not None:
                 try:
-                    exploration_checklist = await generate_exploration_plan(
-                        task=task,
-                        compiled_schema=self._compiled_schema,
-                        llm_config=self._validator_config,
-                    )
+                    exploration_checklist = await planning_task
                     if self._overlay and exploration_checklist:
                         # Parse checklist lines into items for the overlay.
-                        items = [
-                            line.lstrip("- ").lstrip("0123456789.").strip()
-                            for line in exploration_checklist.splitlines()
-                            if line.strip() and not line.strip().startswith("#")
-                        ]
+                        items = []
+                        for line in exploration_checklist.splitlines():
+                            s = line.strip()
+                            if not s or s.startswith("#"):
+                                continue
+                            indent = len(line) - len(line.lstrip())
+                            text = s.lstrip("- ").lstrip("0123456789.").strip()
+                            if indent >= 4:
+                                items.append("  " + text)  # sub-item
+                            else:
+                                items.append(text)
                         await self._overlay.push_plan(items)
                 except Exception:
                     logger.warning(
@@ -1325,6 +1338,9 @@ class AgentLoop:
             tracer.log_system_event("exception", error=str(exc))
 
         finally:
+            # Cancel background planning if it's still running.
+            if planning_task is not None and not planning_task.done():
+                planning_task.cancel()
             # Clean up any leftover script browser.
             try:
                 if active_script_result is not None:
@@ -1437,7 +1453,12 @@ class AgentLoop:
         if self._demo and runtime.overlay_page:
             self._overlay = DemoOverlay()
             await self._overlay.init(runtime.overlay_page)
-            await self._overlay.push_boot(url=url)
+            # Planning is already running in the background — show
+            # the spinner immediately instead of fake boot messages.
+            if self._compiled_schema is not None:
+                await self._overlay.push_planning()
+            else:
+                await self._overlay.push_planning("Loading page\u2026")
         else:
             self._overlay = None
 

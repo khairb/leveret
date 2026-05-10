@@ -471,23 +471,21 @@ def build_show_page_analysis_prompt_a() -> str:
     """Return the Variant A (full analysis) prompt for show_page.
 
     Injected after a show_page tool result when the page is new or
-    substantially different from the last analyzed page.  Tools remain
-    enabled so the agent can analyze and act in the same turn.
+    substantially different from the last analyzed page.  Encourages
+    the agent to reason naturally through what it sees while capturing
+    section IDs, element tags, and attributes it will need later.
     """
     return """\
-── Page Analysis ──
+── Think & Capture ──
 
-The full page content above will be cleared from context after this
-turn — what you write down now is what you'll have to work with.
+This page content will be cleared after this turn — you won't see
+it again, so think through what you're looking at now.
 
-For each section relevant to your task, note:
-- The section ID and what it contains
-- Why it matters for your goal
-- Interactive elements you may need — copy the full tags as shown
-  (e.g., <button aria-label="Next" type="button">); you'll need
-  the exact attributes for selectors later
-
-Then reason about your current situation and plan your next move.
+What do you see? What matters for your task? What would you do next?
+As you think, write down the section IDs, element tags, and
+attributes you'll need later — weave them into your reasoning
+naturally, because once this content is gone, your notes are all
+you'll have.
 
 ──"""
 
@@ -496,16 +494,15 @@ def build_show_page_analysis_prompt_b() -> str:
     """Return the Variant B (page update) prompt for show_page.
 
     Injected after a show_page tool result when the page is substantially
-    similar to the last analyzed page.  Tools remain enabled.
+    similar to the last analyzed page.  Focuses the agent on what changed.
     """
     return """\
 ── Page Update ──
 
-The page content above will be cleared from context after this turn.
-Note what is relevant and what changed:
-- Relevant sections and their IDs
-- New interactive elements — copy full tags as shown
-- Relevant changes that affect your approach
+You've seen this page before — what changed? Think through what's
+different and whether it affects your approach. Note any new section
+IDs or elements you'll need. This content will be cleared after
+this turn.
 
 ──"""
 
@@ -513,24 +510,19 @@ Note what is relevant and what changed:
 def build_show_page_debugging_prompt_a() -> str:
     """Return the Variant A show_page prompt during debugging.
 
-    Full analysis like regular Variant A, but the closing line
-    orients the agent toward diagnosing the failure and resubmitting.
+    Full analysis like regular Variant A, but oriented toward
+    diagnosing the failure — what's different from what was expected.
     """
     return """\
-── Page Analysis (debugging) ──
+── Think & Capture (debugging) ──
 
-The full page content above will be cleared from context after this
-turn — what you write down now is what you'll have to work with.
+Something went wrong — now you're looking at the page to understand
+why. Think through what you see: does the page match what you
+expected? What's different? What does that tell you about the
+failure?
 
-For each section relevant to your task, note:
-- The section ID and what it contains
-- Why it matters for your goal
-- Interactive elements you may need — copy the full tags as shown
-  (e.g., <button aria-label="Next" type="button">); you'll need
-  the exact attributes for selectors later
-
-Then reason about what this tells you about the failure and how
-to fix your function.
+Write down the section IDs and element tags you'll need for your
+fix as you reason — this content will be cleared after this turn.
 
 ──"""
 
@@ -538,19 +530,15 @@ to fix your function.
 def build_show_page_debugging_prompt_b() -> str:
     """Return the Variant B show_page prompt during debugging.
 
-    Lighter update like regular Variant B, with a brief reminder
-    of the debugging goal.
+    Lighter update like regular Variant B, oriented toward whether
+    the changes help explain the failure.
     """
     return """\
 ── Page Update (debugging) ──
 
-The page content above will be cleared from context after this turn.
-Note what is relevant and what changed:
-- Relevant sections and their IDs
-- New interactive elements — copy full tags as shown
-- Relevant changes that affect your diagnosis
-
-Identify the cause and the fix.
+You've seen this page before — what changed since last time? Does
+this help explain the failure? Note any new IDs or elements
+relevant to your fix. This content will be cleared after this turn.
 
 ──"""
 
@@ -558,22 +546,17 @@ Identify the cause and the fix.
 def build_zoom_structural_capture_prompt() -> str:
     """Return the lightweight structural capture prompt for zoom_section.
 
-    Injected after a zoom_section tool result to guide the agent to
-    write down key structural findings before the zoom HTML is truncated
-    from context.  Tools remain enabled — no extra turn is forced.
+    Injected after a zoom_section tool result to nudge the agent to
+    note selectors and structure before the zoom HTML leaves context.
+    Tools remain enabled — no extra turn is forced.
     """
     return """\
-── Structural Capture ──
+── Capture Before It's Gone ──
 
-You just inspected section HTML with zoom_section. Before coding,
-briefly note the key structural findings:
-- **Selectors**: data-testid values, aria-labels, IDs, stable classes
-- **Structure**: tag nesting pattern (what wraps what)
-- **Patterns**: repeating structures, conditional elements
-
-Be specific — write the actual attribute values you will use as
-selectors. This zoom output will be cleared from context in a few
-turns. Your notes here will be your lasting reference.
+You just zoomed into the HTML. Before you move on, note the
+selectors and structure you'll use — the actual attribute values,
+the nesting, any repeating patterns. This HTML will leave context
+in a few turns and your notes will be all that remains.
 
 ──"""
 

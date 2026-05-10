@@ -102,7 +102,7 @@ def print_agent_text(text: str) -> None:
     if not text.strip():
         return
     print(f"\n  {_c(_MAGENTA, 'Agent:')}")
-    print(_indent(_truncate(text.strip(), max_lines=10, max_chars=500), "    "))
+    print(_indent(text.strip(), "    "))
 
 
 def print_tool_call(name: str, arguments: dict, step: int, total_steps: int) -> None:
@@ -112,7 +112,7 @@ def print_tool_call(name: str, arguments: dict, step: int, total_steps: int) -> 
     if name == "python":
         code = arguments.get("code", "")
         print(f"\n  {badge} {_c(_BOLD, 'python')}  {_DIM}executing code{_RESET}")
-        print(_indent(_truncate(code, max_lines=20, max_chars=1500), f"    {_DIM}|{_RESET} "))
+        print(_indent(code, f"    {_DIM}|{_RESET} "))
 
     else:
         print(f"\n  {badge} {_c(_BOLD, name)}")
@@ -266,7 +266,7 @@ def print_generating_requirements() -> None:
 
 def print_requirements_generated(requirements: str) -> None:
     print(f"\n  {_c(_GREEN, 'Success criteria generated:')}")
-    print(_indent(_truncate(requirements, max_lines=20, max_chars=2000), "    "))
+    print(_indent(requirements, "    "))
 
 
 def print_revising_requirements() -> None:
@@ -275,7 +275,7 @@ def print_revising_requirements() -> None:
 
 def print_requirements_revised(requirements: str) -> None:
     print(f"\n  {_c(_GREEN, 'Requirements revised:')}")
-    print(_indent(_truncate(requirements, max_lines=20, max_chars=2000), "    "))
+    print(_indent(requirements, "    "))
 
 
 def print_validator_approved() -> None:

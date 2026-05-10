@@ -392,8 +392,15 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   .plan-body .plan-content {
     padding: 4px 12px 10px; font-size: 12px; color: #8e8e93; line-height: 1.5;
   }
-  .plan-body .plan-content ul, .plan-body .plan-content ol { margin: 4px 0; padding-left: 18px; }
-  .plan-body .plan-content li { margin: 2px 0; }
+  .plan-body .plan-content ul, .plan-body .plan-content ol { margin: 4px 0; padding-left: 18px; list-style: none; }
+  .plan-body .plan-content ul > li { position: relative; margin-bottom: 3px; }
+  .plan-body .plan-content ul > li::before {
+    content: '\2022'; position: absolute; left: -15px;
+    color: rgba(255,255,255,0.22);
+  }
+  .plan-body .plan-content li.cb { display: flex; align-items: flex-start; gap: 6px; }
+  .plan-body .plan-content li.cb::before { display: none; }
+  .plan-body .plan-content ul ul { margin: 2px 0 4px 12px; }
   .plan-body .plan-content code {
     background: rgba(255,255,255,0.06); padding: 1px 5px;
     border-radius: 3px; font-size: 11px;
@@ -1035,13 +1042,31 @@ _OVERLAY_JS = r"""
         const items = ev.items || [];
         const d = document.createElement('div');
         d.className = 'plan open';
-        const planText = items.map(i => '- ' + i).join('\n');
+        // Build list HTML with nesting support
+        let listHtml = '<ul>';
+        let inSub = false;
+        for (const item of items) {
+          const isSub = item.startsWith('  ');
+          const text = isSub ? item.trim() : item;
+          if (isSub && !inSub) { listHtml += '<ul>'; inSub = true; }
+          else if (!isSub && inSub) { listHtml += '</ul>'; inSub = false; }
+          const cbMatch = text.match(/^\[([ xX])\] (.+)$/);
+          if (cbMatch) {
+            const chk = cbMatch[1] !== ' ';
+            listHtml += '<li class="cb"><span class="cb-box' + (chk ? ' checked' : '') + '">'
+              + (chk ? '\u2713' : '') + '</span>' + esc(cbMatch[2]) + '</li>';
+          } else {
+            listHtml += '<li>' + esc(text) + '</li>';
+          }
+        }
+        if (inSub) listHtml += '</ul>';
+        listHtml += '</ul>';
         let html = '<div class="plan-card"><div class="plan-header">'
           + '<span class="plan-icon">\uD83D\uDCCB</span>'
           + '<span class="plan-title">Exploration Plan</span>'
           + '<span class="plan-chevron">\u203A</span>'
           + '</div><div class="plan-body"><div class="plan-content">'
-          + md(planText)
+          + listHtml
           + '</div></div></div>';
         d.innerHTML = html;
         d.querySelector('.plan-header').addEventListener('click', () => d.classList.toggle('open'));
@@ -1253,14 +1278,15 @@ class DemoOverlay:
             ev["detail"] = detail
         await self.push(ev)
 
-    async def push_boot(self, url: str = "") -> None:
+    async def push_boot(self, url: str = "", has_schema: bool = False) -> None:
         messages = [
-            "Launching Chromium\u2026",
+            "Launching browser\u2026",
             f"Navigating to {url}\u2026" if url else "Navigating to target\u2026",
             "Waiting for dynamic content\u2026",
             "Capturing page structure\u2026",
-            "Compiling output schema\u2026",
         ]
+        if has_schema:
+            messages.append("Planning exploration\u2026")
         await self.push({"type": "boot", "messages": messages})
 
     async def push_planning(self, message: str = "Generating plan\u2026") -> None:
