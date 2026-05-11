@@ -869,6 +869,14 @@ class AgentLoop:
                                 )
                                 psm.page = script_run.page
                                 console.print_script_page_injected()
+                                # Update overlay to track the new page
+                                # so highlights appear during retries.
+                                if self._overlay:
+                                    self._overlay._main_page = (
+                                        script_run.page
+                                    )
+                                    self._overlay._hl_ready = False
+                                    await self._overlay._setup_highlight_host()
                             # Record attempt and feed back.
                             script_attempts += 1
                             attempt_history.append(AttemptRecord(
@@ -1088,6 +1096,7 @@ class AgentLoop:
                         block.name, block.input,
                         step_count, self._max_steps,
                     )
+                    deferred_hl: list | None = None
                     if self._overlay and block.name == "python":
                         await self._overlay.clear_highlights()
                         code = block.input.get("code", "")
@@ -1100,6 +1109,11 @@ class AgentLoop:
                                         extractions,
                                     )
                                 )
+                                # Stash after-nav results to draw
+                                # after code execution completes.
+                                deferred_hl = hl_stats.get(
+                                    "deferred", [],
+                                ) or None
                                 # Observability: log what the
                                 # highlight system detected.
                                 by_cat: dict[str, int] = {}
@@ -1110,7 +1124,7 @@ class AgentLoop:
                                     )
                                 filtered_out = sum(
                                     1 for r in extractions
-                                    if r.in_loop or r.after_navigation
+                                    if r.after_navigation
                                 )
                                 console.print_interaction_highlights(
                                     total_extracted=len(extractions),
@@ -1163,6 +1177,32 @@ class AgentLoop:
                         is_error=tool_result.is_error,
                         duration_ms=tool_duration_ms,
                     )
+
+                    # Draw deferred highlights (after-navigation
+                    # selectors) now that the new page has loaded.
+                    if deferred_hl and self._overlay:
+                        try:
+                            df_stats = (
+                                await self._overlay
+                                .highlight_interactions(
+                                    deferred_hl,
+                                    _deferred=True,
+                                )
+                            )
+                            console.print_deferred_highlights(
+                                count=len(deferred_hl),
+                                resolved=df_stats.get(
+                                    "resolved_count", 0,
+                                ),
+                                drawn=df_stats.get(
+                                    "drawn_count", 0,
+                                ),
+                            )
+                        except Exception:
+                            logger.debug(
+                                "Deferred highlight failed",
+                                exc_info=True,
+                            )
 
                     # Log and print timeout diagnostics if present.
                     if (

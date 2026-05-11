@@ -410,8 +410,7 @@ def print_interaction_highlights(
     # Filtering/resolution stats
     parts = []
     if filtered_out > 0:
-        parts.append(f"{filtered_out} filtered (loop/nav)")
-    parts.append(f"{resolved} resolved")
+        parts.append(f"{filtered_out} deferred (after-nav)")
     if dropped_overlap > 0:
         parts.append(f"{dropped_overlap} dropped (overlap)")
     drawn = resolved - dropped_overlap
@@ -436,6 +435,8 @@ def print_interaction_highlights(
             icon = _c(_RED, "✗")
         elif status == "filtered":
             icon = _c(_DIM, "⊘")
+        elif status == "deferred":
+            icon = _c(_YELLOW, "⏳")
         else:
             icon = _c(_DIM, "?")
 
@@ -445,3 +446,14 @@ def print_interaction_highlights(
             f"{_DIM}{source:>11s}{_RESET} "
             f"{sel_display}{_RESET}"
         )
+
+
+def print_deferred_highlights(count: int, resolved: int, drawn: int) -> None:
+    """Print when deferred (after-navigation) highlights are drawn."""
+    if count == 0:
+        return
+    print(
+        f"    {_c(_CYAN, '[highlights:deferred]')}"
+        f" {count} after-nav selectors"
+        f" → {resolved} resolved → {drawn} drawn"
+    )

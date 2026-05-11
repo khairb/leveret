@@ -1651,6 +1651,8 @@ class DemoOverlay:
 
     async def highlight_interactions(
         self, results: list[ExtractionResult],
+        *,
+        _deferred: bool = False,
     ) -> dict[str, Any]:
         """Draw interaction overlays on elements the AI code targets.
 
@@ -1673,33 +1675,49 @@ class DemoOverlay:
             "drawn_count": 0,
             "dropped_overlap": 0,
             "details": [],
+            "deferred": [],
         }
 
         if not self._main_page or not results:
             return empty_stats
 
         # ── Filter ───────────────────────────────────────────────
-        filtered = [
-            r for r in results
-            if not r.in_loop and not r.after_navigation
-        ]
+        # in_loop filter disabled: rAF tracking only sees the final
+        # state after the loop completes, so loop selectors are safe.
+        # To re-enable in_loop filtering, restore: not r.in_loop and
+        #
+        # after_navigation results are deferred — they're returned in
+        # the stats dict so the caller can draw them AFTER code
+        # execution, once the new page has loaded.
+        # When called with _deferred=True, skip the nav filter (the
+        # caller already waited for navigation to complete).
+        if _deferred:
+            filtered = list(results)
+            deferred = []
+        else:
+            filtered = [
+                r for r in results
+                if not r.after_navigation
+            ]
+            deferred = [
+                r for r in results
+                if r.after_navigation
+            ]
 
         # Track per-selector status for logging
         details: list[dict[str, str]] = []
-        for r in results:
-            if r.in_loop or r.after_navigation:
-                reason = "in_loop" if r.in_loop else "after_nav"
-                details.append({
-                    "selector": r.selector,
-                    "category": r.action_category,
-                    "action": r.action,
-                    "source": r.source,
-                    "status": "filtered",
-                    "reason": reason,
-                })
+        for r in deferred:
+            details.append({
+                "selector": r.selector,
+                "category": r.action_category,
+                "action": r.action,
+                "source": r.source,
+                "status": "deferred",
+                "reason": "after_nav",
+            })
 
         if not filtered:
-            return {**empty_stats, "details": details}
+            return {**empty_stats, "details": details, "deferred": deferred}
 
         # ── Resolve selectors to bounding-box data ──────────────
         payload: list[dict[str, Any]] = []
@@ -1825,6 +1843,7 @@ class DemoOverlay:
                 "drawn_count": 0,
                 "dropped_overlap": 0,
                 "details": details,
+                "deferred": deferred,
             }
 
         # ── Single page.evaluate() to draw all overlays ─────────
@@ -1857,6 +1876,7 @@ class DemoOverlay:
             "drawn_count": kept_count,
             "dropped_overlap": dropped,
             "details": details,
+            "deferred": deferred,
         }
 
 
@@ -2078,22 +2098,44 @@ _INTERACTION_HIGHLIGHT_JS = r"""(items) => {
         } catch(e) { /* skip */ }
     }
 
-    /* ── Pass 2: drop smaller rects contained ≥90% by a larger one */
+    /* ── Pass 2: overlap dedup ────────────────────────────────
+     * Strategy: keep smaller, more specific overlays.
+     *  - Sort smallest first, add to keep.
+     *  - When considering a larger rect, count how many already-
+     *    kept smaller rects it contains (≥90% of small area).
+     *  - If it dominates >2 kept rects → drop it (the small ones
+     *    are more informative than one giant overlay).
+     *  - If it dominates ≤2 → drop the dominated small ones and
+     *    keep the large one (avoids near-duplicate stacking).
+     */
     function overlapArea(a, b) {
         const ox = Math.max(0, Math.min(a.x+a.width, b.x+b.width) - Math.max(a.x, b.x));
         const oy = Math.max(0, Math.min(a.y+a.height, b.y+b.height) - Math.max(a.y, b.y));
         return ox * oy;
     }
-    resolved.sort((a, b) => (b.rect.width * b.rect.height) - (a.rect.width * a.rect.height));
+    resolved.sort((a, b) => (a.rect.width * a.rect.height) - (b.rect.width * b.rect.height));
     const keep = [];
     for (let i = 0; i < resolved.length; i++) {
-        const small = resolved[i].rect;
-        const smallArea = small.width * small.height;
-        let dominated = false;
+        const big = resolved[i].rect;
+        const bigArea = big.width * big.height;
+        /* Find which kept rects this one dominates */
+        const dominated = [];
         for (let j = 0; j < keep.length; j++) {
-            if (overlapArea(small, keep[j].rect) >= smallArea * 0.9) { dominated = true; break; }
+            const sm = keep[j].rect;
+            const smArea = sm.width * sm.height;
+            if (smArea < bigArea && overlapArea(sm, big) >= smArea * 0.9) {
+                dominated.push(j);
+            }
         }
-        if (!dominated) keep.push(resolved[i]);
+        if (dominated.length > 2) {
+            /* Large rect covers many small ones — drop the large */
+            continue;
+        }
+        /* Remove the few dominated small rects, keep the large */
+        for (let d = dominated.length - 1; d >= 0; d--) {
+            keep.splice(dominated[d], 1);
+        }
+        keep.push(resolved[i]);
     }
 
     /* ── Pass 3: draw surviving overlays + build tracking ── */
