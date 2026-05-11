@@ -1275,6 +1275,173 @@ class DemoOverlay:
             "sections": sections,
         })
 
+    # ── Full-viewport "show_page" overlay ────────────────────────
+
+    async def show_page_overlay(
+        self, message: str = "Looking at the page\u2026",
+    ) -> None:
+        """Draw a full-viewport overlay with marching-ants border while the AI reads."""
+        if not self._main_page:
+            return
+        if not self._hl_ready:
+            await self._setup_highlight_host()
+        try:
+            await self._main_page.evaluate(
+                r"""(msg) => {
+                    const host = document.getElementById('scout-hl-host');
+                    if (!host || !host.shadowRoot) return;
+                    const shadow = host.shadowRoot;
+
+                    /* Ensure .hl-zone-page exists. */
+                    let zone = shadow.querySelector('.hl-zone-page');
+                    if (!zone) {
+                        zone = document.createElement('div');
+                        zone.className = 'hl-zone-page';
+                        shadow.appendChild(zone);
+                    }
+                    zone.innerHTML = '';
+
+                    const style = document.createElement('style');
+                    style.textContent = `
+                        /* Marching-ants border — same pattern as zoom overlays */
+                        @keyframes scout-page-march {
+                            0%   { background-position: 0 0, 0 0, 100% 0, 0 100%; }
+                            100% { background-position: 0 -24px, 24px 0, 100% 24px, -24px 100%; }
+                        }
+                        /* Background blinks between two alpha levels */
+                        @keyframes scout-page-bg-pulse {
+                            0%, 100% { background: rgba(15, 23, 42, 0.18); }
+                            50%      { background: rgba(15, 23, 42, 0.08); }
+                        }
+                        /* Pill entrance */
+                        @keyframes scout-page-pill-in {
+                            from { opacity: 0; transform: translateY(8px) scale(0.96); }
+                            to   { opacity: 1; transform: translateY(0) scale(1); }
+                        }
+                        /* Dot breathing */
+                        @keyframes scout-page-dot-breathe {
+                            0%, 100% { opacity: 1; transform: scale(1); }
+                            50%      { opacity: 0.5; transform: scale(0.8); }
+                        }
+
+                        .hl-page-overlay {
+                            position: fixed;
+                            top: 0; left: 0;
+                            width: 100vw; height: 100vh;
+                            pointer-events: none;
+                            z-index: 2147483647;
+                        }
+
+                        /* Pulsing semi-transparent background fill */
+                        .hl-page-bg {
+                            position: absolute;
+                            inset: 0;
+                            background: rgba(15, 23, 42, 0.18);
+                            animation: scout-page-bg-pulse 2.8s ease-in-out infinite;
+                        }
+
+                        /* Marching-ants border around the entire viewport */
+                        .hl-page-border {
+                            position: absolute;
+                            inset: 0;
+                            border-radius: 0;
+                            pointer-events: none;
+                            background-color: transparent;
+                            background-image:
+                                linear-gradient(0deg,   rgba(59,130,246,0.55) 50%, transparent 50%),
+                                linear-gradient(90deg,  rgba(59,130,246,0.55) 50%, transparent 50%),
+                                linear-gradient(0deg,   rgba(59,130,246,0.55) 50%, transparent 50%),
+                                linear-gradient(90deg,  rgba(59,130,246,0.55) 50%, transparent 50%);
+                            background-size: 2px 12px, 12px 2px, 2px 12px, 12px 2px;
+                            background-repeat: repeat-y, repeat-x, repeat-y, repeat-x;
+                            background-position: 0 0, 0 0, 100% 0, 0 100%;
+                            animation: scout-page-march 0.5s linear infinite;
+                        }
+
+                        /* Solid pill label — not transparent */
+                        .hl-page-pill {
+                            position: absolute;
+                            top: 50%; left: 50%;
+                            transform: translate(-50%, -50%);
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 10px;
+                            padding: 10px 24px;
+                            border-radius: 28px;
+                            background: rgba(15, 23, 42, 0.88);
+                            backdrop-filter: blur(12px);
+                            -webkit-backdrop-filter: blur(12px);
+                            border: 1px solid rgba(59, 130, 246, 0.35);
+                            box-shadow: 0 4px 24px rgba(0,0,0,0.4),
+                                        0 0 0 1px rgba(59,130,246,0.15);
+                            animation: scout-page-pill-in 0.35s ease-out;
+                        }
+                        .hl-page-dot {
+                            width: 8px; height: 8px;
+                            border-radius: 50%;
+                            background: rgb(59, 130, 246);
+                            animation: scout-page-dot-breathe 2.8s ease-in-out infinite;
+                        }
+                        .hl-page-label {
+                            font: 500 14px/1 -apple-system, BlinkMacSystemFont,
+                                  "Segoe UI", Roboto, sans-serif;
+                            color: rgba(255, 255, 255, 0.92);
+                            letter-spacing: 0.01em;
+                            white-space: nowrap;
+                        }
+                    `;
+                    zone.appendChild(style);
+
+                    const overlay = document.createElement('div');
+                    overlay.className = 'hl-page-overlay';
+
+                    /* Semi-transparent pulsing background */
+                    const bg = document.createElement('div');
+                    bg.className = 'hl-page-bg';
+                    overlay.appendChild(bg);
+
+                    /* Marching-ants border */
+                    const border = document.createElement('div');
+                    border.className = 'hl-page-border';
+                    overlay.appendChild(border);
+
+                    /* Solid pill with label */
+                    const pill = document.createElement('div');
+                    pill.className = 'hl-page-pill';
+
+                    const dot = document.createElement('div');
+                    dot.className = 'hl-page-dot';
+
+                    const label = document.createElement('div');
+                    label.className = 'hl-page-label';
+                    label.textContent = msg;
+
+                    pill.appendChild(dot);
+                    pill.appendChild(label);
+                    overlay.appendChild(pill);
+                    zone.appendChild(overlay);
+                }""",
+                message,
+            )
+        except Exception:
+            logger.debug("show_page overlay failed", exc_info=True)
+
+    async def hide_page_overlay(self) -> None:
+        """Remove the full-viewport show_page overlay."""
+        if not self._main_page:
+            return
+        try:
+            await self._main_page.evaluate(
+                """() => {
+                    const host = document.getElementById('scout-hl-host');
+                    if (!host || !host.shadowRoot) return;
+                    const zone = host.shadowRoot.querySelector('.hl-zone-page');
+                    if (zone) zone.innerHTML = '';
+                }""",
+            )
+        except Exception:
+            pass
+
     async def push_script_found(
         self, valid: bool, error: str = "",
     ) -> None:
@@ -1585,8 +1752,10 @@ class DemoOverlay:
                     const shadow = host.shadowRoot;
                     const zoom = shadow.querySelector('.hl-zone-zoom');
                     const interact = shadow.querySelector('.hl-zone-interact');
+                    const page = shadow.querySelector('.hl-zone-page');
                     if (zoom) zoom.innerHTML = '';
                     if (interact) interact.innerHTML = '';
+                    if (page) page.innerHTML = '';
                 }""",
             )
         except Exception:

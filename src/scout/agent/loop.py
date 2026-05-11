@@ -551,6 +551,8 @@ class AgentLoop:
                                 indirect_refs.copy()
                             )
                     pending_show_page = None
+                    if self._overlay:
+                        await self._overlay.hide_page_overlay()
 
                 # Remove ephemeral zoom structural capture prompt.
                 if zoom_prompt_msg_index is not None:
@@ -1386,6 +1388,7 @@ class AgentLoop:
                             url=runtime.page.url if runtime.page else "",
                             sections=len(sp_result.sections),
                         )
+                        await self._overlay.show_page_overlay()
                     self._show_page_result_ref[0] = None
                     pending_is_variant_a = (
                         show_page_state.should_force_full_analysis(
