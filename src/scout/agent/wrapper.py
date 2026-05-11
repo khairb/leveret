@@ -172,6 +172,9 @@ def generate_subprocess_wrapper(
     if launch_options is None:
         from ..browser import resolve_launch_options
         launch_options = resolve_launch_options(None, headless=False)
+
+    # Strip internal sentinels that are not valid Playwright kwargs.
+    launch_options = {k: v for k, v in launch_options.items() if not k.startswith("_")}
     checkpoint_code = _CHECKPOINT_TEMPLATE.format(checkpoint_dir=checkpoint_dir)
 
     if collect_page_signals:
