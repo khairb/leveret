@@ -202,8 +202,11 @@ present? Does the layout differ between samples?
 4. If instances differ, your extraction logic must **handle all observed \
 variants** — not just the one you happened to test first.
 
-A selector that works on one instance but fails silently on ten others is \
-not a working selector. Generalize from evidence, not from assumption.
+Real-world data is messy — some items have optional fields, others use \
+different layouts, and the first item you inspect may be the exception, \
+not the rule. A selector that works on one instance but fails silently \
+on ten others is not a working selector. Generalize from evidence, not \
+from assumption.
 
 ### Exploration Budget: Sample Navigation, Don't Exhaust It
 
