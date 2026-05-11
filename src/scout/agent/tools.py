@@ -181,6 +181,7 @@ class ToolResult:
     name: str
     content: str
     is_error: bool = False
+    timeout_info: str | None = None
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -234,15 +235,16 @@ async def _exec_python(
         # System prediction is the floor — agent can't undercut it.
         timeout = max(agent_timeout, predicted)
         if timeout == agent_timeout:
-            source = "agent"
+            timeout_info = f"{timeout:.0f}s agent"
         else:
-            source = "auto (agent request too low)"
+            timeout_info = f"{timeout:.0f}s auto (agent wanted {agent_timeout:.0f}s)"
         logger.info(
             "Timeout: %.1fs [%s] (predicted=%.1fs, agent_requested=%.1fs)",
-            timeout, source, predicted, agent_timeout,
+            timeout, timeout_info, predicted, agent_timeout,
         )
     else:
         timeout = predicted
+        timeout_info = f"{timeout:.0f}s auto"
         logger.info("Timeout: %.1fs [auto] (predicted=%.1fs)", timeout, predicted)
 
     # Block code that dumps raw HTML into the conversation.
@@ -304,4 +306,5 @@ async def _exec_python(
         name="python",
         content="\n".join(parts),
         is_error=not result.success,
+        timeout_info=timeout_info,
     )

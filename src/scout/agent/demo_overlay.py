@@ -839,7 +839,11 @@ _OVERLAY_JS = r"""
           ind.className = 'action-ind ' + (ev.is_error ? 'err' : 'ok');
           ind.textContent = ev.is_error ? '\u2717' : '\u2713';
           const meta = target.querySelector('.action-meta');
-          if (ev.duration_s) meta.textContent = ev.duration_s + 's';
+          if (ev.duration_s) {
+            let metaText = ev.duration_s + 's';
+            if (ev.timeout_info) metaText += ' \u00b7 ' + ev.timeout_info;
+            meta.textContent = metaText;
+          }
           const detail = target.querySelector('.action-detail');
           if (ev.output) {
             const o = document.createElement('div');
@@ -1250,6 +1254,7 @@ class DemoOverlay:
         duration_s: str = "",
         output: str = "",
         error: str = "",
+        timeout_info: str = "",
     ) -> None:
         await self.push({
             "type": "tool_result",
@@ -1257,6 +1262,7 @@ class DemoOverlay:
             "duration_s": duration_s,
             "output": output,
             "error": error,
+            "timeout_info": timeout_info,
         })
 
     async def push_page_update(self, url: str, sections: int) -> None:

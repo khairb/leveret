@@ -118,7 +118,13 @@ def print_tool_call(name: str, arguments: dict, step: int, total_steps: int) -> 
         print(f"\n  {badge} {_c(_BOLD, name)}")
 
 
-def print_tool_result(name: str, is_error: bool, duration_ms: float, content: str) -> None:
+def print_tool_result(
+    name: str,
+    is_error: bool,
+    duration_ms: float,
+    content: str,
+    timeout_info: str | None = None,
+) -> None:
     """Print the result of a tool call."""
     status = _c(_RED, "ERROR") if is_error else _c(_GREEN, "OK")
     dur = f"{duration_ms / 1000:.1f}s"
@@ -132,7 +138,11 @@ def print_tool_result(name: str, is_error: bool, duration_ms: float, content: st
         has_error = "Error:" in content
         has_output = "Output:" in content
 
-        parts = [f"{status} {_DIM}({dur}){_RESET}"]
+        timeout_badge = ""
+        if timeout_info:
+            timeout_badge = f"  {_DIM}timeout {timeout_info}{_RESET}"
+
+        parts = [f"{status} {_DIM}({dur}){_RESET}{timeout_badge}"]
         if has_output:
             # Extract just the output section.
             out_start = content.find("Output:\n")

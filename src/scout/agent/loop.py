@@ -1148,6 +1148,7 @@ class AgentLoop:
                         tool_result.is_error,
                         tool_duration_ms,
                         tool_result.content,
+                        timeout_info=tool_result.timeout_info,
                     )
                     if self._overlay and block.name == "python":
                         # Extract output/error from tool result content.
@@ -1166,6 +1167,7 @@ class AgentLoop:
                             duration_s=f"{tool_duration_ms / 1000:.1f}",
                             output=_out,
                             error=_err,
+                            timeout_info=tool_result.timeout_info or "",
                         )
 
                     tool_results.append({
