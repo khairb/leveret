@@ -72,11 +72,14 @@ from .prompt import (
     build_zoom_structural_capture_prompt,
 )
 from .show_page_context import (
+    INDIRECT_NEIGHBOR_RADIUS,
     NEIGHBOR_RADIUS,
     ElementMatch,
     ShowPageAnalysisLog,
     ShowPageState,
     build_filtered_output,
+    build_section_meta,
+    get_indirect_references,
     get_referenced_sections,
     get_sections_by_id,
     page_similarity,
@@ -439,6 +442,7 @@ class AgentLoop:
                 was_analysis_turn = pending_show_page is not None
                 if pending_show_page is not None:
                     reasoning = _extract_text(content_blocks)
+                    indirect_refs: set[str] = set()
                     if reasoning.strip():
                         # Phase 3 — filter the page view.
                         sections_for_ref = [
@@ -456,6 +460,26 @@ class AgentLoop:
                              s.semantic_role, s.interactive_count)
                             for s in pending_show_page.sections
                         ]
+
+                        # Variant B carry-forward: seed with
+                        # previous Variant A's kept sections.
+                        if (
+                            not pending_is_variant_a
+                            and show_page_state.last_variant_a_kept
+                        ):
+                            referenced |= (
+                                show_page_state.last_variant_a_kept
+                            )
+
+                        # Indirect reference detection.
+                        indirect_refs, indirect_matches = (
+                            get_indirect_references(
+                                reasoning,
+                                sections_for_filter,
+                                referenced,
+                            )
+                        )
+
                         # Extract the page header line so it
                         # survives filtering (preserves URL).
                         pv_text = pending_show_page.text_output
@@ -468,9 +492,27 @@ class AgentLoop:
                         filtered = build_filtered_output(
                             sections_for_filter, referenced,
                             page_header=page_header,
+                            indirect_refs=indirect_refs,
+                            indirect_neighbor_radius=(
+                                INDIRECT_NEIGHBOR_RADIUS
+                            ),
+                        )
+
+                        # Append section metadata for later
+                        # skeleton/stub conversion.
+                        i_elements_map = {
+                            s.section_id: s.interactive_elements
+                            for s in pending_show_page.sections
+                        }
+                        meta = build_section_meta(
+                            sections_for_filter,
+                            interactive_elements_map=i_elements_map,
+                        )
+                        filtered_with_meta = (
+                            filtered + "\n" + meta
                         )
                         conversation.replace_last_show_page_result(
-                            filtered,
+                            filtered_with_meta,
                         )
 
                         # ── Observability logging ────────────
@@ -486,6 +528,7 @@ class AgentLoop:
                             el_matches=el_matches,
                             sections_for_filter=sections_for_filter,
                             filtered=filtered,
+                            indirect_refs=indirect_refs,
                         )
                     # Remove ephemeral analysis prompt.
                     if analysis_prompt_msg_index is not None:
@@ -497,6 +540,16 @@ class AgentLoop:
                         show_page_state.mark_analyzed(
                             pending_show_page.raw_text,
                         )
+                        # Store kept/indirect sets for Variant B
+                        # carry-forward.  Only meaningful when
+                        # reasoning was non-empty (Phase 3 ran).
+                        if reasoning.strip():
+                            show_page_state.last_variant_a_kept = (
+                                referenced.copy()
+                            )
+                            show_page_state.last_variant_a_indirect = (
+                                indirect_refs.copy()
+                            )
                     pending_show_page = None
 
                 # Remove ephemeral zoom structural capture prompt.
@@ -2212,6 +2265,7 @@ def _emit_show_page_log(
     el_matches: list,
     sections_for_filter: list[tuple[str, str]],
     filtered: str,
+    indirect_refs: set[str] | None = None,
 ) -> None:
     """Build and emit the observability log after Phase 3."""
     import time as _time
@@ -2286,6 +2340,8 @@ def _emit_show_page_log(
                 is_ambiguous=len(m.sections_with_same_element) > 1,
             ))
 
+    _indirect = indirect_refs or set()
+
     log_entry = ShowPageAnalysisLog(
         timestamp=_time.time(),
         turn_number=turn_number,
@@ -2303,6 +2359,7 @@ def _emit_show_page_log(
         filtered_page_chars=filtered_page_chars,
         compression_ratio=compression_ratio,
         element_matches=element_match_logs,
+        sections_matched_indirect=sorted(_indirect),
     )
 
     tracer.log_show_page_analysis(log_entry)
@@ -2318,4 +2375,5 @@ def _emit_show_page_log(
         original_kb=total_page_chars / 1024,
         filtered_kb=filtered_page_chars / 1024,
         reduction_pct=reduction_pct,
+        indirect=len(_indirect),
     )

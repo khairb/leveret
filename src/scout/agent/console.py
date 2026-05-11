@@ -367,14 +367,17 @@ def print_show_page_analysis(
     original_kb: float,
     filtered_kb: float,
     reduction_pct: float,
+    indirect: int = 0,
 ) -> None:
     """Print a compact one-line summary of show_page context management."""
+    indirect_str = f", {indirect} indirect" if indirect else ""
     print(
         f"\n  {_c(_CYAN, '[show_page]')} Variant {variant}"
         f" | similarity={similarity:.2f}"
         f" | {total_sections} sections"
-        f" → {kept} kept, {neighbor} neighbor, {distant} distant"
-        f" | {original_kb:.0f}KB → {filtered_kb:.0f}KB"
+        f" \u2192 {kept} kept{indirect_str}, {neighbor} neighbor,"
+        f" {distant} distant"
+        f" | {original_kb:.0f}KB \u2192 {filtered_kb:.0f}KB"
         f" ({reduction_pct:.0f}% reduction)"
     )
 

@@ -26,8 +26,9 @@ _PAGE_VIEW_END = "__PAGE_VIEW_END__"
 _ZOOM_START = "__ZOOM_START__"
 _ZOOM_END = "__ZOOM_END__"
 
-# ── Turn-based stub collapse ──────────────────────────────────
-_STUB_AFTER_TURNS = 5
+# ── Turn-based progressive compaction ─────────────────────────
+_SKELETON_AFTER_TURNS = 2   # Stage 1 → Stage 2 (skeleton)
+_STUB_AFTER_TURNS = 5       # Stage 2 → Stage 3 (stub)
 _TURN_TAG_RE = _re.compile(r"__TURN_(\d+)__")
 
 
@@ -729,65 +730,163 @@ _SECTION_HEADER_RE = _re.compile(
 )
 
 
-def _build_page_view_stub(page_view: str) -> str:
-    """Build a compact stub from a page view's content between markers.
-
-    Preserves the URL (in the header) and lists the section IDs that
-    had full content (kept sections).  Returns the stub text to place
-    between the ``__PAGE_VIEW_START__`` / ``__PAGE_VIEW_END__`` markers.
-    """
-    # Extract the header line (contains Page State # and URL).
-    header_match = _PAGE_HEADER_RE.search(page_view)
-    header = header_match.group(1) if header_match else "=== Page State ==="
-
-    # Count total sections (every section header line).
-    all_section_ids = _SECTION_HEADER_RE.findall(page_view)
-    total_sections = len(all_section_ids)
-
-    # Find kept sections — those followed by content, not "[omitted]".
-    # Split on section headers and check what follows each one.
+def _get_kept_section_ids(page_view: str) -> list[str]:
+    """Extract section IDs that have full content (not [omitted])."""
     kept: list[str] = []
     parts = _SECTION_HEADER_RE.split(page_view)
-    # parts alternates: [before, id1, after1, id2, after2, ...]
     for i in range(1, len(parts), 2):
         section_id = parts[i]
         content_after = parts[i + 1] if i + 1 < len(parts) else ""
-        # A kept section has real content, not just [omitted] or [N sections omitted].
         stripped = content_after.strip().split("\n")[0].strip()
-        if stripped and stripped != "[omitted]" and not stripped.startswith("["):
+        if (
+            stripped
+            and stripped != "[omitted]"
+            and not stripped.startswith("[preview:")
+            and not stripped.startswith("[")
+        ):
             kept.append(section_id)
+    return kept
 
-    # Also count sections reported as omitted in batch markers.
+
+def _count_total_sections(page_view: str) -> tuple[list[str], int]:
+    """Return (header_ids, total) counting both headers and omitted batches."""
+    from .show_page_context import parse_section_meta
+
+    # Try metadata block first (most accurate).
+    meta = parse_section_meta(page_view)
+    if meta is not None:
+        all_ids = [m.section_id for m in meta]
+        return all_ids, len(all_ids)
+
+    # Fallback: parse from section headers + omitted markers.
+    all_ids = _SECTION_HEADER_RE.findall(page_view)
+    total = len(all_ids)
     omitted_match = _re.findall(r"\[(\d+) sections omitted\]", page_view)
-    total_sections += sum(int(n) for n in omitted_match)
+    total += sum(int(n) for n in omitted_match)
+    return all_ids, total
 
-    # Build the stub.
+
+def _build_page_view_stub(page_view: str) -> str:
+    """Build a compact stub from a page view's content between markers.
+
+    Preserves the URL (in the header), lists kept section IDs, and
+    includes a full section index.  Returns the stub text to place
+    between the ``__PAGE_VIEW_START__`` / ``__PAGE_VIEW_END__`` markers.
+    """
+    header_match = _PAGE_HEADER_RE.search(page_view)
+    header = header_match.group(1) if header_match else "=== Page State ==="
+
+    all_ids, total_sections = _count_total_sections(page_view)
+    kept = _get_kept_section_ids(page_view)
+
+    # Kept section summary.
     kept_str = ""
     if kept:
         display = kept[:6]
         suffix = ", ..." if len(kept) > 6 else ""
         kept_str = f", {len(kept)} kept: {', '.join(display)}{suffix}"
 
+    # Full section index (all IDs, capped at 15).
+    index_str = ""
+    if all_ids:
+        display = all_ids[:15]
+        suffix = ", ..." if len(all_ids) > 15 else ""
+        index_str = f"\n[all: {', '.join(display)}{suffix}]"
+
     return (
         f"{header} [stub]\n"
         f"[{total_sections} sections{kept_str}"
         f" — call show_page(page) for current state.]"
+        f"{index_str}"
     )
+
+
+def _build_skeleton_from_filtered(page_view: str) -> str | None:
+    """Convert a Stage 1 filtered page view into a Stage 2 skeleton.
+
+    Kept sections (full content) are preserved.  All other sections
+    become one-line preview summaries parsed from the embedded
+    ``__SECTION_META__`` block.
+
+    Returns ``None`` if the metadata block is not found (old-format
+    page views should skip skeleton and go directly to stub).
+    """
+    from .show_page_context import (
+        _SECTION_META_END,
+        _SECTION_META_START,
+        parse_section_meta,
+    )
+
+    meta_list = parse_section_meta(page_view)
+    if meta_list is None:
+        return None
+
+    # Extract the page header.
+    header_match = _PAGE_HEADER_RE.search(page_view)
+    header = header_match.group(1) if header_match else "=== Page State ==="
+
+    # Identify which sections were kept (have full content).
+    kept_ids = set(_get_kept_section_ids(page_view))
+
+    # Extract full content of kept sections from the original.
+    kept_content: dict[str, str] = {}
+    parts = _SECTION_HEADER_RE.split(page_view)
+    for i in range(1, len(parts), 2):
+        sid = parts[i]
+        if sid in kept_ids:
+            content = parts[i + 1] if i + 1 < len(parts) else ""
+            # Strip trailing metadata/markers.
+            meta_idx = content.find(_SECTION_META_START)
+            if meta_idx >= 0:
+                content = content[:meta_idx]
+            kept_content[sid] = content.strip()
+
+    # Build skeleton.
+    blocks: list[str] = []
+    for m in meta_list:
+        role = m.role or "content"
+        hdr = (
+            f"--- [{m.section_id}] {role} "
+            f"({m.interactive_count} interactive) ---"
+        )
+        if m.section_id in kept_content:
+            blocks.append(f"{hdr}\n{kept_content[m.section_id]}")
+        else:
+            # Build preview line.
+            if m.preview_end:
+                text = f"{m.preview_start} ··· ...{m.preview_end}"
+            else:
+                text = m.preview_start
+            i_part = ""
+            if m.interactive_labels:
+                i_part = f" | {', '.join(m.interactive_labels)}"
+            preview = (
+                f'[preview: "{text}" '
+                f"| {m.char_count} chars{i_part}]"
+            )
+            blocks.append(f"{hdr}\n{preview}")
+
+    body = "\n\n".join(blocks)
+    return f"{header} [skeleton]\n\n{body}"
 
 
 def _stub_old_page_views_inplace(
     messages: list[dict],
     current_turn: int,
 ) -> None:
-    """Stub old page views in-place based on turn age.
+    """Progressively compact old page views in-place.
 
-    Scans all tool_result blocks for ``__PAGE_VIEW_START__`` /
-    ``__PAGE_VIEW_END__`` markers.  If the embedded ``__TURN_N__`` tag
-    shows the page view is older than ``_STUB_AFTER_TURNS`` turns,
-    it is replaced with a compact stub preserving the URL and section
-    summary.  Page views without a turn tag are treated as old.
+    Three-stage lifecycle based on turn age:
 
-    Already-stubbed page views (containing ``[stub]``) are skipped.
+    - **Stage 1** (age < ``_SKELETON_AFTER_TURNS``): full filtered output.
+    - **Stage 2** (``_SKELETON_AFTER_TURNS`` ≤ age < ``_STUB_AFTER_TURNS``):
+      structural skeleton — kept sections stay full, others become
+      one-line preview summaries.
+    - **Stage 3** (age ≥ ``_STUB_AFTER_TURNS``): compact stub —
+      URL, kept section IDs, and a full section index.
+
+    Already-stubbed page views (``[stub]``) are skipped.  Skeleton
+    page views (``[skeleton]``) are upgraded to stubs when old enough.
     """
     for msg in messages:
         content = msg.get("content")
@@ -802,36 +901,82 @@ def _stub_old_page_views_inplace(
             text: str = block["content"]
             if _PAGE_VIEW_START not in text or _PAGE_VIEW_END not in text:
                 continue
-            # Already stubbed — skip.
+
+            # Already Stage 3 — skip.
             if "[stub]" in text:
                 continue
 
             start_pos = text.find(_PAGE_VIEW_START)
             end_pos = text.find(_PAGE_VIEW_END)
 
-            # Extract turn tag (only between markers).
+            # Extract turn tag to compute age.
             turn_match = _TURN_TAG_RE.search(text, start_pos, end_pos)
             if turn_match:
                 created_turn = int(turn_match.group(1))
-                if current_turn - created_turn < _STUB_AFTER_TURNS:
-                    continue  # Too recent — keep it.
-            # No tag or old enough → stub it.
+                age = current_turn - created_turn
+            else:
+                age = _STUB_AFTER_TURNS  # No tag → treat as old.
 
-            pv_start = start_pos + len(_PAGE_VIEW_START) + 1
-            pv_end = end_pos
-            if pv_end > 0 and text[pv_end - 1] == "\n":
-                pv_end -= 1
+            is_skeleton = "[skeleton]" in text
 
-            page_view = text[pv_start:pv_end]
-            stub = _build_page_view_stub(page_view)
+            if is_skeleton:
+                if age >= _STUB_AFTER_TURNS:
+                    # Stage 2 → Stage 3.
+                    pv_start = start_pos + len(_PAGE_VIEW_START) + 1
+                    pv_end = end_pos
+                    if pv_end > 0 and text[pv_end - 1] == "\n":
+                        pv_end -= 1
+                    page_view = text[pv_start:pv_end]
+                    stub = _build_page_view_stub(page_view)
+                    block["content"] = (
+                        text[:start_pos]
+                        + _PAGE_VIEW_START + "\n"
+                        + stub + "\n"
+                        + _PAGE_VIEW_END
+                        + text[end_pos + len(_PAGE_VIEW_END):]
+                    )
+                # else: still Stage 2, leave as-is.
+                continue
 
-            block["content"] = (
-                text[:start_pos]
-                + _PAGE_VIEW_START + "\n"
-                + stub + "\n"
-                + _PAGE_VIEW_END
-                + text[end_pos + len(_PAGE_VIEW_END):]
-            )
+            # Currently Stage 1 (full filtered).
+            if age >= _STUB_AFTER_TURNS:
+                # Stage 1 → Stage 3 directly (skip skeleton).
+                pv_start = start_pos + len(_PAGE_VIEW_START) + 1
+                pv_end = end_pos
+                if pv_end > 0 and text[pv_end - 1] == "\n":
+                    pv_end -= 1
+                page_view = text[pv_start:pv_end]
+                stub = _build_page_view_stub(page_view)
+                block["content"] = (
+                    text[:start_pos]
+                    + _PAGE_VIEW_START + "\n"
+                    + stub + "\n"
+                    + _PAGE_VIEW_END
+                    + text[end_pos + len(_PAGE_VIEW_END):]
+                )
+            elif age >= _SKELETON_AFTER_TURNS:
+                # Stage 1 → Stage 2.
+                pv_start = start_pos + len(_PAGE_VIEW_START) + 1
+                pv_end = end_pos
+                if pv_end > 0 and text[pv_end - 1] == "\n":
+                    pv_end -= 1
+                page_view = text[pv_start:pv_end]
+                skeleton = _build_skeleton_from_filtered(page_view)
+                if skeleton is not None:
+                    # Preserve the turn tag.
+                    turn_line = (
+                        turn_match.group(0) + "\n"
+                        if turn_match else ""
+                    )
+                    block["content"] = (
+                        text[:start_pos]
+                        + _PAGE_VIEW_START + "\n"
+                        + turn_line
+                        + skeleton + "\n"
+                        + _PAGE_VIEW_END
+                        + text[end_pos + len(_PAGE_VIEW_END):]
+                    )
+                # else: no meta block → leave as Stage 1 until stub time.
 
 
 # ═══════════════════════════════════════════════════════════════

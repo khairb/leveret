@@ -12,9 +12,10 @@ Task 4 will extend this module with filtered output building.
 
 from __future__ import annotations
 
+import math as _math
 import re as _re
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -27,6 +28,23 @@ SIMILARITY_THRESHOLD: float = 0.8
 
 # Default neighbor radius for filtered output.
 NEIGHBOR_RADIUS: int = 3
+
+# ---------------------------------------------------------------------------
+# Indirect reference detection — constants
+# ---------------------------------------------------------------------------
+
+# Budget cap: keep at most 20% of total sections, hard-capped at 15.
+INDIRECT_MAX_RATIO: float = 0.20
+INDIRECT_MAX_ABSOLUTE: int = 15
+
+# Narrower neighbor radius for indirectly referenced sections.
+INDIRECT_NEIGHBOR_RADIUS: int = 1
+
+# Minimum token length when decomposing section IDs.
+MIN_ID_TOKEN_LENGTH: int = 4
+
+# Characters for start/end preview snippets in skeleton output.
+SKELETON_PREVIEW_CHARS: int = 80
 
 
 def page_similarity(current_text: str, previous_text: str) -> float:
@@ -71,6 +89,9 @@ class ShowPageState:
 
     def __init__(self) -> None:
         self.last_analyzed_text: str | None = None
+        # Variant B carry-forward: sections kept/indirect from last Variant A.
+        self.last_variant_a_kept: set[str] = set()
+        self.last_variant_a_indirect: set[str] = set()
 
     def should_force_full_analysis(self, current_text: str) -> bool:
         """Return ``True`` when the page needs a full Variant A analysis.
@@ -143,6 +164,16 @@ class ElementMatchResult:
     sections_with_same_element: list[str]
     sections_kept: list[str]
     was_capped: bool
+
+
+@dataclass
+class IndirectMatchResult:
+    """Result of matching a section via ID token or content keyword overlap."""
+
+    section_id: str
+    score: float                 # IDF-weighted, 0.0–1.0 normalised
+    matched_tokens: list[str]
+    match_source: str            # "id_tokens" or "content"
 
 
 # ---------------------------------------------------------------------------
@@ -394,6 +425,377 @@ def get_referenced_sections(
 
 
 # ---------------------------------------------------------------------------
+# Indirect reference detection — token decomposition & IDF scoring
+# ---------------------------------------------------------------------------
+
+def _tokenize_section_id(section_id: str) -> list[str]:
+    """Decompose a section ID into meaningful tokens.
+
+    Splits on ``-`` and ``_``, filters tokens shorter than
+    :data:`MIN_ID_TOKEN_LENGTH`, lowercases, and deduplicates
+    (preserving first-occurrence order).  Numeric-only tokens
+    are also dropped.
+
+    Examples::
+
+        "sidebar-about"         → ["sidebar", "about"]
+        "div-hq-nav"            → []  (all < 4 chars)
+        "item-1-article-anthropics-financial"
+            → ["item", "article", "anthropics", "financial"]
+        "item-this-week-this-month"
+            → ["item", "this", "week", "month"]  (deduplicated)
+    """
+    parts = _re.split(r"[-_]", section_id.lower())
+    seen: set[str] = set()
+    tokens: list[str] = []
+    for p in parts:
+        if (
+            len(p) >= MIN_ID_TOKEN_LENGTH
+            and not p.isdigit()
+            and p not in seen
+        ):
+            seen.add(p)
+            tokens.append(p)
+    return tokens
+
+
+def _compute_token_idf(
+    all_sections: list[tuple[str, str, str, int]],
+) -> dict[str, float]:
+    """Compute IDF for each token across all section IDs and content.
+
+    ``idf(token) = log(total_sections / sections_containing_token)``
+
+    Tokens appearing in every section get ``idf ≈ 0`` (worthless).
+    Tokens unique to one section get ``idf = log(N)`` (highly identifying).
+
+    Content tokens are drawn from the first 200 characters of each
+    section — enough to capture headings without scoring entire
+    paragraphs.
+    """
+    total = len(all_sections)
+    if total == 0:
+        return {}
+    doc_count: Counter[str] = Counter()
+    for sid, content, _role, _ic in all_sections:
+        # Unique tokens from this section's ID + leading content.
+        tokens = set(_tokenize_section_id(sid))
+        for w in content[:200].split():
+            w_lower = w.lower()
+            if len(w_lower) >= MIN_ID_TOKEN_LENGTH and w_lower.isalpha():
+                tokens.add(w_lower)
+        for t in tokens:
+            doc_count[t] += 1
+    # Smoothed IDF: log(1 + total/count) — always > 0, so even
+    # ubiquitous tokens contribute a small positive weight rather
+    # than collapsing the score to zero.
+    return {
+        token: _math.log(1 + total / count)
+        for token, count in doc_count.items()
+    }
+
+
+def score_section_indirect(
+    section_id: str,
+    content: str,
+    reasoning_lower: str,
+    idf: dict[str, float],
+) -> tuple[float, list[str], str]:
+    """Score a section against the AI's reasoning via IDF-weighted tokens.
+
+    Two sources are scored independently — section ID tokens and leading
+    content keywords — and the better-scoring source wins.
+
+    Returns ``(score, matched_tokens, match_source)`` where *score* is
+    normalised to [0.0, 1.0] and *match_source* is ``"id_tokens"`` or
+    ``"content"``.
+    """
+    # --- ID tokens ---
+    id_tokens = _tokenize_section_id(section_id)
+    id_matched = [
+        t for t in id_tokens if _word_boundary_match(t, reasoning_lower)
+    ]
+    id_total_idf = sum(idf.get(t, 1.0) for t in id_tokens)
+    id_matched_idf = sum(idf.get(t, 1.0) for t in id_matched)
+    id_score = id_matched_idf / id_total_idf if id_total_idf > 0 else 0.0
+
+    # --- Content keywords (first 200 chars, up to 8 unique tokens) ---
+    seen: set[str] = set()
+    content_tokens: list[str] = []
+    for w in content[:200].split():
+        w_lower = w.lower()
+        if (
+            len(w_lower) >= MIN_ID_TOKEN_LENGTH
+            and w_lower.isalpha()
+            and w_lower not in seen
+        ):
+            seen.add(w_lower)
+            content_tokens.append(w_lower)
+            if len(content_tokens) >= 8:
+                break
+
+    ct_matched = [
+        t for t in content_tokens if _word_boundary_match(t, reasoning_lower)
+    ]
+    ct_total_idf = sum(idf.get(t, 1.0) for t in content_tokens)
+    ct_matched_idf = sum(idf.get(t, 1.0) for t in ct_matched)
+    ct_score = ct_matched_idf / ct_total_idf if ct_total_idf > 0 else 0.0
+
+    # Return whichever source scored higher.
+    if id_score >= ct_score:
+        return id_score, id_matched, "id_tokens"
+    return ct_score, ct_matched, "content"
+
+
+def get_indirect_references(
+    reasoning: str,
+    sections: list[tuple[str, str, str, int]],
+    already_referenced: set[str],
+) -> tuple[set[str], list[IndirectMatchResult]]:
+    """Find sections indirectly referenced via token overlap with reasoning.
+
+    Uses relative ranking (no fixed threshold) because section naming
+    conventions vary wildly between websites:
+
+    1. Score all sections not in *already_referenced*.
+    2. Drop sections with ``score == 0`` (zero token overlap).
+    3. Sort descending by score.
+    4. Take top ``min(floor(total * INDIRECT_MAX_RATIO), INDIRECT_MAX_ABSOLUTE)``.
+
+    Args:
+        reasoning: The agent's full analysis text.
+        sections: ``(section_id, content, role, interactive_count)`` tuples.
+        already_referenced: Section IDs already matched by direct mechanisms.
+
+    Returns:
+        ``(indirect_ids, match_details)`` tuple.
+    """
+    if not reasoning.strip() or not sections:
+        return set(), []
+
+    idf = _compute_token_idf(sections)
+    reasoning_lower = reasoning.lower()
+
+    candidates: list[IndirectMatchResult] = []
+    for sid, content, _role, _ic in sections:
+        if sid in already_referenced:
+            continue
+        score, matched, source = score_section_indirect(
+            sid, content, reasoning_lower, idf,
+        )
+        if score > 0 and matched:
+            candidates.append(
+                IndirectMatchResult(sid, score, matched, source)
+            )
+
+    candidates.sort(key=lambda c: c.score, reverse=True)
+    budget = min(
+        max(1, int(len(sections) * INDIRECT_MAX_RATIO)),
+        INDIRECT_MAX_ABSOLUTE,
+    )
+    candidates = candidates[:budget]
+
+    return {c.section_id for c in candidates}, candidates
+
+
+# ---------------------------------------------------------------------------
+# Section preview builder
+# ---------------------------------------------------------------------------
+
+def _truncate_at_word(text: str, max_chars: int) -> str:
+    """Truncate *text* at a word boundary, appending ``...``."""
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars]
+    last_space = cut.rfind(" ")
+    if last_space > max_chars // 2:
+        cut = cut[:last_space]
+    return cut + "..."
+
+
+def _truncate_at_word_reverse(text: str, max_chars: int) -> str:
+    """Take the last *max_chars* of *text*, trimmed to a word boundary."""
+    if len(text) <= max_chars:
+        return text
+    tail = text[-max_chars:]
+    first_space = tail.find(" ")
+    if 0 < first_space < max_chars // 2:
+        tail = tail[first_space + 1:]
+    return "..." + tail
+
+
+def _interactive_label(element: RenderedInteractiveElement) -> str:
+    """Compact identity label for an interactive element.
+
+    Priority: visible text → aria-label → data-testid → href (truncated).
+    Format: ``tag "label"`` — e.g. ``a "Issues 45"``, ``button "Star"``.
+    """
+    attrs = element.attributes
+    label = (
+        element.element_text
+        or attrs.get("aria-label", "")
+        or attrs.get("data-testid", "")
+        or attrs.get("placeholder", "")
+    )
+    if not label:
+        href = attrs.get("href", "")
+        if href:
+            label = href[:40] + ("..." if len(href) > 40 else "")
+    if not label:
+        return ""
+    # Truncate long labels.
+    if len(label) > 30:
+        label = label[:27] + "..."
+    return f'{element.tag} "{label}"'
+
+
+def _build_section_preview(
+    content: str,
+    interactive_elements: list[RenderedInteractiveElement] | None = None,
+    max_chars: int = SKELETON_PREVIEW_CHARS,
+) -> str:
+    """Build a preview line showing start + end of content and top interactive elements.
+
+    If content is short (<= 2 * max_chars), it is shown in full.
+    Otherwise: first ~80 chars + ``···`` + last ~80 chars.
+    """
+    clean = content.strip().replace("\n", " ")
+    # Collapse runs of whitespace.
+    clean = _re.sub(r" {2,}", " ", clean)
+    char_count = len(content.strip())
+
+    if len(clean) <= max_chars * 2:
+        text_part = clean
+    else:
+        start = _truncate_at_word(clean, max_chars)
+        end = _truncate_at_word_reverse(clean, max_chars)
+        text_part = f"{start} ··· {end}"
+
+    # Top 3 interactive elements.
+    interactive_part = ""
+    if interactive_elements:
+        labels = []
+        for el in interactive_elements[:3]:
+            lbl = _interactive_label(el)
+            if lbl:
+                labels.append(lbl)
+        if labels:
+            interactive_part = f" | {', '.join(labels)}"
+
+    return f'[preview: "{text_part}" | {char_count} chars{interactive_part}]'
+
+
+# ---------------------------------------------------------------------------
+# Section metadata — embedded block for skeleton/stub conversion
+# ---------------------------------------------------------------------------
+
+_SECTION_META_START = "__SECTION_META__"
+_SECTION_META_END = "__SECTION_META_END__"
+
+
+@dataclass
+class SectionMeta:
+    """Parsed entry from a ``__SECTION_META__`` block."""
+
+    section_id: str
+    char_count: int
+    interactive_count: int
+    role: str
+    preview_start: str
+    preview_end: str
+    interactive_labels: list[str] = field(default_factory=list)
+
+
+def build_section_meta(
+    sections: list[tuple[str, str, str, int]],
+    interactive_elements_map: dict[str, list[RenderedInteractiveElement]] | None = None,
+) -> str:
+    """Build a hidden metadata block for later skeleton/stub conversion.
+
+    Each line encodes one section as pipe-delimited fields::
+
+        section_id|char_count|interactive_count|role|preview_start|preview_end|i_labels
+
+    The block is placed after the filtered output, between the content
+    the agent reads and the ``__PAGE_VIEW_END__`` marker.
+    """
+    lines: list[str] = [_SECTION_META_START]
+    for sid, content, role, i_count in sections:
+        clean = content.strip().replace("\n", " ").replace("|", "\u00a6")
+        clean = _re.sub(r" {2,}", " ", clean)
+        if len(clean) > 100:
+            start = clean[:100].rsplit(" ", 1)[0] if " " in clean[:100] else clean[:100]
+        else:
+            start = clean
+        if len(clean) > 100:
+            tail = clean[-100:]
+            end = tail.split(" ", 1)[-1] if " " in tail else tail
+        else:
+            end = ""
+        # Interactive element labels.
+        i_labels = ""
+        if interactive_elements_map and sid in interactive_elements_map:
+            labels = []
+            for el in interactive_elements_map[sid][:3]:
+                lbl = _interactive_label(el)
+                if lbl:
+                    labels.append(lbl)
+            i_labels = ";".join(labels)
+        lines.append(
+            f"{sid}|{len(content.strip())}|{i_count}|{role}"
+            f"|{start}|{end}|{i_labels}"
+        )
+    lines.append(_SECTION_META_END)
+    return "\n".join(lines)
+
+
+def parse_section_meta(text: str) -> list[SectionMeta] | None:
+    """Parse a ``__SECTION_META__`` block from page view text.
+
+    Returns ``None`` if the block is not found (graceful fallback for
+    old-format page views without embedded metadata).
+    """
+    start_idx = text.find(_SECTION_META_START)
+    end_idx = text.find(_SECTION_META_END)
+    if start_idx < 0 or end_idx < 0:
+        return None
+
+    block = text[start_idx + len(_SECTION_META_START):end_idx].strip()
+    if not block:
+        return []
+
+    results: list[SectionMeta] = []
+    for line in block.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split("|")
+        if len(parts) < 7:
+            continue
+        sid = parts[0]
+        try:
+            char_count = int(parts[1])
+            i_count = int(parts[2])
+        except ValueError:
+            continue
+        role = parts[3]
+        preview_start = parts[4].replace("\u00a6", "|")
+        preview_end = parts[5].replace("\u00a6", "|")
+        i_labels_raw = parts[6]
+        i_labels = [l for l in i_labels_raw.split(";") if l] if i_labels_raw else []
+        results.append(SectionMeta(
+            section_id=sid,
+            char_count=char_count,
+            interactive_count=i_count,
+            role=role,
+            preview_start=preview_start,
+            preview_end=preview_end,
+            interactive_labels=i_labels,
+        ))
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Filtered output builder
 # ---------------------------------------------------------------------------
 
@@ -418,16 +820,26 @@ def build_filtered_output(
     referenced: set[str],
     neighbor_radius: int = NEIGHBOR_RADIUS,
     page_header: str | None = None,
+    indirect_refs: set[str] | None = None,
+    indirect_neighbor_radius: int = INDIRECT_NEIGHBOR_RADIUS,
 ) -> str:
     """Build filtered show_page output with neighbor-aware omission.
 
-    Classifies each section into one of three tiers:
+    Classifies each section into one of four tiers:
 
     - **Kept** — section ID is in *referenced*.  Full header + content.
-    - **Neighbor** — within *neighbor_radius* positions of a kept section.
+      Neighbors within *neighbor_radius*.
+    - **Indirect** — section ID is in *indirect_refs* (and not in
+      *referenced*).  Full header + content.  Neighbors within
+      *indirect_neighbor_radius* (narrower).
+    - **Neighbor** — within radius of a kept or indirect section.
       Emitted as header only (no content).
     - **Distant** — everything else.  Consecutive distant sections are
       accumulated and flushed as ``[N sections omitted]``.
+
+    When *indirect_refs* is ``None`` (the default), the function behaves
+    identically to the original three-tier version for backward
+    compatibility.
 
     Blocks are joined with ``\\n\\n`` for visual separation.
 
@@ -440,6 +852,11 @@ def build_filtered_output(
         page_header: Optional page header line (e.g.
             ``=== Page State #5 | https://... ===``).  When provided it
             is prepended so the URL is never lost after filtering.
+        indirect_refs: Set of section IDs matched via indirect token
+            overlap.  These get full content with a narrower neighbor
+            radius.  ``None`` disables indirect matching entirely.
+        indirect_neighbor_radius: Neighbor radius for indirect refs.
+            Defaults to :data:`INDIRECT_NEIGHBOR_RADIUS`.
 
     Returns:
         The filtered output string.
@@ -452,20 +869,36 @@ def build_filtered_output(
         else:
             normalised.append((entry[0], entry[1], "", 0))
 
-    kept_indices = {i for i, (sid, *_) in enumerate(normalised) if sid in referenced}
+    _indirect = indirect_refs or set()
 
+    kept_indices = {
+        i for i, (sid, *_) in enumerate(normalised) if sid in referenced
+    }
+    indirect_indices = {
+        i for i, (sid, *_) in enumerate(normalised)
+        if sid in _indirect and i not in kept_indices
+    }
+
+    # Build neighbor sets: radius 3 for kept, radius 1 for indirect.
+    full_content_indices = kept_indices | indirect_indices
     neighbor_indices: set[int] = set()
     for ki in kept_indices:
         for offset in range(-neighbor_radius, neighbor_radius + 1):
             idx = ki + offset
-            if 0 <= idx < len(normalised) and idx not in kept_indices:
+            if 0 <= idx < len(normalised) and idx not in full_content_indices:
+                neighbor_indices.add(idx)
+    for ii in indirect_indices:
+        for offset in range(-indirect_neighbor_radius,
+                            indirect_neighbor_radius + 1):
+            idx = ii + offset
+            if 0 <= idx < len(normalised) and idx not in full_content_indices:
                 neighbor_indices.add(idx)
 
     blocks: list[str] = []
     distant_count = 0
 
     for i, (section_id, section_content, role, i_count) in enumerate(normalised):
-        if i in kept_indices:
+        if i in full_content_indices:
             if distant_count > 0:
                 blocks.append(f"[{distant_count} sections omitted]")
                 distant_count = 0
@@ -538,3 +971,7 @@ class ShowPageAnalysisLog:
 
     # Interactive element matching detail
     element_matches: list[ElementMatch]
+
+    # Indirect reference detection (progressive compaction)
+    sections_matched_indirect: list[str] = field(default_factory=list)
+    variant_b_carried_forward: list[str] = field(default_factory=list)

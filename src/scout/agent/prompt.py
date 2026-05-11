@@ -478,14 +478,11 @@ def build_show_page_analysis_prompt_a() -> str:
     return """\
 ── Think & Capture ──
 
-This page content will be cleared after this turn — you won't see
-it again, so think through what you're looking at now.
-
-What do you see? What matters for your task? What would you do next?
-As you think, write down the section IDs, element tags, and
-attributes you'll need later — weave them into your reasoning
-naturally, because once this content is gone, your notes are all
-you'll have.
+This page content will be compacted after this turn — sections you
+reference stay full, others become one-line previews showing
+start/end text and interactive elements. After several more turns,
+it reduces to a section index. Think through what you see and weave
+in the section IDs and element details you'll need later.
 
 ──"""
 
@@ -499,10 +496,9 @@ def build_show_page_analysis_prompt_b() -> str:
     return """\
 ── Page Update ──
 
-You've seen this page before — what changed? Think through what's
-different and whether it affects your approach. Note any new section
-IDs or elements you'll need. This content will be cleared after
-this turn.
+Sections you identified before are still preserved. Focus on what
+changed and note any new section IDs or elements. This content will
+be compacted after this turn.
 
 ──"""
 
@@ -522,7 +518,7 @@ expected? What's different? What does that tell you about the
 failure?
 
 Write down the section IDs and element tags you'll need for your
-fix as you reason — this content will be cleared after this turn.
+fix as you reason — this content will be compacted after this turn.
 
 ──"""
 
@@ -536,9 +532,10 @@ def build_show_page_debugging_prompt_b() -> str:
     return """\
 ── Page Update (debugging) ──
 
-You've seen this page before — what changed since last time? Does
-this help explain the failure? Note any new IDs or elements
-relevant to your fix. This content will be cleared after this turn.
+Sections you identified before are still preserved. What changed
+since last time? Does this help explain the failure? Note any new
+IDs or elements relevant to your fix. This content will be
+compacted after this turn.
 
 ──"""
 
