@@ -1417,25 +1417,50 @@ class DemoOverlay:
                             from { opacity: 0; }
                             to   { opacity: 1; }
                         }
+                        @keyframes scout-cursor {
+                            from { border-right-color: rgba(255,255,255,0.8); }
+                            to   { border-right-color: transparent; }
+                        }
                         .hl {
                             position: fixed;
                             pointer-events: none;
-                            border-radius: 4px;
-                            background-color: rgba(59,130,246,0.05);
+                            border-radius: 6px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            background-color: rgba(37,99,235,0.14);
+                            backdrop-filter: blur(2px);
+                            -webkit-backdrop-filter: blur(2px);
                             background-image:
-                                linear-gradient(0deg,   rgba(59,130,246,0.55) 50%, transparent 50%),
-                                linear-gradient(90deg,  rgba(59,130,246,0.55) 50%, transparent 50%),
-                                linear-gradient(0deg,   rgba(59,130,246,0.55) 50%, transparent 50%),
-                                linear-gradient(90deg,  rgba(59,130,246,0.55) 50%, transparent 50%);
+                                linear-gradient(0deg,   rgba(59,130,246,0.45) 50%, transparent 50%),
+                                linear-gradient(90deg,  rgba(59,130,246,0.45) 50%, transparent 50%),
+                                linear-gradient(0deg,   rgba(59,130,246,0.45) 50%, transparent 50%),
+                                linear-gradient(90deg,  rgba(59,130,246,0.45) 50%, transparent 50%);
                             background-size: 2px 12px, 12px 2px, 2px 12px, 12px 2px;
                             background-repeat: repeat-y, repeat-x, repeat-y, repeat-x;
-                            box-shadow: 0 0 12px rgba(59,130,246,0.12);
+                            box-shadow: inset 0 0 30px rgba(37,99,235,0.06),
+                                        0 0 12px rgba(59,130,246,0.10);
                             animation:
                                 scout-march  0.4s linear infinite,
-                                scout-fadein 0.3s ease;
+                                scout-fadein 0.35s ease;
+                        }
+                        .hl-label {
+                            padding: 6px 14px;
+                            border-radius: 4px;
+                            background: rgba(30,64,175,0.75);
+                            font: 500 13px/1.1 -apple-system, BlinkMacSystemFont,
+                                  "Segoe UI", Roboto, sans-serif;
+                            color: rgba(255,255,255,0.92);
+                            letter-spacing: 0.3px;
+                            white-space: nowrap;
+                            overflow: hidden;
+                            border-right: 2px solid rgba(255,255,255,0.8);
+                            animation: scout-cursor 0.55s step-end infinite;
                         }
                     `;
                     shadow.appendChild(style);
+
+                    const labelText = 'Inspecting HTML\u2026';
 
                     for (const sel of selectors) {
                         try {
@@ -1449,7 +1474,21 @@ class DemoOverlay:
                             d.style.left   = rect.left + 'px';
                             d.style.width  = rect.width  + 'px';
                             d.style.height = rect.height + 'px';
+
+                            const lbl = document.createElement('span');
+                            lbl.className = 'hl-label';
+                            d.appendChild(lbl);
                             shadow.appendChild(d);
+
+                            /* Typewriter effect */
+                            let ci = 0;
+                            const typeChar = () => {
+                                if (ci < labelText.length) {
+                                    lbl.textContent += labelText[ci++];
+                                    setTimeout(typeChar, 35 + Math.random() * 25);
+                                }
+                            };
+                            typeChar();
                         } catch(e) { /* skip silently */ }
                     }
                 }""",

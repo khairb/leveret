@@ -27,6 +27,7 @@ and pass it to ScrapingRuntime. Nothing else changes.
 from __future__ import annotations
 
 import abc
+import ast as _ast
 import asyncio
 import base64
 import io
@@ -407,6 +408,17 @@ class BaseREPL(abc.ABC):
     def reset(self) -> None:
         """Clear all state. Called by ScrapingRuntime.reset()."""
 
+    @property
+    def function_sources(self) -> dict[str, str]:
+        """Source code of user-defined functions, keyed by name.
+
+        Used by the timeout predictor to see function bodies defined
+        in previous execution steps.  Subclasses that don't track
+        this return an empty dict (safe default — prediction just
+        won't see cross-step functions).
+        """
+        return {}
+
 
 class LocalREPL(BaseREPL):
     """
@@ -417,6 +429,7 @@ class LocalREPL(BaseREPL):
     def __init__(self) -> None:
         self._globals: dict[str, Any] = {"__builtins__": __builtins__}
         self._active_stdout_buffer: Optional[io.StringIO] = None
+        self._function_sources: dict[str, str] = {}
 
     # ── Public interface ──
 
@@ -429,6 +442,11 @@ class LocalREPL(BaseREPL):
     def reset(self) -> None:
         self._globals.clear()
         self._globals["__builtins__"] = __builtins__
+        self._function_sources.clear()
+
+    @property
+    def function_sources(self) -> dict[str, str]:
+        return self._function_sources
 
     @property
     def partial_stdout(self) -> str:
@@ -443,6 +461,7 @@ class LocalREPL(BaseREPL):
         return ""
 
     async def execute(self, code: str, timeout: float | None = None) -> tuple[str, str]:
+        self._track_function_defs(code)
         coro = self._run(code)
         if timeout is not None:
             coro = asyncio.wait_for(coro, timeout=timeout)
@@ -462,6 +481,24 @@ class LocalREPL(BaseREPL):
             return partial, error_msg
 
     # ── Internals ──
+
+    def _track_function_defs(self, code: str) -> None:
+        """Extract top-level function definitions and store their source.
+
+        Called before execution so that ``function_sources`` is up-to-date
+        for the timeout predictor.  Uses ``ast.get_source_segment`` to
+        grab the exact source text from the code string.
+        """
+        try:
+            tree = _ast.parse(code)
+        except SyntaxError:
+            return
+        for node in tree.body:
+            if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+                # ast.get_source_segment requires end_lineno (Python 3.8+)
+                source = _ast.get_source_segment(code, node)
+                if source:
+                    self._function_sources[node.name] = source
 
     async def _run(self, code: str) -> tuple[str, str]:
         with self._capture_stdout() as captured:

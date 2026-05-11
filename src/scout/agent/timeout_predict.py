@@ -5,6 +5,18 @@ identify Patchright/Playwright API calls, explicit waits, loops, and other
 patterns that consume wall-clock time.  Returns a predicted timeout in
 seconds, always in the range [BASELINE, MAX_TIMEOUT].
 
+The prediction uses **two independent signals** and takes the maximum:
+
+1. **AST Scorer** — walks statements and sums per-call costs from a lookup
+   table.  Accurate for simple sequential code but blind to function
+   bodies (it skips them by design).
+
+2. **Await Counter** — walks the *entire* tree (including function bodies)
+   and counts ``await`` expressions, multiplying by enclosing loop
+   iteration counts.  Catches patterns the scorer misses (user-defined
+   function calls, comprehension awaits, exotic APIs not in the cost
+   table).
+
 Usage::
 
     from scout.agent.timeout_predict import predict_timeout
@@ -19,17 +31,17 @@ from typing import Union
 
 # ── Constants ────────────────────────────────────────────────────
 
-BASELINE: float = 20.0
+BASELINE: float = 30.0
 """Minimum timeout — we never go below this."""
 
-MAX_TIMEOUT: float = 300.0
+MAX_TIMEOUT: float = 3000.0
 """Hard ceiling — absolute maximum allowed execution time."""
 
-MARGIN: float = 1.2
+MARGIN: float = 1.5
 """Safety multiplier applied to the raw estimate."""
 
 # Heuristic iteration counts when we can't resolve the real value.
-_DEFAULT_FOR_ITERATIONS: int = 5
+_DEFAULT_FOR_ITERATIONS: int = 10
 _DEFAULT_WHILE_ITERATIONS: int = 10
 _MAX_LOOP_ITERATIONS: int = 50
 _MAX_LOOP_CONTRIBUTION: float = 225.0
@@ -37,8 +49,7 @@ _MAX_LOOP_CONTRIBUTION: float = 225.0
 # ── Per-call cost table (seconds) ───────────────────────────────
 
 # Keys are method/function names matched on ``ast.Attribute.attr`` or
-# ``ast.Name.id``.  Values are either a float (fixed cost) or the
-# string ``"dynamic"`` meaning we need to inspect arguments.
+# ``ast.Name.id``.  Values are a float (fixed cost in seconds).
 
 _FIXED_COSTS: dict[str, float] = {
     # Navigation — involves network round-trip + page rendering.
@@ -78,12 +89,24 @@ _FIXED_COSTS: dict[str, float] = {
     "is_visible": 1.0,
     "is_enabled": 1.0,
     "is_checked": 1.0,
+    # Element handle / query
+    "query_selector": 3.0,
+    "query_selector_all": 3.0,
+    "evaluate_handle": 3.0,
+    "element_handle": 3.0,
+    # Locator collection
+    "all": 2.0,
+    # Scrolling / viewport
+    "scroll_into_view_if_needed": 2.0,
+    "wheel": 2.0,
+    # Keyboard
+    "type": 2.0,
     # Context-manager based waits
     "expect_navigation": 10.0,
     "expect_response": 10.0,
     "expect_request": 10.0,
     # Injected builtins
-    "show_page": 15.0,
+    "show_page": 25.0,
     "zoom_section": 5.0,
 }
 
@@ -106,6 +129,14 @@ _DURATION_ARG_COSTS: dict[str, str] = {
 _SCROLL_HELPER = "scroll_to_bottom"
 _SCROLL_DEFAULT_COST: float = 15.0
 _SCROLL_PER_ITERATION: float = 1.0
+
+# ── Await counter constants ─────────────────────────────────────
+
+_PER_AWAIT_COST: float = 6.0
+"""Flat cost per ``await`` expression in the await-counter floor."""
+
+_MAX_AWAIT_MULTIPLIER: int = 50
+"""Cap on the effective loop multiplier for any single await."""
 
 
 # ── Helpers ──────────────────────────────────────────────────────
@@ -179,7 +210,7 @@ def _call_name(node: ast.Call) -> tuple[str | None, str]:
     return None, ""
 
 
-# ── Scoring engine ───────────────────────────────────────────────
+# ── AST Scoring engine ──────────────────────────────────────────
 
 def _score_call(node: ast.Call) -> float:
     """Score a single call node."""
@@ -294,6 +325,7 @@ def _score_stmt(node: ast.stmt) -> float:
 
     # ── Function / class definitions — don't score the body
     #    (it only runs if called, and we score calls separately)
+    #    NOTE: the await counter (below) DOES walk into these.
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
         return 0.0
 
@@ -331,32 +363,151 @@ def _score_expr(node: ast.expr) -> float:
             cost += _score_expr(kw.value)
         return cost
 
-    # Chained attribute calls: ``(await resp_info.value).json()``
-    # is NamedExpr or nested Await — handle Await above covers it.
-
-    # List/set/dict comprehensions with await inside are unusual but
-    # possible. We skip them — agent code rarely uses comprehensions
-    # with awaits.
-
     return 0.0
+
+
+# ── Await counter (safety floor) ────────────────────────────────
+
+def _count_await_floor(tree: ast.Module) -> float:
+    """Walk the *entire* AST and sum a flat cost per ``await``.
+
+    Unlike the AST scorer, this visitor enters function/class bodies,
+    so it catches awaits hidden inside user-defined functions that the
+    scorer skips.  Each ``await`` is weighted by the product of its
+    enclosing loop iteration counts.
+
+    This produces a conservative floor that complements the detailed
+    scorer: it is less accurate for known Playwright calls but never
+    misses an ``await``, regardless of the method name.
+    """
+    total = 0.0
+
+    def _visit(node: ast.AST, loop_mul: int = 1) -> None:
+        nonlocal total
+        effective = min(loop_mul, _MAX_AWAIT_MULTIPLIER)
+
+        if isinstance(node, ast.Await):
+            total += _PER_AWAIT_COST * effective
+            # Recurse into the awaited value — it may contain nested
+            # awaits like ``await page.fill(await get_sel(), "text")``
+            _visit(node.value, loop_mul)
+            return
+
+        if isinstance(node, ast.For):
+            bound = _extract_range_bound(node)
+            iters = bound if bound is not None else _DEFAULT_FOR_ITERATIONS
+            iters = min(iters, _MAX_LOOP_ITERATIONS)
+            for child in ast.iter_child_nodes(node):
+                _visit(child, loop_mul * iters)
+            return
+
+        if isinstance(node, ast.AsyncFor):
+            for child in ast.iter_child_nodes(node):
+                _visit(child, loop_mul * _DEFAULT_FOR_ITERATIONS)
+            return
+
+        if isinstance(node, ast.While):
+            for child in ast.iter_child_nodes(node):
+                _visit(child, loop_mul * _DEFAULT_WHILE_ITERATIONS)
+            return
+
+        # Comprehensions: each generator acts as a loop level.
+        if isinstance(node, (ast.ListComp, ast.SetComp,
+                             ast.DictComp, ast.GeneratorExp)):
+            comp_mul = loop_mul
+            for gen in node.generators:
+                comp_mul *= _DEFAULT_FOR_ITERATIONS
+            # Element expression(s) run inside all generators.
+            if isinstance(node, ast.DictComp):
+                _visit(node.key, comp_mul)
+                _visit(node.value, comp_mul)
+            else:
+                _visit(node.elt, comp_mul)
+            # Generator iterables/conditions run at the enclosing level.
+            for gen in node.generators:
+                _visit(gen.iter, loop_mul)
+                for if_ in gen.ifs:
+                    _visit(if_, loop_mul)
+            return
+
+        # Default: recurse into ALL children.
+        # This deliberately enters FunctionDef / AsyncFunctionDef /
+        # ClassDef bodies — the key difference from the AST scorer.
+        for child in ast.iter_child_nodes(node):
+            _visit(child, loop_mul)
+
+    _visit(tree)
+    return total
 
 
 # ── Public API ───────────────────────────────────────────────────
 
-def predict_timeout(code: str) -> float:
+def _build_context_code(
+    code: str,
+    tree: ast.Module,
+    function_sources: dict[str, str],
+) -> str | None:
+    """If *code* calls functions from *function_sources*, return a
+    combined string with the referenced definitions prepended.
+
+    Returns ``None`` if no external functions are referenced.
+    """
+    # Collect all called names that are in function_sources.
+    called: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            _, name = _call_name(node)
+            if name in function_sources:
+                called.add(name)
+
+    if not called:
+        return None
+
+    parts = [function_sources[name] for name in sorted(called)]
+    parts.append(code)
+    return "\n\n".join(parts)
+
+
+def predict_timeout(
+    code: str,
+    function_sources: dict[str, str] | None = None,
+) -> float:
     """Predict a timeout (in seconds) for agent-submitted Python code.
 
     Returns a value in ``[BASELINE, MAX_TIMEOUT]``.  If the code cannot
     be parsed, returns ``BASELINE`` (the code will fail fast on a syntax
     error anyway).
 
-    This function is purely static — it never executes the code.
+    Parameters
+    ----------
+    code:
+        The Python code string to analyse.
+    function_sources:
+        Optional mapping of ``{name: source}`` for functions defined in
+        previous REPL steps.  When provided, any calls to these functions
+        will be scored as if the definitions were part of *code*.
+
+    Uses two signals — a detailed AST scorer and a coarse await counter
+    — and takes the maximum to avoid blind spots.
     """
     try:
         tree = ast.parse(code)
     except SyntaxError:
         return BASELINE
 
-    raw = _score_body(tree.body)
+    # If the code references user-defined functions from earlier steps,
+    # build a combined tree so both scorers can see the function bodies.
+    effective_tree = tree
+    if function_sources:
+        combined = _build_context_code(code, tree, function_sources)
+        if combined is not None:
+            try:
+                effective_tree = ast.parse(combined)
+            except SyntaxError:
+                pass  # fall back to original tree
+
+    ast_scored = _score_body(effective_tree.body)
+    await_floor = _count_await_floor(effective_tree)
+    raw = max(ast_scored, await_floor)
     estimate = raw * MARGIN
     return max(BASELINE, min(estimate, MAX_TIMEOUT))

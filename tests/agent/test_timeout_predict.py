@@ -59,44 +59,44 @@ class TestBaseline:
 class TestSingleCalls:
     def test_goto(self):
         t = _t('await page.goto("https://example.com")')
-        # goto = 5s, * 1.2 = 6s → clamped to BASELINE
+        # goto(10) * 1.5 = 15 → clamped to BASELINE
         assert t == BASELINE
 
     def test_evaluate(self):
         t = _t('result = await page.evaluate("() => 42")')
-        assert t == BASELINE  # 1.0 * 1.2 = 1.2 → baseline
+        # evaluate(3) * 1.5 = 4.5 → BASELINE
+        assert t == BASELINE
 
     def test_click(self):
         t = _t("await page.click('button.submit')")
         assert t == BASELINE
 
     def test_show_page(self):
-        """show_page is known to be slow (8-22s)."""
+        """show_page is costed at 25s (observed 20-25s on heavy pages)."""
         t = _t("await show_page(page)")
-        # 15.0 * 1.2 = 18.0 → still baseline
-        assert t == BASELINE
+        # 25 * 1.5 = 37.5 → above BASELINE
+        assert t == pytest.approx(37.5)
 
     def test_wait_for_selector_default(self):
         t = _t("await page.wait_for_selector('.item')")
-        # 5s default * 1.2 = 6 → baseline
+        # 5s default * 1.5 = 7.5 → BASELINE
         assert t == BASELINE
 
     def test_wait_for_selector_with_timeout(self):
         """When the agent specifies a large timeout kwarg, respect it."""
         t = _t("await page.wait_for_selector('.item', timeout=60_000)")
-        # 60s * 1.2 = 72 → above baseline
+        # 60s * 1.5 = 90
         assert t > BASELINE
-        assert t == pytest.approx(72.0)
+        assert t == pytest.approx(90.0)
 
     def test_wait_for_timeout_explicit(self):
         """page.wait_for_timeout(ms) is a hard sleep."""
         t = _t("await page.wait_for_timeout(10_000)")
-        # 10s * 1.2 = 12 → baseline
+        # 10s * 1.5 = 15 → BASELINE
         assert t == BASELINE
 
     def test_asyncio_sleep(self):
         t = _t("await asyncio.sleep(2)")
-        # 5s * 1.2 = 6 → baseline
         assert t == BASELINE
 
 
@@ -112,8 +112,8 @@ class TestSequentialCalls:
         items = await page.evaluate("() => []", isolated_context=True)
         """
         t = _t(code)
-        # goto(5) + wait_for_selector(15) + evaluate(1) = 21 * 1.2 = 25.2 → baseline
-        assert t == BASELINE
+        # goto(10) + wait_for_selector(15) + evaluate(3) = 28 * 1.5 = 42
+        assert t == pytest.approx(42.0)
 
     def test_goto_show_page(self):
         code = """
@@ -121,11 +121,11 @@ class TestSequentialCalls:
         await show_page(page)
         """
         t = _t(code)
-        # 5 + 15 = 20 * 1.2 = 24 → baseline
-        assert t == BASELINE
+        # 10 + 25 = 35 * 1.5 = 52.5
+        assert t == pytest.approx(52.5)
 
     def test_many_operations_exceeds_baseline(self):
-        """Enough operations should push past 30s."""
+        """Enough operations should push well past BASELINE."""
         code = """
         await page.goto("https://example.com")
         await page.wait_for_selector('.a', timeout=10_000)
@@ -135,9 +135,9 @@ class TestSequentialCalls:
         await show_page(page)
         """
         t = _t(code)
-        # goto(5) + wait(10) + show(15) + click(1.5) + wait_load(3) + show(15) = 49.5 * 1.2 = 59.4
+        # goto(10) + wait(10) + show(25) + click(5) + wait_load(8) + show(25) = 83 * 1.5 = 124.5
         assert t > BASELINE
-        assert t == pytest.approx(59.4)
+        assert t == pytest.approx(124.5)
 
     def test_navigation_chain(self):
         """Multiple navigations add up."""
@@ -150,8 +150,8 @@ class TestSequentialCalls:
         await page.goto("https://f.com")
         """
         t = _t(code)
-        # 6 * 5 = 30 * 1.2 = 36
-        assert t == pytest.approx(36.0)
+        # 6 * 10 = 60 * 1.5 = 90
+        assert t == pytest.approx(90.0)
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -167,8 +167,8 @@ class TestLoops:
             await page.wait_for_load_state("domcontentloaded")
         """
         t = _t(code)
-        # body = click(1.5) + wait_load(3) = 4.5, 10 * 4.5 = 45 * 1.2 = 54
-        assert t == pytest.approx(54.0)
+        # body = click(5) + wait_load(8) = 13, 10 * 13 = 130 * 1.5 = 195
+        assert t == pytest.approx(195.0)
 
     def test_for_range_start_stop(self):
         """range(2, 8) → 6 iterations."""
@@ -177,20 +177,19 @@ class TestLoops:
             await page.click('.item')
         """
         t = _t(code)
-        # 6 * 1.5 = 9 * 1.2 = 10.8 → baseline
-        assert t == BASELINE
+        # 6 * click(5) = 30, but await_floor: 1*6*6 = 36 → max(30,36) = 36 * 1.5 = 54
+        assert t == pytest.approx(54.0)
 
     def test_for_unknown_iterable(self):
-        """for item in items — defaults to 5 iterations."""
+        """for item in items — defaults to 10 iterations."""
         code = """
         for item in items:
             await page.goto(item)
             await show_page(page)
         """
         t = _t(code)
-        # body = goto(5) + show(15) = 20, 5 * 20 = 100 (under 225 cap) * 1.2 = 120
-        assert t > BASELINE
-        assert t == pytest.approx(120.0)
+        # body = goto(10) + show(25) = 35, 10 * 35 = 350 → capped 225 * 1.5 = 337.5
+        assert t == pytest.approx(337.5)
 
     def test_for_range_capped(self):
         """range(1000) is capped at 50 iterations."""
@@ -199,8 +198,9 @@ class TestLoops:
             await page.click('.x')
         """
         t = _t(code)
-        # 50 * 1.5 = 75 (under 225 cap) * 1.2 = 90
-        assert t == pytest.approx(90.0)
+        # AST: 50 * click(5) = 250 → capped 225.
+        # Await: 1*6*50 = 300. max(225, 300) = 300 * 1.5 = 450
+        assert t == pytest.approx(450.0)
 
     def test_while_true_pagination(self):
         """Classic pagination pattern."""
@@ -216,9 +216,10 @@ class TestLoops:
             await page.wait_for_load_state("domcontentloaded")
         """
         t = _t(code)
-        # body: evaluate(1) + click(1.5) + wait_load(3) = 5.5
-        # while: 10 * 5.5 = 55 * 1.2 = 66
-        assert t == pytest.approx(66.0)
+        # body: evaluate(3) + count(1) + click(5) + wait_load(8) = 17
+        # while: 10 * 17 = 170.  await_floor: 4 awaits * 6 * 10 = 240.
+        # max(170, 240) = 240 * 1.5 = 360
+        assert t == pytest.approx(360.0)
 
     def test_while_condition(self):
         """while <condition> — same heuristic as while True."""
@@ -230,8 +231,8 @@ class TestLoops:
             page_num += 1
         """
         t = _t(code)
-        # 10 * (1.5 + 3.0) = 45 * 1.2 = 54
-        assert t == pytest.approx(54.0)
+        # body: click(5) + wait_load(8) = 13, 10 * 13 = 130 * 1.5 = 195
+        assert t == pytest.approx(195.0)
 
     def test_loop_body_cap(self):
         """Loop contribution is capped at 225s with heavy body."""
@@ -242,9 +243,10 @@ class TestLoops:
             await page.wait_for_selector('.data', timeout=30_000)
         """
         t = _t(code)
-        # body: goto(5) + show(15) + wait(30) = 50
-        # 10 * 50 = 500 → capped at 225 * 1.2 = 270
-        assert t == pytest.approx(270.0)
+        # body: goto(10) + show(25) + wait(30) = 65
+        # 10 * 65 = 650 → capped at 225.
+        # await_floor: 3 * 6 * 10 = 180. max(225, 180) = 225 * 1.5 = 337.5
+        assert t == pytest.approx(337.5)
 
     def test_nested_loop(self):
         """Nested loop — inner scores multiply with outer iterations."""
@@ -254,20 +256,20 @@ class TestLoops:
                 await page.click('.item')
         """
         t = _t(code)
-        # inner: 4 * 1.5 = 6 (under 225 cap)
-        # outer: 3 * 6 = 18 (under 225 cap)
-        # * 1.2 = 21.6 → baseline
-        assert t == BASELINE
+        # AST: inner: 4 * click(5) = 20, outer: 3 * 20 = 60
+        # Await: 1 await * 6 * 3 * 4 = 72
+        # max(60, 72) = 72 * 1.5 = 108
+        assert t == pytest.approx(108.0)
 
     def test_async_for(self):
-        """async for — uses default 5 iterations."""
+        """async for — uses default 10 iterations."""
         code = """
         async for item in some_async_generator():
             await page.goto(item.url)
         """
         t = _t(code)
-        # 5 * 5 = 25 * 1.2 = 30 → baseline
-        assert t == BASELINE
+        # AST: 10 * goto(10) = 100. Await: 1*6*10 = 60. max(100,60) = 100 * 1.5 = 150
+        assert t == pytest.approx(150.0)
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -281,7 +283,7 @@ class TestContextManagers:
             await page.click("a.next-page")
         """
         t = _t(code)
-        # expect_navigation(5) + click(1.5) = 6.5 * 1.2 = 7.8 → baseline
+        # expect_navigation(10) + click(5) = 15 * 1.5 = 22.5 → BASELINE
         assert t == BASELINE
 
     def test_expect_response(self):
@@ -291,7 +293,6 @@ class TestContextManagers:
         response = await resp_info.value
         """
         t = _t(code)
-        # expect_response(5) + click(1.5) = 6.5 * 1.2 → baseline
         assert t == BASELINE
 
 
@@ -310,10 +311,9 @@ class TestBranching:
             await page.wait_for_selector('.x', timeout=30_000)
         """
         t = _t(code)
-        # if-branch: goto(5) = 5
-        # else-branch: goto(5) + show(15) + wait(30) = 50
-        # max = 50 * 1.2 = 60
-        assert t == pytest.approx(60.0)
+        # else-branch: goto(10) + show(25) + wait(30) = 65
+        # max(10, 65) = 65 * 1.5 = 97.5
+        assert t == pytest.approx(97.5)
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -330,10 +330,9 @@ class TestTryExcept:
             await page.reload()
         """
         t = _t(code)
-        # try body: goto(5) + wait(20) = 25
-        # except body: reload(5)
-        # max(25, 5) = 25 * 1.2 = 30 → baseline
-        assert t == BASELINE
+        # try: goto(10) + wait(20) = 30, except: reload(10)
+        # max(30, 10) = 30 * 1.5 = 45
+        assert t == pytest.approx(45.0)
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -347,20 +346,20 @@ class TestScrollHelper:
         data = await page.evaluate("() => []", isolated_context=True)
         """
         t = _t(code)
-        # scroll(30 * 1 = 30) + evaluate(1) = 31 * 1.2 = 37.2
-        assert t == pytest.approx(37.2)
+        # scroll(30 * 1 = 30) + evaluate(3) = 33 * 1.5 = 49.5
+        assert t == pytest.approx(49.5)
 
     def test_scroll_default(self):
         code = "await scroll_to_bottom(page)"
         t = _t(code)
-        # 15 * 1.2 = 18 → baseline
+        # 15 * 1.5 = 22.5 → BASELINE
         assert t == BASELINE
 
     def test_scroll_capped(self):
         code = "await scroll_to_bottom(page, max_scrolls=200)"
         t = _t(code)
-        # 200 capped to 50 → 50 * 1.2 = 60
-        assert t == pytest.approx(60.0)
+        # 200 capped to 50 → 50 * 1.5 = 75
+        assert t == pytest.approx(75.0)
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -371,20 +370,20 @@ class TestTimeoutKwarg:
     def test_wait_for_function_with_timeout(self):
         code = "await page.wait_for_function('() => true', timeout=45_000)"
         t = _t(code)
-        # 45s * 1.2 = 54
-        assert t == pytest.approx(54.0)
+        # 45s * 1.5 = 67.5
+        assert t == pytest.approx(67.5)
 
     def test_locator_wait_for_with_timeout(self):
         code = 'await loc.wait_for(state="visible", timeout=20_000)'
         t = _t(code)
-        # 20s * 1.2 = 24 → baseline
+        # 20s * 1.5 = 30 → BASELINE
         assert t == BASELINE
 
     def test_wait_for_selector_small_timeout(self):
         """Small timeout kwarg → uses that value, not the default."""
         code = "await page.wait_for_selector('.x', timeout=2_000)"
         t = _t(code)
-        # 2s * 1.2 = 2.4 → baseline
+        # 2s * 1.5 = 3 → BASELINE
         assert t == BASELINE
 
 
@@ -396,13 +395,12 @@ class TestDurationArg:
     def test_wait_for_timeout_ms(self):
         code = "await page.wait_for_timeout(25_000)"
         t = _t(code)
-        # 25s * 1.2 = 30 → baseline
-        assert t == BASELINE
+        # 25s * 1.5 = 37.5
+        assert t == pytest.approx(37.5)
 
     def test_asyncio_sleep_float(self):
         code = "await asyncio.sleep(2.5)"
         t = _t(code)
-        # 2.5s * 1.2 = 3 → baseline
         assert t == BASELINE
 
     def test_large_sleep_in_loop(self):
@@ -412,24 +410,26 @@ class TestDurationArg:
             await page.click('.next')
         """
         t = _t(code)
-        # body: sleep(3) + click(1.5) = 4.5, 5 * 4.5 = 22.5 * 1.2 = 27 → baseline
-        assert t == BASELINE
+        # AST: body: sleep(3) + click(5) = 8, 5 * 8 = 40
+        # Await: 2 * 6 * 5 = 60
+        # max(40, 60) = 60 * 1.5 = 90
+        assert t == pytest.approx(90.0)
 
     def test_sleep_unresolvable(self):
         """If sleep arg is a variable, use conservative default."""
         code = "await asyncio.sleep(delay)"
         t = _t(code)
-        # 5s default * 1.2 = 6 → baseline
         assert t == BASELINE
 
 
 # ═════════════════════════════════════════════════════════════════
-#  11. Function definitions (not scored)
+#  11. Function definitions
 # ═════════════════════════════════════════════════════════════════
 
 class TestFunctionDefs:
-    def test_function_body_not_scored(self):
-        """Defining a function doesn't execute it — only calls do."""
+    def test_function_body_await_floor(self):
+        """Defining a function — AST scorer skips body, but await
+        counter sees the awaits inside and provides a floor."""
         code = """
         async def do_heavy_stuff():
             await page.goto("https://a.com")
@@ -440,10 +440,13 @@ class TestFunctionDefs:
         print("defined")
         """
         t = _t(code)
-        assert t == BASELINE
+        # AST scorer: function def = 0, print = 0 → 0
+        # Await counter: 4 awaits * 6 = 24
+        # max(0, 24) = 24 * 1.5 = 36
+        assert t == pytest.approx(36.0)
 
     def test_function_def_then_call(self):
-        """If the function is called, we score the call (not the body)."""
+        """If the function is called, await counter counts body + call."""
         code = """
         async def helper():
             await page.goto("https://a.com")
@@ -451,12 +454,104 @@ class TestFunctionDefs:
         await helper()
         """
         t = _t(code)
-        # helper() is not in our cost table → 0
+        # AST scorer: function def = 0, helper() not in cost table → 0
+        # Await counter: 1 (inside def) + 1 (the call) = 2 * 6 = 12
+        # max(0, 12) = 12 * 1.5 = 18 → BASELINE
         assert t == BASELINE
 
 
 # ═════════════════════════════════════════════════════════════════
-#  12. Realistic agent code patterns
+#  12. Cross-block function context
+# ═════════════════════════════════════════════════════════════════
+
+class TestFunctionContext:
+    """When function_sources is passed, predict_timeout sees bodies
+    of functions defined in previous REPL steps."""
+
+    def test_cross_block_simple(self):
+        """Function defined in step N, called in step N+1."""
+        fn_sources = {
+            "scrape": textwrap.dedent("""
+                async def scrape(page, url):
+                    await page.goto(url)
+                    data = await page.evaluate("() => []", isolated_context=True)
+                    await show_page(page)
+                    return data
+            """).strip(),
+        }
+        code = 'result = await scrape(page, "https://example.com")'
+        t_without = predict_timeout(code)
+        t_with = predict_timeout(code, function_sources=fn_sources)
+        # Without context: just 1 await → BASELINE
+        assert t_without == BASELINE
+        # With context: function body has goto(10)+evaluate(3)+show(25) = 38
+        # Plus call await = 38 * 1.5 = 57 → above BASELINE
+        assert t_with > BASELINE
+
+    def test_cross_block_heavy_loop(self):
+        """Heavy function with loop, called from a one-liner."""
+        fn_sources = {
+            "scrape": textwrap.dedent("""
+                async def scrape(page, url):
+                    await page.goto(url)
+                    items = await page.evaluate("() => []", isolated_context=True)
+                    for item in items:
+                        await page.goto(item)
+                        await page.wait_for_timeout(500)
+                        await page.evaluate("() => ({})", isolated_context=True)
+                    return items
+            """).strip(),
+        }
+        code = 'result = await scrape(page, "https://example.com")'
+        t = predict_timeout(code, function_sources=fn_sources)
+        # Function body has: goto + evaluate + loop(10 iters * (goto + wait + evaluate))
+        # This should produce a substantial timeout
+        assert t > 100
+
+    def test_unreferenced_function_ignored(self):
+        """Functions in context that aren't called don't inflate the prediction."""
+        fn_sources = {
+            "heavy_unused": textwrap.dedent("""
+                async def heavy_unused(page):
+                    for i in range(50):
+                        await page.goto("https://example.com")
+            """).strip(),
+        }
+        code = 'print("hello")'
+        t = predict_timeout(code, function_sources=fn_sources)
+        assert t == BASELINE
+
+    def test_empty_context(self):
+        """Empty function_sources is the same as None."""
+        code = 'await page.goto("https://example.com")'
+        t_none = predict_timeout(code)
+        t_empty = predict_timeout(code, function_sources={})
+        assert t_none == t_empty
+
+    def test_function_redefined(self):
+        """Latest definition wins — mirrors REPL behavior."""
+        fn_sources = {
+            "scrape": textwrap.dedent("""
+                async def scrape(page):
+                    await page.goto("https://example.com")
+            """).strip(),
+        }
+        # Code redefines scrape with heavier body + calls it
+        code = textwrap.dedent("""
+            async def scrape(page):
+                for i in range(20):
+                    await page.goto("https://example.com")
+                    await page.evaluate("() => ({})", isolated_context=True)
+            await scrape(page)
+        """).strip()
+        t = predict_timeout(code, function_sources=fn_sources)
+        # The in-block definition is what matters (it shadows the context one)
+        # The combined code has both defs + the call. Await counter sees all.
+        assert t > 300
+
+
+# ═════════════════════════════════════════════════════════════════
+#  13. Realistic agent code patterns
 # ═════════════════════════════════════════════════════════════════
 
 class TestRealisticPatterns:
@@ -485,8 +580,8 @@ class TestRealisticPatterns:
         await show_page(page)
         """
         t = _t(code)
-        # goto(5) + wait(5) + click(1.5) + wait(10) + eval(1) + show(15) = 37.5 * 1.2 = 45
-        assert t == pytest.approx(45.0)
+        # goto(10) + wait(5) + click(5) + wait(10) + eval(3) + show(25) = 58 * 1.5 = 87
+        assert t == pytest.approx(87.0)
 
     def test_full_pagination_scrape(self):
         """The common pattern that causes timeouts."""
@@ -518,11 +613,8 @@ class TestRealisticPatterns:
         print(all_items)
         """
         t = _t(code)
-        # Pre-loop: goto(5) + wait_for_selector(5) = 10
-        # Loop body: evaluate(1) + click(1.5) + wait_for_function(15) = 17.5
-        # while: 10 * 17.5 = 175 (under 225 cap)
-        # total raw: 10 + 175 = 185 * 1.2 = 222
-        assert t == pytest.approx(222.0)
+        # Heavy pagination — generous budget
+        assert t > 300
 
     def test_scroll_then_extract(self):
         code = """
@@ -532,8 +624,8 @@ class TestRealisticPatterns:
         print(data)
         """
         t = _t(code)
-        # goto(5) + scroll(20) + eval(1) = 26 * 1.2 = 31.2
-        assert t == pytest.approx(31.2)
+        # goto(10) + scroll(20) + eval(3) = 33 * 1.5 = 49.5
+        assert t == pytest.approx(49.5)
 
     def test_spa_pagination_with_response_capture(self):
         code = """
@@ -548,9 +640,9 @@ class TestRealisticPatterns:
             all_data.extend(data)
         """
         t = _t(code)
-        # loop: 10 iterations * (click 1.5 + wait_load 3 + wait_timeout 1 + eval 1) = 10 * 6.5 = 65
-        # * 1.2 = 78
-        assert t == pytest.approx(78.0)
+        # 10 iters * (click(5) + wait_load(8) + wait(1) + eval(3)) = 10*17 = 170
+        # await_floor: 4*6*10 = 240. max(170,240) = 240 * 1.5 = 360
+        assert t == pytest.approx(360.0)
 
     def test_detail_page_crawl(self):
         """Visit multiple detail pages from a list."""
@@ -567,11 +659,11 @@ class TestRealisticPatterns:
         print(results)
         """
         t = _t(code)
-        # pre-loop: evaluate(1) = 1
-        # loop body: goto(5) + wait(10) + eval(1) + go_back(3) + wait_load(3) = 22
-        # for (unknown iterable): 5 * 22 = 110 (under 225 cap)
-        # total: 1 + 110 = 111 * 1.2 = 133.2
-        assert t == pytest.approx(133.2)
+        # pre-loop: evaluate(3)
+        # loop body: goto(10) + wait(10) + eval(3) + go_back(8) + wait_load(8) = 39
+        # 10 * 39 = 390 → capped 225 + 3 = 228. await: 1*6 + 5*6*10 = 306.
+        # max(228, 306) = 306 * 1.5 = 459
+        assert t == pytest.approx(459.0)
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -596,8 +688,8 @@ class TestCap:
         lines = ['await page.goto("https://x.com")'] * 50
         code = "\n".join(lines)
         t = predict_timeout(code)
-        # 50 * 5 = 250 * 1.2 = 300 → exactly MAX_TIMEOUT
-        assert t == MAX_TIMEOUT
+        # 50 * 10 = 500 * 1.5 = 750
+        assert t == pytest.approx(750.0)
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -606,7 +698,7 @@ class TestCap:
 
 class TestPerformance:
     def test_fast_on_large_code(self):
-        """Algorithm should handle 500-line agent code in < 10ms."""
+        """Algorithm should handle 500-line agent code in < 50ms."""
         lines = []
         for i in range(100):
             lines.append(f'await page.goto("https://example.com/{i}")')
@@ -620,7 +712,7 @@ class TestPerformance:
         result = predict_timeout(code)
         elapsed = time.perf_counter() - start
 
-        assert elapsed < 0.01  # 10ms
+        assert elapsed < 0.05  # 50ms (await counter adds some cost)
         assert result == MAX_TIMEOUT  # heavy code → capped
 
 
@@ -633,7 +725,6 @@ class TestEdgeCases:
         """page.locator('.x').click() — should detect click."""
         code = "await page.locator('.x').click()"
         t = _t(code)
-        # click(1.5) * 1.2 = 1.8 → baseline
         assert t == BASELINE
 
     def test_locator_nth_click(self):

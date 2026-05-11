@@ -9,11 +9,14 @@ The agent also has two built-in REPL functions (``show_page`` and
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from .timeout_predict import predict_timeout
+
+logger = logging.getLogger("scout")
 
 if TYPE_CHECKING:
     from ..runtime.environment import ScrapingRuntime
@@ -25,7 +28,7 @@ if TYPE_CHECKING:
 MIN_TIMEOUT: float = 1.0
 """Floor for any explicit timeout the agent provides."""
 
-MAX_TIMEOUT: float = 300.0
+MAX_TIMEOUT: float = 3000.0
 """Ceiling for any timeout (explicit or predicted)."""
 
 
@@ -224,12 +227,23 @@ async def _exec_python(
     timeout: float | None = None,
 ) -> ToolResult:
     """Execute Python code and return output."""
+    predicted = predict_timeout(code, runtime.repl.function_sources)
+
     if timeout is not None:
-        # Agent provided an explicit timeout — clamp it.
-        timeout = max(MIN_TIMEOUT, min(float(timeout), MAX_TIMEOUT))
+        agent_timeout = max(MIN_TIMEOUT, min(float(timeout), MAX_TIMEOUT))
+        # System prediction is the floor — agent can't undercut it.
+        timeout = max(agent_timeout, predicted)
+        if timeout == agent_timeout:
+            source = "agent"
+        else:
+            source = "auto (agent request too low)"
+        logger.info(
+            "Timeout: %.1fs [%s] (predicted=%.1fs, agent_requested=%.1fs)",
+            timeout, source, predicted, agent_timeout,
+        )
     else:
-        # No explicit timeout — predict from code structure.
-        timeout = predict_timeout(code)
+        timeout = predicted
+        logger.info("Timeout: %.1fs [auto] (predicted=%.1fs)", timeout, predicted)
 
     # Block code that dumps raw HTML into the conversation.
     blocked = _check_raw_html_patterns(code)
