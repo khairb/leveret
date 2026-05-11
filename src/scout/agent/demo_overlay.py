@@ -17,7 +17,10 @@ Architecture:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .selector_extractor import ExtractionResult
 
 logger = logging.getLogger(__name__)
 
@@ -1377,7 +1380,10 @@ class DemoOverlay:
                         'position:fixed;top:0;left:0;width:0;height:0;'
                         + 'pointer-events:none;z-index:2147483647';
                     document.documentElement.appendChild(host);
-                    host.attachShadow({ mode: 'open' });
+                    const shadow = host.attachShadow({ mode: 'open' });
+                    shadow.innerHTML =
+                        '<div class="hl-zone-zoom"></div>'
+                        + '<div class="hl-zone-interact"></div>';
                 }""",
             )
             self._hl_ready = True
@@ -1390,16 +1396,14 @@ class DemoOverlay:
 
         Each CSS selector is resolved to an element; a fixed-position
         overlay div is placed over its bounding rect inside a shadow
-        DOM container (invisible to the sanitizer and the agent).
-
-        The overlay uses animated dashed borders (marching ants) with
-        a subtle background tint and glow for visibility.
+        DOM container.  A ``requestAnimationFrame`` loop keeps the
+        overlays pinned to the target elements through scroll/resize.
         """
         if not self._main_page or not selectors:
             return
         try:
             await self._main_page.evaluate(
-                """(selectors) => {
+                r"""(selectors) => {
                     let host = document.getElementById('scout-hl-host');
                     if (!host) {
                         host = document.createElement('div');
@@ -1408,10 +1412,31 @@ class DemoOverlay:
                             'position:fixed;top:0;left:0;width:0;height:0;'
                             + 'pointer-events:none;z-index:2147483647';
                         document.documentElement.appendChild(host);
-                        host.attachShadow({ mode: 'open' });
+                        const s = host.attachShadow({ mode: 'open' });
+                        s.innerHTML =
+                            '<div class="hl-zone-zoom"></div>'
+                            + '<div class="hl-zone-interact"></div>';
                     }
                     const shadow = host.shadowRoot;
-                    shadow.innerHTML = '';
+                    let zone = shadow.querySelector('.hl-zone-zoom');
+                    if (!zone) {
+                        shadow.innerHTML =
+                            '<div class="hl-zone-zoom"></div>'
+                            + '<div class="hl-zone-interact"></div>';
+                        zone = shadow.querySelector('.hl-zone-zoom');
+                    }
+                    zone.innerHTML = '';
+
+                    /* Ensure unified state exists */
+                    if (!host.__scoutState) {
+                        host.__scoutState = {
+                            rafId: null,
+                            running: false,
+                            interactTracked: [],
+                            zoomTracked: [],
+                        };
+                    }
+                    const state = host.__scoutState;
 
                     const style = document.createElement('style');
                     style.textContent = `
@@ -1435,8 +1460,6 @@ class DemoOverlay:
                             align-items: center;
                             justify-content: center;
                             background-color: rgba(37,99,235,0.14);
-                            backdrop-filter: blur(2px);
-                            -webkit-backdrop-filter: blur(2px);
                             background-image:
                                 linear-gradient(0deg,   rgba(59,130,246,0.45) 50%, transparent 50%),
                                 linear-gradient(90deg,  rgba(59,130,246,0.45) 50%, transparent 50%),
@@ -1464,9 +1487,10 @@ class DemoOverlay:
                             animation: scout-cursor 0.55s step-end infinite;
                         }
                     `;
-                    shadow.appendChild(style);
+                    zone.appendChild(style);
 
                     const labelText = 'Inspecting HTML\u2026';
+                    const tracked = [];
 
                     for (const sel of selectors) {
                         try {
@@ -1484,7 +1508,10 @@ class DemoOverlay:
                             const lbl = document.createElement('span');
                             lbl.className = 'hl-label';
                             d.appendChild(lbl);
-                            shadow.appendChild(d);
+                            zone.appendChild(d);
+
+                            /* Track for rAF position updates */
+                            tracked.push({ selector: sel, div: d });
 
                             /* Typewriter effect */
                             let ci = 0;
@@ -1497,6 +1524,37 @@ class DemoOverlay:
                             typeChar();
                         } catch(e) { /* skip silently */ }
                     }
+
+                    /* Merge into unified state and ensure rAF loop runs */
+                    state.zoomTracked = tracked;
+
+                    if (!state.running) {
+                        function updatePositions() {
+                            const h = document.getElementById('scout-hl-host');
+                            if (!h || !h.__scoutState || !h.__scoutState.running) return;
+                            const st = h.__scoutState;
+                            for (const arr of [st.interactTracked, st.zoomTracked]) {
+                                for (const entry of arr) {
+                                    try {
+                                        const el = document.querySelector(entry.selector);
+                                        if (!el) { entry.div.style.display = 'none'; continue; }
+                                        const r = el.getBoundingClientRect();
+                                        if (r.width === 0 && r.height === 0) {
+                                            entry.div.style.display = 'none'; continue;
+                                        }
+                                        entry.div.style.display = '';
+                                        entry.div.style.top    = r.top + 'px';
+                                        entry.div.style.left   = r.left + 'px';
+                                        entry.div.style.width  = r.width + 'px';
+                                        entry.div.style.height = r.height + 'px';
+                                    } catch(e) { entry.div.style.display = 'none'; }
+                                }
+                            }
+                            st.rafId = requestAnimationFrame(updatePositions);
+                        }
+                        state.running = true;
+                        state.rafId = requestAnimationFrame(updatePositions);
+                    }
                 }""",
                 selectors,
             )
@@ -1505,15 +1563,653 @@ class DemoOverlay:
             logger.debug("Highlight draw failed", exc_info=True)
 
     async def clear_highlights(self) -> None:
-        """Remove all highlight overlays from the main page."""
+        """Remove all highlight overlays and stop the rAF tracking loop."""
         if not self._hl_ready or not self._main_page:
             return
         try:
             await self._main_page.evaluate(
                 """() => {
                     const host = document.getElementById('scout-hl-host');
-                    if (host && host.shadowRoot) host.shadowRoot.innerHTML = '';
+                    if (!host || !host.shadowRoot) return;
+
+                    /* Stop rAF loop and clear tracking state */
+                    const st = host.__scoutState;
+                    if (st) {
+                        if (st.rafId) cancelAnimationFrame(st.rafId);
+                        st.running = false;
+                        st.interactTracked = [];
+                        st.zoomTracked = [];
+                        host.__scoutState = null;
+                    }
+
+                    const shadow = host.shadowRoot;
+                    const zoom = shadow.querySelector('.hl-zone-zoom');
+                    const interact = shadow.querySelector('.hl-zone-interact');
+                    if (zoom) zoom.innerHTML = '';
+                    if (interact) interact.innerHTML = '';
                 }""",
             )
         except Exception:
             pass
+
+    # ── Interaction highlighting (main page) ──────────────────────
+
+    _MAX_QSA_HIGHLIGHTS = 6
+
+    async def _resolve_css_path(
+        self, selector: str,
+    ) -> tuple[dict[str, float] | None, str | None]:
+        """Resolve a Playwright selector to ``(bounding_box, css_path)``.
+
+        The CSS path is a unique selector string (using ``tagName``,
+        ``id``, and ``:nth-child``) that browser JS can use in
+        ``document.querySelector()`` for continuous rAF tracking.
+
+        Falls back gracefully: if the CSS path cannot be computed the
+        bounding box is still returned (overlay will be static).
+        """
+        try:
+            elements = await self._main_page.query_selector_all(selector)
+        except Exception:
+            return None, None
+        if not elements:
+            return None, None
+
+        vp = self._main_page.viewport_size
+        vp_w = vp["width"] if vp else 1920
+        vp_h = vp["height"] if vp else 1080
+
+        fallback: tuple[Any, dict[str, float]] | None = None
+        for el in elements:
+            try:
+                box = await el.bounding_box()
+            except Exception:
+                continue
+            if not box or (box["width"] == 0 and box["height"] == 0):
+                continue
+            if fallback is None:
+                fallback = (el, box)
+            # Prefer element that overlaps the viewport
+            if (box["y"] + box["height"] > 0
+                    and box["y"] < vp_h
+                    and box["x"] + box["width"] > 0
+                    and box["x"] < vp_w):
+                try:
+                    css_path = await el.evaluate(_CSS_PATH_JS)
+                    return box, css_path
+                except Exception:
+                    return box, None
+
+        if fallback:
+            el, box = fallback
+            try:
+                css_path = await el.evaluate(_CSS_PATH_JS)
+                return box, css_path
+            except Exception:
+                return box, None
+        return None, None
+
+    async def highlight_interactions(
+        self, results: list[ExtractionResult],
+    ) -> dict[str, Any]:
+        """Draw interaction overlays on elements the AI code targets.
+
+        Consumes :class:`ExtractionResult` objects from the Selector
+        Extractor.  Each result is resolved to a bounding box and
+        rendered with a visual style based on its ``action_category``:
+
+        - **navigating** — orange/amber pulse, self-removing (~600ms)
+        - **mutating** — purple/blue soft glow, persistent
+        - **passive** — teal subtle outline, persistent
+
+        Results with ``in_loop=True`` or ``after_navigation=True`` are
+        skipped.  All failures are caught silently.
+
+        Returns:
+            A dict with observability stats for console logging.
+        """
+        empty_stats: dict[str, Any] = {
+            "resolved_count": 0,
+            "drawn_count": 0,
+            "dropped_overlap": 0,
+            "details": [],
+        }
+
+        if not self._main_page or not results:
+            return empty_stats
+
+        # ── Filter ───────────────────────────────────────────────
+        filtered = [
+            r for r in results
+            if not r.in_loop and not r.after_navigation
+        ]
+
+        # Track per-selector status for logging
+        details: list[dict[str, str]] = []
+        for r in results:
+            if r.in_loop or r.after_navigation:
+                reason = "in_loop" if r.in_loop else "after_nav"
+                details.append({
+                    "selector": r.selector,
+                    "category": r.action_category,
+                    "action": r.action,
+                    "source": r.source,
+                    "status": "filtered",
+                    "reason": reason,
+                })
+
+        if not filtered:
+            return {**empty_stats, "details": details}
+
+        # ── Resolve selectors to bounding-box data ──────────────
+        payload: list[dict[str, Any]] = []
+        idx = 0
+        total_items = len(filtered)
+
+        for r in filtered:
+            try:
+                if r.selector_type == "playwright":
+                    if r.action == "query_selector_all":
+                        elements = await self._main_page.query_selector_all(
+                            r.selector,
+                        )
+                        total_count = len(elements)
+                        if not elements:
+                            details.append({
+                                "selector": r.selector,
+                                "category": r.action_category,
+                                "action": r.action,
+                                "source": r.source,
+                                "status": "not_found",
+                            })
+                            continue
+                        for el in elements[:self._MAX_QSA_HIGHLIGHTS]:
+                            try:
+                                box = await el.bounding_box()
+                            except Exception:
+                                continue
+                            if box and box["width"] > 0 and box["height"] > 0:
+                                # Compute CSS path for rAF tracking
+                                css_path = None
+                                try:
+                                    css_path = await el.evaluate(_CSS_PATH_JS)
+                                except Exception:
+                                    pass
+                                item: dict[str, Any] = {
+                                    "rect": box,
+                                    "category": r.action_category,
+                                    "action": r.action,
+                                    "totalCount": total_count,
+                                    "index": idx,
+                                    "totalItems": total_items,
+                                }
+                                if css_path:
+                                    item["trackSelector"] = css_path
+                                payload.append(item)
+                                idx += 1
+                        details.append({
+                            "selector": r.selector,
+                            "category": r.action_category,
+                            "action": r.action,
+                            "source": r.source,
+                            "status": "resolved",
+                            "count": str(total_count),
+                        })
+                    else:
+                        # Resolve to bounding box + CSS path for rAF
+                        box, css_path = await self._resolve_css_path(
+                            r.selector,
+                        )
+                        if box:
+                            item = {
+                                "rect": box,
+                                "category": r.action_category,
+                                "action": r.action,
+                                "totalCount": 0,
+                                "index": idx,
+                                "totalItems": total_items,
+                            }
+                            if css_path:
+                                item["trackSelector"] = css_path
+                            payload.append(item)
+                            idx += 1
+                            details.append({
+                                "selector": r.selector,
+                                "category": r.action_category,
+                                "action": r.action,
+                                "source": r.source,
+                                "status": "resolved",
+                            })
+                        else:
+                            details.append({
+                                "selector": r.selector,
+                                "category": r.action_category,
+                                "action": r.action,
+                                "source": r.source,
+                                "status": "not_found",
+                            })
+                else:
+                    # CSS selector — pass as trackSelector for rAF
+                    payload.append({
+                        "selector": r.selector,
+                        "trackSelector": r.selector,
+                        "category": r.action_category,
+                        "action": r.action,
+                        "totalCount": 0,
+                        "index": idx,
+                        "totalItems": total_items,
+                    })
+                    idx += 1
+                    details.append({
+                        "selector": r.selector,
+                        "category": r.action_category,
+                        "action": r.action,
+                        "source": r.source,
+                        "status": "resolved",
+                        "note": "css (JS-side)",
+                    })
+            except Exception:
+                details.append({
+                    "selector": r.selector,
+                    "category": r.action_category,
+                    "action": r.action,
+                    "source": r.source,
+                    "status": "not_found",
+                    "reason": "error",
+                })
+                continue  # graceful degradation
+
+        if not payload:
+            return {
+                "resolved_count": 0,
+                "drawn_count": 0,
+                "dropped_overlap": 0,
+                "details": details,
+            }
+
+        # ── Single page.evaluate() to draw all overlays ─────────
+        js_stats: dict[str, int] = {}
+        try:
+            js_stats = await self._main_page.evaluate(
+                _INTERACTION_HIGHLIGHT_JS,
+                payload,
+            ) or {}
+            self._hl_ready = True
+        except Exception:
+            logger.debug("Interaction highlight draw failed", exc_info=True)
+
+        resolved_count = js_stats.get("resolved", len(payload))
+        kept_count = js_stats.get("kept", len(payload))
+        dropped = js_stats.get("dropped", 0)
+        js_statuses = js_stats.get("statuses", [])
+
+        # Update detail entries with JS-side status (drawn/overlap/not_found)
+        if js_statuses:
+            # Map payload index back to detail entries that were "resolved"
+            payload_idx = 0
+            for d in details:
+                if d["status"] == "resolved" and payload_idx < len(js_statuses):
+                    d["status"] = js_statuses[payload_idx]
+                    payload_idx += 1
+
+        return {
+            "resolved_count": resolved_count,
+            "drawn_count": kept_count,
+            "dropped_overlap": dropped,
+            "details": details,
+        }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  CSS path computation — run via element.evaluate() in Python
+# ═══════════════════════════════════════════════════════════════════════════
+
+_CSS_PATH_JS = """(el) => {
+    const parts = [];
+    while (el && el !== document.body && el !== document.documentElement) {
+        let sel = el.tagName.toLowerCase();
+        if (el.id) {
+            try {
+                if (document.querySelectorAll('#' + CSS.escape(el.id)).length === 1) {
+                    parts.unshift(sel + '#' + CSS.escape(el.id));
+                    return parts.join(' > ');
+                }
+            } catch(e) {}
+        }
+        const parent = el.parentElement;
+        if (parent) {
+            const idx = Array.from(parent.children).indexOf(el) + 1;
+            sel += ':nth-child(' + idx + ')';
+        }
+        parts.unshift(sel);
+        el = el.parentElement;
+    }
+    return parts.join(' > ');
+}"""
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Interaction highlight JS — injected via page.evaluate()
+# ═══════════════════════════════════════════════════════════════════════════
+
+_INTERACTION_HIGHLIGHT_JS = r"""(items) => {
+    /* ── Find or create shadow host + zones ───────────────── */
+    let host = document.getElementById('scout-hl-host');
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'scout-hl-host';
+        host.style.cssText =
+            'position:fixed;top:0;left:0;width:0;height:0;'
+            + 'pointer-events:none;z-index:2147483647';
+        document.documentElement.appendChild(host);
+        const s = host.attachShadow({ mode: 'open' });
+        s.innerHTML =
+            '<div class="hl-zone-zoom"></div>'
+            + '<div class="hl-zone-interact"></div>';
+    }
+    const shadow = host.shadowRoot;
+    let zone = shadow.querySelector('.hl-zone-interact');
+    if (!zone) {
+        shadow.innerHTML =
+            '<div class="hl-zone-zoom"></div>'
+            + '<div class="hl-zone-interact"></div>';
+        zone = shadow.querySelector('.hl-zone-interact');
+    }
+    zone.innerHTML = '';
+
+    /* ── Cancel any existing rAF loop ────────────────────── */
+    const prev = host.__scoutState;
+    if (prev && prev.rafId) {
+        cancelAnimationFrame(prev.rafId);
+        prev.running = false;
+    }
+
+    /* ── Initialize unified state ────────────────────────── */
+    const state = {
+        rafId: null,
+        running: false,
+        interactTracked: [],
+        zoomTracked: prev ? prev.zoomTracked : [],
+    };
+    host.__scoutState = state;
+
+    /* ── Inject styles ────────────────────────────────────── */
+    const style = document.createElement('style');
+    style.textContent = `
+        /* Shared base — marching-ant pattern (same as zoom) */
+        .hl-nav, .hl-mut, .hl-pass {
+            position: fixed;
+            pointer-events: none;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-size: 2px 12px, 12px 2px, 2px 12px, 12px 2px;
+            background-repeat: repeat-y, repeat-x, repeat-y, repeat-x;
+            opacity: 0;
+        }
+
+        /* Navigating — orange/amber marching ants, self-removing */
+        .hl-nav {
+            background-color: rgba(245,158,11,0.10);
+            background-image:
+                linear-gradient(0deg,   rgba(245,158,11,0.50) 50%, transparent 50%),
+                linear-gradient(90deg,  rgba(245,158,11,0.50) 50%, transparent 50%),
+                linear-gradient(0deg,   rgba(245,158,11,0.50) 50%, transparent 50%),
+                linear-gradient(90deg,  rgba(245,158,11,0.50) 50%, transparent 50%);
+            box-shadow: inset 0 0 30px rgba(245,158,11,0.06),
+                        0 0 12px rgba(245,158,11,0.12);
+        }
+        /* Mutating — purple marching ants, persistent */
+        .hl-mut {
+            background-color: rgba(139,92,246,0.10);
+            background-image:
+                linear-gradient(0deg,   rgba(139,92,246,0.50) 50%, transparent 50%),
+                linear-gradient(90deg,  rgba(139,92,246,0.50) 50%, transparent 50%),
+                linear-gradient(0deg,   rgba(139,92,246,0.50) 50%, transparent 50%),
+                linear-gradient(90deg,  rgba(139,92,246,0.50) 50%, transparent 50%);
+            box-shadow: inset 0 0 30px rgba(139,92,246,0.06),
+                        0 0 12px rgba(139,92,246,0.12);
+        }
+        /* Passive — teal marching ants, persistent */
+        .hl-pass {
+            background-color: rgba(20,184,166,0.10);
+            background-image:
+                linear-gradient(0deg,   rgba(20,184,166,0.50) 50%, transparent 50%),
+                linear-gradient(90deg,  rgba(20,184,166,0.50) 50%, transparent 50%),
+                linear-gradient(0deg,   rgba(20,184,166,0.50) 50%, transparent 50%),
+                linear-gradient(90deg,  rgba(20,184,166,0.50) 50%, transparent 50%);
+            box-shadow: inset 0 0 30px rgba(20,184,166,0.06),
+                        0 0 12px rgba(20,184,166,0.12);
+        }
+
+        /* Animations */
+        @keyframes scout-march-interact {
+            0%   { background-position: 0 0, 0 0, 100% 0, 0 100%; }
+            100% { background-position: 0 -24px, 24px 0, 100% 24px, -24px 100%; }
+        }
+        @keyframes scout-nav-pulse {
+            0%   { opacity: 1; }
+            100% { opacity: 0; }
+        }
+        @keyframes scout-interact-in {
+            from { opacity: 0; }
+            to   { opacity: 1; }
+        }
+        @keyframes scout-interact-cursor {
+            from { border-right-color: rgba(255,255,255,0.8); }
+            to   { border-right-color: transparent; }
+        }
+
+        /* Labels — same size/style as zoom labels */
+        .hl-interact-label {
+            padding: 6px 14px;
+            border-radius: 4px;
+            font: 500 13px/1.1 -apple-system, BlinkMacSystemFont,
+                  "Segoe UI", Roboto, sans-serif;
+            color: rgba(255,255,255,0.92);
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+            overflow: hidden;
+            border-right: 2px solid rgba(255,255,255,0.8);
+            animation: scout-interact-cursor 0.55s step-end infinite;
+        }
+        .hl-nav .hl-interact-label  { background: rgba(180,83,9,0.75); }
+        .hl-mut .hl-interact-label  { background: rgba(109,40,217,0.75); }
+        .hl-pass .hl-interact-label { background: rgba(13,148,136,0.75); }
+
+        /* Count badge for query_selector_all */
+        .hl-count-badge {
+            position: absolute; top: -8px; right: -8px;
+            padding: 2px 6px; border-radius: 8px;
+            background: rgba(13,148,136,0.85);
+            font: 600 10px/1.2 -apple-system, sans-serif;
+            color: #fff; pointer-events: none;
+        }
+    `;
+    zone.appendChild(style);
+
+    /* ── Label map ────────────────────────────────────────── */
+    const LABELS = {
+        click: 'Clicking\u2026', dblclick: 'Clicking\u2026', tap: 'Tapping\u2026',
+        fill: 'Typing\u2026', type: 'Typing\u2026', press: 'Pressing key\u2026',
+        press_sequentially: 'Typing\u2026',
+        check: 'Checking\u2026', uncheck: 'Unchecking\u2026',
+        set_checked: 'Checking\u2026', select_option: 'Selecting\u2026',
+        query_selector: 'Reading\u2026', query_selector_all: 'Reading\u2026',
+        inner_text: 'Reading text\u2026', text_content: 'Reading text\u2026',
+        inner_html: 'Reading\u2026', get_attribute: 'Reading\u2026',
+        evaluate: 'Reading\u2026', wait_for_selector: 'Waiting\u2026',
+        input_value: 'Reading\u2026',
+    };
+
+    /* ── Helper: find first in-viewport element ─────────── */
+    const vpW = window.innerWidth, vpH = window.innerHeight;
+    function findVisible(selector) {
+        try {
+            const all = document.querySelectorAll(selector);
+            for (const el of all) {
+                const r = el.getBoundingClientRect();
+                if (r.width === 0 && r.height === 0) continue;
+                if (r.bottom > 0 && r.top < vpH && r.right > 0 && r.left < vpW) {
+                    return { x: r.left, y: r.top, width: r.width, height: r.height };
+                }
+            }
+            for (const el of all) {
+                const r = el.getBoundingClientRect();
+                if (r.width > 0 || r.height > 0) {
+                    return { x: r.left, y: r.top, width: r.width, height: r.height };
+                }
+            }
+        } catch(e) { /* invalid selector */ }
+        return null;
+    }
+
+    /* ── Pass 1: resolve all bounding rects ──────────────── */
+    const resolved = [];
+    for (const item of items) {
+        try {
+            let rect = item.rect || null;
+            if (!rect && item.selector) {
+                rect = findVisible(item.selector);
+            }
+            if (!rect || (rect.width === 0 && rect.height === 0)) continue;
+            resolved.push({ item, rect });
+        } catch(e) { /* skip */ }
+    }
+
+    /* ── Pass 2: drop smaller rects contained ≥90% by a larger one */
+    function overlapArea(a, b) {
+        const ox = Math.max(0, Math.min(a.x+a.width, b.x+b.width) - Math.max(a.x, b.x));
+        const oy = Math.max(0, Math.min(a.y+a.height, b.y+b.height) - Math.max(a.y, b.y));
+        return ox * oy;
+    }
+    resolved.sort((a, b) => (b.rect.width * b.rect.height) - (a.rect.width * a.rect.height));
+    const keep = [];
+    for (let i = 0; i < resolved.length; i++) {
+        const small = resolved[i].rect;
+        const smallArea = small.width * small.height;
+        let dominated = false;
+        for (let j = 0; j < keep.length; j++) {
+            if (overlapArea(small, keep[j].rect) >= smallArea * 0.9) { dominated = true; break; }
+        }
+        if (!dominated) keep.push(resolved[i]);
+    }
+
+    /* ── Pass 3: draw surviving overlays + build tracking ── */
+    const tracked = [];
+
+    for (let ki = 0; ki < keep.length; ki++) {
+        const { item, rect } = keep[ki];
+        try {
+            const cat = item.category;
+            const cls = cat === 'navigating' ? 'hl-nav'
+                      : cat === 'mutating'   ? 'hl-mut'
+                      : 'hl-pass';
+            const d = document.createElement('div');
+            d.className = cls;
+            d.style.top    = rect.y + 'px';
+            d.style.left   = rect.x + 'px';
+            d.style.width  = rect.width  + 'px';
+            d.style.height = rect.height + 'px';
+
+            const delay = item.index * 100;
+
+            /* Apply animation based on category */
+            if (cat === 'navigating') {
+                d.style.animation =
+                    'scout-march-interact 0.4s linear ' + delay + 'ms infinite, '
+                    + 'scout-nav-pulse 600ms ease-out ' + delay + 'ms forwards';
+                /* Self-remove navigating overlays and clean up tracking */
+                setTimeout(() => {
+                    try { d.remove(); } catch(e) {}
+                    const st = host.__scoutState;
+                    if (st) st.interactTracked = st.interactTracked.filter(t => t.div !== d);
+                }, delay + 650);
+            } else {
+                d.style.animation =
+                    'scout-march-interact 0.4s linear ' + delay + 'ms infinite, '
+                    + 'scout-interact-in 0.35s ease ' + delay + 'ms forwards';
+            }
+
+            /* Label — only on first 2 elements */
+            if (item.index < 2) {
+                const labelText = LABELS[item.action] || 'Interacting\u2026';
+                const lbl = document.createElement('span');
+                lbl.className = 'hl-interact-label';
+                d.appendChild(lbl);
+                let ci = 0;
+                const startType = () => {
+                    const typeChar = () => {
+                        if (ci < labelText.length) {
+                            lbl.textContent += labelText[ci++];
+                            setTimeout(typeChar, 30 + Math.random() * 20);
+                        }
+                    };
+                    typeChar();
+                };
+                setTimeout(startType, delay);
+            }
+
+            /* Count badge for query_selector_all */
+            if (item.totalCount > 0 && item.index === 0) {
+                const badge = document.createElement('span');
+                badge.className = 'hl-count-badge';
+                badge.textContent = item.totalCount + ' elements';
+                d.appendChild(badge);
+            }
+
+            zone.appendChild(d);
+
+            /* Track for rAF position updates */
+            const sel = item.trackSelector || item.selector;
+            if (sel) {
+                tracked.push({ selector: sel, div: d });
+            }
+        } catch(e) { /* skip silently */ }
+    }
+
+    /* ── Store tracking state + start rAF loop ───────────── */
+    state.interactTracked = tracked;
+
+    function updatePositions() {
+        const h = document.getElementById('scout-hl-host');
+        if (!h || !h.__scoutState || !h.__scoutState.running) return;
+        const st = h.__scoutState;
+
+        for (const arr of [st.interactTracked, st.zoomTracked]) {
+            for (const entry of arr) {
+                try {
+                    const el = document.querySelector(entry.selector);
+                    if (!el) { entry.div.style.display = 'none'; continue; }
+                    const r = el.getBoundingClientRect();
+                    if (r.width === 0 && r.height === 0) {
+                        entry.div.style.display = 'none';
+                        continue;
+                    }
+                    entry.div.style.display = '';
+                    entry.div.style.top    = r.top + 'px';
+                    entry.div.style.left   = r.left + 'px';
+                    entry.div.style.width  = r.width + 'px';
+                    entry.div.style.height = r.height + 'px';
+                } catch(e) { entry.div.style.display = 'none'; }
+            }
+        }
+
+        st.rafId = requestAnimationFrame(updatePositions);
+    }
+
+    state.running = true;
+    state.rafId = requestAnimationFrame(updatePositions);
+
+    /* ── Build per-item status array ─────────────────────── */
+    const keptSet = new Set(keep.map(k => k.item.index));
+    const statuses = items.map(item => {
+        const wasResolved = resolved.some(r => r.item.index === item.index);
+        if (!wasResolved) return 'not_found';
+        if (keptSet.has(item.index)) return 'drawn';
+        return 'overlap';
+    });
+
+    return { resolved: resolved.length, kept: keep.length, dropped: resolved.length - keep.length, statuses };
+}"""

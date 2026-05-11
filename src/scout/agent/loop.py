@@ -84,6 +84,7 @@ from .show_page_context import (
 from .tools import TOOL_SCHEMAS, ToolResult, execute_tool
 from .trace import Tracer
 from .demo_overlay import DemoOverlay
+from .selector_extractor import extract_selectors
 from . import console
 
 # Import for type checking only — CompiledSchema is optional at init.
@@ -1089,8 +1090,58 @@ class AgentLoop:
                     )
                     if self._overlay and block.name == "python":
                         await self._overlay.clear_highlights()
+                        code = block.input.get("code", "")
+                        try:
+                            extractions = extract_selectors(code)
+                            if extractions:
+                                hl_stats = (
+                                    await self._overlay
+                                    .highlight_interactions(
+                                        extractions,
+                                    )
+                                )
+                                # Observability: log what the
+                                # highlight system detected.
+                                by_cat: dict[str, int] = {}
+                                for r in extractions:
+                                    by_cat[r.action_category] = (
+                                        by_cat.get(r.action_category, 0)
+                                        + 1
+                                    )
+                                filtered_out = sum(
+                                    1 for r in extractions
+                                    if r.in_loop or r.after_navigation
+                                )
+                                console.print_interaction_highlights(
+                                    total_extracted=len(extractions),
+                                    by_category=by_cat,
+                                    filtered_out=filtered_out,
+                                    resolved=hl_stats.get(
+                                        "resolved_count", 0,
+                                    ),
+                                    dropped_overlap=hl_stats.get(
+                                        "dropped_overlap", 0,
+                                    ),
+                                    details=hl_stats.get(
+                                        "details", [],
+                                    ),
+                                )
+                            else:
+                                console.print_interaction_highlights(
+                                    total_extracted=0,
+                                    by_category={},
+                                    filtered_out=0,
+                                    resolved=0,
+                                    dropped_overlap=0,
+                                    details=[],
+                                )
+                        except Exception:
+                            logger.debug(
+                                "Interaction highlight failed",
+                                exc_info=True,
+                            )
                         await self._overlay.push_tool_call(
-                            block.input.get("code", ""),
+                            code,
                             step=step_count,
                             max_steps=self._max_steps,
                         )

@@ -377,3 +377,71 @@ def print_show_page_analysis(
         f" | {original_kb:.0f}KB → {filtered_kb:.0f}KB"
         f" ({reduction_pct:.0f}% reduction)"
     )
+
+
+def print_interaction_highlights(
+    total_extracted: int,
+    by_category: dict[str, int],
+    filtered_out: int,
+    resolved: int,
+    dropped_overlap: int,
+    details: list[dict],
+) -> None:
+    """Print a detailed summary of interaction highlight extraction."""
+    if total_extracted == 0:
+        print(f"    {_DIM}[highlights] no selectors extracted{_RESET}")
+        return
+
+    # Summary line
+    cats = []
+    for cat in ("navigating", "mutating", "passive"):
+        n = by_category.get(cat, 0)
+        if n > 0:
+            color = _YELLOW if cat == "navigating" else _MAGENTA if cat == "mutating" else _CYAN
+            cats.append(_c(color, f"{n} {cat}"))
+    cat_str = ", ".join(cats)
+
+    print(
+        f"    {_c(_CYAN, '[highlights]')}"
+        f" {total_extracted} extracted"
+        f" ({cat_str})"
+    )
+
+    # Filtering/resolution stats
+    parts = []
+    if filtered_out > 0:
+        parts.append(f"{filtered_out} filtered (loop/nav)")
+    parts.append(f"{resolved} resolved")
+    if dropped_overlap > 0:
+        parts.append(f"{dropped_overlap} dropped (overlap)")
+    drawn = resolved - dropped_overlap
+    parts.append(f"{drawn} drawn")
+    print(f"    {_DIM}  → {' → '.join(parts)}{_RESET}")
+
+    # Per-selector details
+    for d in details:
+        sel = d.get("selector", "?")
+        sel_display = sel if len(sel) <= 50 else sel[:47] + "..."
+        cat = d.get("category", "?")
+        action = d.get("action", "?")
+        status = d.get("status", "?")
+        source = d.get("source", "?")
+
+        color = _YELLOW if cat == "navigating" else _MAGENTA if cat == "mutating" else _CYAN
+        if status in ("drawn", "resolved"):
+            icon = _c(_GREEN, "●")
+        elif status == "overlap":
+            icon = _c(_DIM, "○")
+        elif status == "not_found":
+            icon = _c(_RED, "✗")
+        elif status == "filtered":
+            icon = _c(_DIM, "⊘")
+        else:
+            icon = _c(_DIM, "?")
+
+        print(
+            f"    {_DIM}  {icon} "
+            f"{_c(color, action):>22s} "
+            f"{_DIM}{source:>11s}{_RESET} "
+            f"{sel_display}{_RESET}"
+        )
