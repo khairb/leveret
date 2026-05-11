@@ -104,6 +104,39 @@ _PYTHON_FENCE_RE = re.compile(
     r"```python\s*\n(.*?)```", re.DOTALL
 )
 
+# Regex to extract section IDs from zoom markers.
+_ZOOM_IDS_RE = re.compile(r"__ZOOM_START__\|([^|]*)\|")
+
+
+def _extract_zoom_selectors(
+    tool_results: list[dict],
+    psm: Any,
+) -> list[str]:
+    """Parse zoom markers and return CSS selectors for highlighted sections."""
+    selectors: list[str] = []
+    for tr in tool_results:
+        content = tr.get("content", "")
+        if not isinstance(content, str):
+            continue
+        m = _ZOOM_IDS_RE.search(content)
+        if not m:
+            continue
+        ids = [s.strip() for s in m.group(1).split(",") if s.strip()]
+        state = psm.current_state
+        if state is None:
+            continue
+        for sid in ids:
+            section = state.section_map.get(sid)
+            if not section:
+                continue
+            selectors.append(section.start_element.css_selector)
+            if (
+                section.end_element.css_selector
+                != section.start_element.css_selector
+            ):
+                selectors.append(section.end_element.css_selector)
+    return selectors
+
 
 # ═══════════════════════════════════════════════════════════════
 #  Result
@@ -1055,6 +1088,7 @@ class AgentLoop:
                         step_count, self._max_steps,
                     )
                     if self._overlay and block.name == "python":
+                        await self._overlay.clear_highlights()
                         await self._overlay.push_tool_call(
                             block.input.get("code", ""),
                             step=step_count,
@@ -1251,6 +1285,16 @@ class AgentLoop:
                         tracer.log_system_event(
                             "zoom_structural_capture",
                         )
+
+                        # Highlight zoomed sections on the main page.
+                        if self._overlay:
+                            hl_sels = _extract_zoom_selectors(
+                                tool_results, psm,
+                            )
+                            if hl_sels:
+                                await self._overlay.highlight_sections(
+                                    hl_sels,
+                                )
 
             # If we exited the loop without a script, make one
             # final LLM call with no tools available — the agent
@@ -1452,7 +1496,9 @@ class AgentLoop:
         # so the user sees the panel while the page finishes loading.
         if self._demo and runtime.overlay_page:
             self._overlay = DemoOverlay()
-            await self._overlay.init(runtime.overlay_page)
+            await self._overlay.init(
+                runtime.overlay_page, main_page=runtime.page,
+            )
             # Planning is already running in the background — show
             # the spinner immediately instead of fake boot messages.
             if self._compiled_schema is not None:

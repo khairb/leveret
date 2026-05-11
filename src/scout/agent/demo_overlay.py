@@ -1150,12 +1150,20 @@ class DemoOverlay:
 
     def __init__(self) -> None:
         self._overlay_page = None
+        self._main_page = None
+        self._hl_ready = False
         self._injected = False
         self._events: list[dict[str, Any]] = []
 
-    async def init(self, overlay_page) -> None:
-        """Load the overlay UI into the popup page."""
+    async def init(self, overlay_page, *, main_page=None) -> None:
+        """Load the overlay UI into the popup page.
+
+        Args:
+            overlay_page: The popup page for the event panel.
+            main_page: The website page (for section highlighting).
+        """
         self._overlay_page = overlay_page
+        self._main_page = main_page
         try:
             await overlay_page.set_content(
                 _OVERLAY_HTML, wait_until="load",
@@ -1168,6 +1176,9 @@ class DemoOverlay:
         except Exception:
             logger.warning("[overlay] init failed", exc_info=True)
             self._injected = False
+
+        if main_page is not None:
+            await self._setup_highlight_host()
 
     async def push(self, event: dict[str, Any]) -> None:
         """Buffer the event and push it to the overlay."""
@@ -1345,3 +1356,119 @@ class DemoOverlay:
 
     async def push_plan(self, items: list[str]) -> None:
         await self.push({"type": "plan", "items": items})
+
+    # ── Section highlighting (main page) ───────────────────────────
+
+    async def _setup_highlight_host(self) -> None:
+        """Inject the shadow DOM container for highlights into the main page."""
+        try:
+            await self._main_page.evaluate(
+                """() => {
+                    if (document.getElementById('scout-hl-host')) return;
+                    const host = document.createElement('div');
+                    host.id = 'scout-hl-host';
+                    host.style.cssText =
+                        'position:fixed;top:0;left:0;width:0;height:0;'
+                        + 'pointer-events:none;z-index:2147483647';
+                    document.documentElement.appendChild(host);
+                    host.attachShadow({ mode: 'open' });
+                }""",
+            )
+            self._hl_ready = True
+        except Exception:
+            logger.debug("Highlight host setup failed", exc_info=True)
+            self._hl_ready = False
+
+    async def highlight_sections(self, selectors: list[str]) -> None:
+        """Draw animated marching-ant overlays on the main page.
+
+        Each CSS selector is resolved to an element; a fixed-position
+        overlay div is placed over its bounding rect inside a shadow
+        DOM container (invisible to the sanitizer and the agent).
+
+        The overlay uses animated dashed borders (marching ants) with
+        a subtle background tint and glow for visibility.
+        """
+        if not self._main_page or not selectors:
+            return
+        try:
+            await self._main_page.evaluate(
+                """(selectors) => {
+                    let host = document.getElementById('scout-hl-host');
+                    if (!host) {
+                        host = document.createElement('div');
+                        host.id = 'scout-hl-host';
+                        host.style.cssText =
+                            'position:fixed;top:0;left:0;width:0;height:0;'
+                            + 'pointer-events:none;z-index:2147483647';
+                        document.documentElement.appendChild(host);
+                        host.attachShadow({ mode: 'open' });
+                    }
+                    const shadow = host.shadowRoot;
+                    shadow.innerHTML = '';
+
+                    const style = document.createElement('style');
+                    style.textContent = `
+                        @keyframes scout-march {
+                            0%   { background-position: 0 0, 0 0, 100% 0, 0 100%; }
+                            100% { background-position: 0 -24px, 24px 0, 100% 24px, -24px 100%; }
+                        }
+                        @keyframes scout-fadein {
+                            from { opacity: 0; }
+                            to   { opacity: 1; }
+                        }
+                        .hl {
+                            position: fixed;
+                            pointer-events: none;
+                            border-radius: 4px;
+                            background-color: rgba(59,130,246,0.05);
+                            background-image:
+                                linear-gradient(0deg,   rgba(59,130,246,0.55) 50%, transparent 50%),
+                                linear-gradient(90deg,  rgba(59,130,246,0.55) 50%, transparent 50%),
+                                linear-gradient(0deg,   rgba(59,130,246,0.55) 50%, transparent 50%),
+                                linear-gradient(90deg,  rgba(59,130,246,0.55) 50%, transparent 50%);
+                            background-size: 2px 12px, 12px 2px, 2px 12px, 12px 2px;
+                            background-repeat: repeat-y, repeat-x, repeat-y, repeat-x;
+                            box-shadow: 0 0 12px rgba(59,130,246,0.12);
+                            animation:
+                                scout-march  0.4s linear infinite,
+                                scout-fadein 0.3s ease;
+                        }
+                    `;
+                    shadow.appendChild(style);
+
+                    for (const sel of selectors) {
+                        try {
+                            const el = document.querySelector(sel);
+                            if (!el) continue;
+                            const rect = el.getBoundingClientRect();
+                            if (rect.width === 0 && rect.height === 0) continue;
+                            const d = document.createElement('div');
+                            d.className = 'hl';
+                            d.style.top    = rect.top  + 'px';
+                            d.style.left   = rect.left + 'px';
+                            d.style.width  = rect.width  + 'px';
+                            d.style.height = rect.height + 'px';
+                            shadow.appendChild(d);
+                        } catch(e) { /* skip silently */ }
+                    }
+                }""",
+                selectors,
+            )
+            self._hl_ready = True
+        except Exception:
+            logger.debug("Highlight draw failed", exc_info=True)
+
+    async def clear_highlights(self) -> None:
+        """Remove all highlight overlays from the main page."""
+        if not self._hl_ready or not self._main_page:
+            return
+        try:
+            await self._main_page.evaluate(
+                """() => {
+                    const host = document.getElementById('scout-hl-host');
+                    if (host && host.shadowRoot) host.shadowRoot.innerHTML = '';
+                }""",
+            )
+        except Exception:
+            pass
