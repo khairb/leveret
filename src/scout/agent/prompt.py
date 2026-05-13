@@ -36,21 +36,19 @@ After each call you receive stdout and stderr from your code.
 
 ### last_resort_antibot_escape
 Signal that the website is blocked by an anti-bot or CAPTCHA system that you \
-cannot bypass. **This is your absolute last resort** — calling it terminates \
-the entire run with no script produced.
+cannot bypass. Calling this tool terminates the run with no script produced.
 
-Before calling this tool, you MUST have exhausted every possible strategy:
-- Waited for auto-resolving challenges (some Cloudflare challenges resolve \
-after a delay)
-- Tried navigating to alternative URLs or entry points on the same site
-- Tried different interaction patterns and timing
-- Attempted to work around the block (e.g., if only one page is blocked, \
-try reaching the data through a different path)
-- Verified the block is persistent, not a one-time check
+You **cannot solve interactive CAPTCHAs** (reCAPTCHA, hCaptcha, Cloudflare \
+Turnstile, etc.). If you encounter one, call this tool promptly — do not \
+loop trying to solve it.
 
-If ANY of these strategies might still work, keep trying. Only call this \
-tool when you are certain the website is fundamentally inaccessible to \
-automation and no further attempts will succeed.
+Before calling, make a reasonable attempt to work around the block:
+- Wait briefly for auto-resolving challenges (some resolve after a few seconds)
+- Try an alternative URL or entry point on the same site
+- Check if the block only affects certain pages
+
+If the block persists after a few attempts, call this tool. Do not keep \
+retrying strategies that already failed.
 
 ### Built-in functions
 

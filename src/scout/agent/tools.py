@@ -113,16 +113,18 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "name": "last_resort_antibot_escape",
         "description": (
-            "LAST RESORT ONLY — Signal that the target website has an "
-            "anti-bot or CAPTCHA system that you cannot bypass after "
-            "exhausting every possible strategy. Calling this tool "
-            "terminates the run immediately.\n\n"
-            "Do NOT call this tool unless you have genuinely tried "
-            "everything: waiting for challenges to resolve, navigating "
-            "around blocked pages, trying alternative URLs or entry "
-            "points, adjusting timing, and using different interaction "
-            "patterns. This is your absolute last option when the "
-            "website is fundamentally inaccessible to automation."
+            "Signal that the target website has an anti-bot or CAPTCHA "
+            "system that you cannot bypass. Calling this tool terminates "
+            "the run immediately.\n\n"
+            "Call this tool when you encounter a challenge you cannot "
+            "solve — such as an interactive CAPTCHA (reCAPTCHA, hCaptcha, "
+            "Cloudflare Turnstile) or a persistent anti-bot block. You "
+            "cannot solve CAPTCHAs, so do not waste attempts on them.\n\n"
+            "Before calling, make a reasonable attempt to work around "
+            "the block: try waiting briefly for auto-resolving challenges, "
+            "try an alternative URL, or check if the block only affects "
+            "some pages. If the block persists after a few attempts, "
+            "call this tool."
         ),
         "input_schema": {
             "type": "object",

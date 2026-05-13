@@ -196,6 +196,8 @@ class AgentLoop:
         launch_options: dict | None = None,
         tolerance: Tolerance | None = None,
         demo: bool = False,
+        stop_on_captcha: bool = True,
+        disable_validator: bool = False,
     ) -> None:
         self._llm_config = llm_config or LLMConfig()
         self._max_steps = max_steps
@@ -217,6 +219,8 @@ class AgentLoop:
         self._sandbox = sandbox
         self._tolerance = tolerance
         self._demo = demo
+        self._stop_on_captcha = stop_on_captcha
+        self._disable_validator = disable_validator
         self._overlay: DemoOverlay | None = None
 
         # Resolve launch options — ensures demo flag affects browser config
@@ -398,7 +402,13 @@ class AgentLoop:
                         )
 
                 # Call the LLM.
-                current_tools = TOOL_SCHEMAS
+                if self._stop_on_captcha:
+                    current_tools = TOOL_SCHEMAS
+                else:
+                    current_tools = [
+                        t for t in TOOL_SCHEMAS
+                        if t["name"] != "last_resort_antibot_escape"
+                    ]
                 messages_for_api = conversation.get_messages()
                 tracer.log_llm_request(messages_for_api, current_tools)
 
@@ -653,6 +663,7 @@ class AgentLoop:
                             if (
                                 requirements is None
                                 and self._approval_mode == "auto"
+                                and not self._disable_validator
                             ):
                                 console.print_generating_requirements()
                                 if self._overlay:
@@ -792,6 +803,11 @@ class AgentLoop:
                                     f"{returncode}. Fix the error and "
                                     "try again."
                                 )
+                            elif self._disable_validator:
+                                # Validator disabled — auto-approve
+                                # any script that exits cleanly.
+                                approved = True
+                                feedback = ""
                             else:
                                 # Schema validation gate — fast,
                                 # deterministic, free (no LLM call).
@@ -962,6 +978,7 @@ class AgentLoop:
                                 script_attempts == 2
                                 and requirements is not None
                                 and self._approval_mode == "auto"
+                                and not self._disable_validator
                             ):
                                 console.print_revising_requirements()
                                 evidence = [

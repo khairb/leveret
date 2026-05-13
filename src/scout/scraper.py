@@ -528,6 +528,8 @@ class Scraper:
         protect_script: bool = False,
         launch_options: dict | None = None,
         demo: bool = False,
+        stop_on_captcha: bool = True,
+        disable_validator: bool = False,
     ) -> None:
         # -- url --
         if not isinstance(url, str) or not url.strip():
@@ -639,6 +641,8 @@ class Scraper:
         self._protect_script = protect_script
         self._launch_options = launch_options
         self._demo = demo
+        self._stop_on_captcha = stop_on_captcha
+        self._disable_validator = disable_validator
 
         # -- Runtime state --
         self._cached_fn: Any = None
@@ -1743,24 +1747,25 @@ class Scraper:
             except (ValueError, TypeError):
                 data = None
 
-        valid, feedback = self._compiled_schema.validate(
-            data, tolerance=self._tolerance,
-        )
-        if not valid:
-            if self._schema_changed:
+        if not self._disable_validator:
+            valid, feedback = self._compiled_schema.validate(
+                data, tolerance=self._tolerance,
+            )
+            if not valid:
+                if self._schema_changed:
+                    raise ValidationError(
+                        f"Script output does not match the schema.\n\n"
+                        f"{feedback}\n\n"
+                        f"The schema has changed since this script was "
+                        f"generated. Regenerate to match the new schema:\n"
+                        f"  scraper.regenerate()"
+                    )
                 raise ValidationError(
                     f"Script output does not match the schema.\n\n"
                     f"{feedback}\n\n"
-                    f"The schema has changed since this script was "
-                    f"generated. Regenerate to match the new schema:\n"
-                    f"  scraper.regenerate()"
+                    f"The website may have changed. "
+                    f"Try: scraper.regenerate()"
                 )
-            raise ValidationError(
-                f"Script output does not match the schema.\n\n"
-                f"{feedback}\n\n"
-                f"The website may have changed. "
-                f"Try: scraper.regenerate()"
-            )
         return data
 
     # -- Internal: auto-fix execute_fn adapters --
@@ -2104,6 +2109,8 @@ class Scraper:
             launch_options=self._get_resolved_launch_options(),
             tolerance=self._tolerance,
             demo=self._demo,
+            stop_on_captcha=self._stop_on_captcha,
+            disable_validator=self._disable_validator,
         )
 
         try:
