@@ -1550,7 +1550,7 @@ _OVERLAY_JS = r"""
               }
               const btn = document.createElement('button');
               btn.className = 'jt-show-more-btn';
-              btn.textContent = 'Show ' + Math.min(BATCH_SIZE, total - end) + ' more of ' + (total - end) + ' remaining';
+              btn.textContent = 'Show ' + Math.min(BATCH_SIZE, total - end) + ' more';
               function loadMoreJson() { more.remove(); renderBatch(end, BATCH_SIZE); }
               btn.addEventListener('click', loadMoreJson);
               more.style.cursor = 'pointer';
@@ -1624,13 +1624,13 @@ _OVERLAY_JS = r"""
         let showFull = false;
         const toggle = document.createElement('span');
         toggle.className = 'jt-long-toggle';
-        toggle.textContent = 'Show full';
+        toggle.textContent = 'Show more';
         toggle.addEventListener('click', () => {
           showFull = !showFull;
           v.textContent = showFull
             ? '"' + value + '"'
             : jtDisplayVal(value);
-          toggle.textContent = showFull ? 'Collapse' : 'Show full';
+          toggle.textContent = showFull ? 'Show less' : 'Show more';
         });
         row.appendChild(toggle);
       }
@@ -1839,7 +1839,7 @@ _OVERLAY_JS = r"""
         const btn = document.createElement('button');
         btn.className = 'jt-show-more-btn';
         const remaining = data.length - end;
-        btn.textContent = 'Show ' + Math.min(TABLE_BATCH, remaining) + ' more of ' + remaining + ' remaining';
+        btn.textContent = 'Show ' + Math.min(TABLE_BATCH, remaining) + ' more';
         function loadMore() { moreRow.remove(); renderRows(end, TABLE_BATCH); }
         btn.addEventListener('click', loadMore);
         moreTd.addEventListener('click', loadMore);
@@ -1890,7 +1890,7 @@ _OVERLAY_JS = r"""
       const footer = document.createElement('div');
       footer.className = 'results-footer';
       footer.innerHTML = '<button class="btn-expand" id="btn-expand">Expand view</button>'
-        + '<button class="btn-finish" id="btn-finish">Finish</button>';
+        + '<button class="btn-finish" id="btn-finish">Done</button>';
       root.appendChild(footer);
       footer.querySelector('#btn-finish').addEventListener('click', function() {
         this.classList.add('closing');
@@ -2055,7 +2055,7 @@ _OVERLAY_JS = r"""
     const finishBtn = document.createElement('button');
     finishBtn.className = 'btn-finish';
     finishBtn.id = 'btn-finish';
-    finishBtn.textContent = 'Finish';
+    finishBtn.textContent = 'Done';
     finishBtn.addEventListener('click', () => {
       finishBtn.classList.add('closing');
       finishBtn.textContent = 'Closing\u2026';
@@ -2356,7 +2356,7 @@ _OVERLAY_JS = r"""
   let _thinkingTimer = null;
   function showThinking() {
     removeThinking();
-    const { el, meta } = buildStatusEl('Reasoning');
+    const { el, meta } = buildStatusEl('Thinking');
     feedAppend(el);
     scrollDown();
     _thinkingEl = el;
@@ -2394,7 +2394,7 @@ _OVERLAY_JS = r"""
       if (t === 'turn') {
         const d = document.createElement('div');
         d.className = 'turn';
-        d.innerHTML = '<span class="turn-line"></span>Turn ' + ev.turn
+        d.innerHTML = '<span class="turn-line"></span>Step ' + ev.turn
                     + '<span class="turn-line"></span>';
         feedAppend(d); scrollDown(); return;
       }
@@ -2431,10 +2431,10 @@ _OVERLAY_JS = r"""
         ind.innerHTML = _pySvg;
         const lbl = document.createElement('span');
         lbl.className = 'action-label';
-        lbl.textContent = 'Python';
+        lbl.textContent = 'Running code';
         const meta = document.createElement('span');
         meta.className = 'action-meta';
-        if (ev.step && ev.max_steps) meta.textContent = ev.step + '/' + ev.max_steps;
+        if (ev.step && ev.max_steps) meta.textContent = 'Step ' + ev.step + ' of ' + ev.max_steps;
         const chev = document.createElement('span');
         chev.className = 'action-chevron';
         chev.textContent = '\u203A';
@@ -2489,8 +2489,8 @@ _OVERLAY_JS = r"""
         if (!ev.section_data || !ev.section_data.length) {
           const d = document.createElement('div');
           d.className = 'sys';
-          d.innerHTML = '<span class="sys-dot"></span>Page captured \u2014 '
-                      + esc(String(ev.sections || '?')) + ' sections';
+          d.innerHTML = '<span class="sys-dot"></span>Page scanned \u2014 '
+                      + esc(String(ev.sections || '?')) + ' sections found';
           feedAppend(d); scrollDown(); return;
         }
         /* Structured page map card — starts open, collapsible. */
@@ -2501,7 +2501,7 @@ _OVERLAY_JS = r"""
         const hdr = document.createElement('div');
         hdr.className = 'pagemap-header';
         hdr.innerHTML = '<span class="pagemap-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64d2ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="4" rx="1"/><rect x="14" y="10" width="7" height="11" rx="1"/><rect x="3" y="13" width="7" height="8" rx="1"/></svg></span>'
-          + '<span style="flex-shrink:0">Page structure</span>'
+          + '<span style="flex-shrink:0">Page sections</span>'
           + '<span class="pagemap-url">' + esc(ev.url || '') + '</span>'
           + '<span class="pagemap-count">' + ev.section_data.length + ' sections</span>'
           + '<span class="pagemap-chev">\u203A</span>';
@@ -2559,7 +2559,7 @@ _OVERLAY_JS = r"""
         const hdr = document.createElement('div');
         hdr.className = 'zoomview-header';
         hdr.innerHTML = '<span class="zoomview-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ff9f0a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="11" y1="8" x2="11" y2="14"/></svg></span>'
-          + '<span style="flex-shrink:0">Zoomed section</span>'
+          + '<span style="flex-shrink:0">Inspecting HTML</span>'
           + '<span class="zoomview-ids">' + esc(ev.ids || '') + '</span>'
           + '<span class="zoomview-chev">\u203A</span>';
         hdr.addEventListener('click', () => card.classList.toggle('open'));
@@ -2579,7 +2579,7 @@ _OVERLAY_JS = r"""
         const d = document.createElement('div');
         d.className = 'sys';
         d.innerHTML = '<span class="sys-dot"></span>'
-          + (ev.valid ? 'Script extracted' : 'Script issue \u2014 ' + esc(ev.error || ''));
+          + (ev.valid ? 'Script ready' : 'Script error \u2014 ' + esc(ev.error || ''));
         feedAppend(d); scrollDown(); return;
       }
 
@@ -2588,7 +2588,7 @@ _OVERLAY_JS = r"""
         const divider = document.createElement('div');
         divider.className = 'final-divider';
         divider.innerHTML = '<span class="final-divider-line"></span>'
-          + '<span class="final-divider-label">Final Script</span>'
+          + '<span class="final-divider-label">Generated Script</span>'
           + '<span class="final-divider-line"></span>';
         feedAppend(divider);
 
@@ -2601,7 +2601,7 @@ _OVERLAY_JS = r"""
         ind.innerHTML = _pySvg;
         const lbl = document.createElement('span');
         lbl.className = 'action-label';
-        lbl.textContent = 'Running final script';
+        lbl.textContent = 'Running generated script';
         const meta = document.createElement('span');
         meta.className = 'action-meta';
         const chev = document.createElement('span');
@@ -2640,7 +2640,7 @@ _OVERLAY_JS = r"""
             hint.className = 'sandbox-hint';
             hint.innerHTML = '<span class="sandbox-hint-icon">\u26a0</span>'
               + '<span>Code blocked by sandbox \u2014 '
-              + 'the AI used a restricted operation. '
+              + 'Scout used a restricted operation. '
               + 'It will retry with a safe alternative.</span>';
             detail.appendChild(hint);
           }
@@ -2656,7 +2656,7 @@ _OVERLAY_JS = r"""
         d.className = 'terminal';
         d.innerHTML = '<div class="terminal-card success">'
           + '<div class="terminal-row"><div class="terminal-icon">\u2713</div>'
-          + '<div class="terminal-title">Script generated successfully</div></div></div>';
+          + '<div class="terminal-title">Scraping complete</div></div></div>';
         feedAppend(d); setStatus('Complete', '#30d158'); scrollDown();
         return;
       }
@@ -2666,7 +2666,7 @@ _OVERLAY_JS = r"""
         d.className = 'terminal';
         d.innerHTML = '<div class="terminal-card fail">'
           + '<div class="terminal-row"><div class="terminal-icon">\u2717</div>'
-          + '<div class="terminal-title">Needs revision</div></div>'
+          + '<div class="terminal-title">Issues found</div></div>'
           + (ev.feedback ? '<div class="terminal-sub">' + md(ev.feedback) + '</div>' : '')
           + '</div>';
         feedAppend(d); scrollDown(); return;
@@ -2791,7 +2791,7 @@ _OVERLAY_JS = r"""
         if (window.__planProgressTimer) { clearInterval(window.__planProgressTimer); window.__planProgressTimer = null; }
         const d = document.createElement('div');
         d.className = 'plan-loading';
-        const { el: gen, meta: pct } = buildStatusEl('Generating plan');
+        const { el: gen, meta: pct } = buildStatusEl('Planning steps');
         pct.textContent = '0%';
         d.appendChild(gen);
         feedAppend(d); scrollDown();
@@ -2838,7 +2838,7 @@ _OVERLAY_JS = r"""
           listHtml += '</ul>';
           let html = '<div class="plan-card"><div class="plan-header">'
             + '<span class="plan-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>'
-            + '<span class="plan-title">Exploration plan</span>'
+            + '<span class="plan-title">Scraping plan</span>'
             + '<span class="plan-chevron">\u203A</span>'
             + '</div><div class="plan-body"><div class="plan-content">'
             + listHtml
@@ -3314,15 +3314,15 @@ class DemoOverlay:
     async def push_boot(self, url: str = "", has_schema: bool = False) -> None:
         messages = [
             "Launching browser\u2026",
-            f"Navigating to {url}\u2026" if url else "Navigating to target\u2026",
-            "Waiting for dynamic content\u2026",
-            "Capturing page structure\u2026",
+            f"Navigating to {url}\u2026" if url else "Opening page\u2026",
+            "Waiting for page to load\u2026",
+            "Scanning page\u2026",
         ]
         if has_schema:
-            messages.append("Planning exploration\u2026")
+            messages.append("Creating plan\u2026")
         await self.push({"type": "boot", "messages": messages})
 
-    async def push_planning(self, message: str = "Generating plan\u2026") -> None:
+    async def push_planning(self, message: str = "Planning steps\u2026") -> None:
         await self.push({"type": "planning", "message": message})
 
     async def push_plan(self, items: list[str]) -> None:
@@ -3594,7 +3594,7 @@ class DemoOverlay:
 
             const btn = document.createElement('button');
             btn.className = 'pill-finish';
-            btn.textContent = 'Finish';
+            btn.textContent = 'Done';
             btn.addEventListener('click', () => {
                 window.__scout_pill_dismiss();
                 pill.style.transition = 'opacity 0.2s, transform 0.2s';
@@ -4302,16 +4302,16 @@ _INTERACTION_HIGHLIGHT_JS = r"""(items) => {
 
     /* ── Label map ────────────────────────────────────────── */
     const LABELS = {
-        click: 'Clicking\u2026', dblclick: 'Clicking\u2026', tap: 'Tapping\u2026',
+        click: 'Clicking\u2026', dblclick: 'Double-clicking\u2026', tap: 'Clicking\u2026',
         fill: 'Typing\u2026', type: 'Typing\u2026', press: 'Pressing key\u2026',
         press_sequentially: 'Typing\u2026',
-        check: 'Checking\u2026', uncheck: 'Unchecking\u2026',
-        set_checked: 'Checking\u2026', select_option: 'Selecting\u2026',
-        query_selector: 'Reading\u2026', query_selector_all: 'Reading\u2026',
-        inner_text: 'Reading text\u2026', text_content: 'Reading text\u2026',
-        inner_html: 'Reading\u2026', get_attribute: 'Reading\u2026',
-        evaluate: 'Reading\u2026', wait_for_selector: 'Waiting\u2026',
-        input_value: 'Reading\u2026',
+        check: 'Ticking\u2026', uncheck: 'Unticking\u2026',
+        set_checked: 'Ticking\u2026', select_option: 'Selecting\u2026',
+        query_selector: 'Finding element\u2026', query_selector_all: 'Finding elements\u2026',
+        inner_text: 'Extracting text\u2026', text_content: 'Extracting text\u2026',
+        inner_html: 'Reading HTML\u2026', get_attribute: 'Checking attribute\u2026',
+        evaluate: 'Running script\u2026', wait_for_selector: 'Waiting for element\u2026',
+        input_value: 'Reading input\u2026',
     };
 
     /* ── Helper: find first in-viewport element ─────────── */
@@ -4427,7 +4427,7 @@ _INTERACTION_HIGHLIGHT_JS = r"""(items) => {
 
             /* Label */
             {
-                const labelText = LABELS[item.action] || 'Interacting\u2026';
+                const labelText = LABELS[item.action] || 'Working\u2026';
                 const lbl = document.createElement('span');
                 lbl.className = 'hl-interact-label';
                 d.appendChild(lbl);

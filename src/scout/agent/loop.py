@@ -746,7 +746,7 @@ class AgentLoop:
                                 console.print_generating_requirements()
                                 if self._overlay:
                                     await self._overlay.push_validation(
-                                        "reqs", "Generating requirements\u2026",
+                                        "reqs", "Defining expectations\u2026",
                                     )
                                 requirements = (
                                     await generate_requirements(
@@ -763,7 +763,7 @@ class AgentLoop:
                                 if self._overlay:
                                     await self._overlay.push_validation_update(
                                         "reqs", status="ok",
-                                        label="Requirements generated",
+                                        label="Expectations defined",
                                     )
                                 tracer.log_system_event(
                                     "requirements_generated",
@@ -921,7 +921,7 @@ class AgentLoop:
                                 if self._compiled_schema is not None:
                                     if self._overlay:
                                         await self._overlay.push_validation(
-                                            "schema", "Validating schema\u2026",
+                                            "schema", "Checking data format\u2026",
                                         )
                                     if return_value_json is not None:
                                         try:
@@ -949,7 +949,7 @@ class AgentLoop:
                                         await self._overlay.push_validation_update(
                                             "schema",
                                             status="ok" if valid else "err",
-                                            label="Schema " + ("validated" if valid else "failed"),
+                                            label="Data format " + ("correct" if valid else "incorrect"),
                                             detail=schema_feedback if not valid else "",
                                         )
                                     if not valid:
@@ -963,7 +963,7 @@ class AgentLoop:
                                 elif self._approval_mode == "auto":
                                     if self._overlay:
                                         await self._overlay.push_validation(
-                                            "llm", "Running validator\u2026",
+                                            "llm", "Reviewing results\u2026",
                                         )
                                     approved, feedback = (
                                         await validate_output(
@@ -998,7 +998,7 @@ class AgentLoop:
                                         if self._overlay:
                                             await self._overlay.push_validation_update(
                                                 "llm", status="ok",
-                                                label="Validator approved",
+                                                label="Results approved",
                                             )
                                     else:
                                         console.print_validator_rejected(
@@ -1007,7 +1007,7 @@ class AgentLoop:
                                         if self._overlay:
                                             await self._overlay.push_validation_update(
                                                 "llm", status="err",
-                                                label="Validator rejected",
+                                                label="Results need changes",
                                                 detail=feedback[:200] if feedback else "",
                                             )
                                 else:
