@@ -605,7 +605,7 @@ class AgentLoop:
                         _emit_show_page_log(
                             tracer=tracer,
                             turn_number=turn_number,
-                            url=runtime.page.url if runtime.page else "",
+                            url=psm.page.url if psm.page and not psm.page.is_closed() else "",
                             pending_show_page=pending_show_page,
                             show_page_state=show_page_state,
                             pending_is_variant_a=pending_is_variant_a,
@@ -771,10 +771,21 @@ class AgentLoop:
                                 )
 
                             # Clean up previous script browser and
-                            # restore exploration page as safety net.
+                            # restore a live exploration page as
+                            # safety net before the next script run.
                             if active_script_result is not None:
                                 await active_script_result.cleanup()
                                 active_script_result = None
+                                # The old exploration page was closed
+                                # during the page switch — open a fresh
+                                # one in the exploration browser.
+                                if (
+                                    exploration_page is None
+                                    or exploration_page.is_closed()
+                                ):
+                                    exploration_page = (
+                                        await runtime._browser_mgr.new_page()
+                                    )
                                 runtime.repl.inject(
                                     page=exploration_page,
                                 )
@@ -1034,8 +1045,9 @@ class AgentLoop:
                                             )
                                             await self._overlay.wait_for_dismiss(
                                                 main_page=(
-                                                    runtime.page
-                                                    if runtime
+                                                    psm.page
+                                                    if psm.page
+                                                    and not psm.page.is_closed()
                                                     else None
                                                 ),
                                             )
@@ -1056,6 +1068,16 @@ class AgentLoop:
                             # script's page so the agent debugs on the
                             # actual page the script ran on.
                             if script_run.page is not None:
+                                # Close the idle exploration page to free
+                                # resources (the browser stays alive).
+                                if (
+                                    exploration_page is not None
+                                    and not exploration_page.is_closed()
+                                ):
+                                    try:
+                                        await exploration_page.close()
+                                    except Exception:
+                                        pass
                                 runtime.repl.inject(
                                     page=script_run.page,
                                 )
@@ -1574,7 +1596,7 @@ class AgentLoop:
                             for s in sp_result.sections[:30]
                         ]
                         await self._overlay.push_page_update(
-                            url=runtime.page.url if runtime.page else "",
+                            url=psm.page.url if psm.page and not psm.page.is_closed() else "",
                             sections=len(sp_result.sections),
                             section_data=_section_data,
                         )
