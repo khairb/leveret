@@ -1,0 +1,101 @@
+# =============================================================================
+# Scout Production Docker Compose
+#
+# Usage:
+#   docker compose up --build        # Build and start
+#   docker compose up -d             # Detached mode
+#   docker compose logs -f scout     # Follow logs
+#   docker compose down              # Stop and remove
+#
+# The 'scripts' volume persists generated scraping scripts across restarts.
+# Mount your run.py at /app/run.py to execute your application.
+# =============================================================================
+
+services:
+  scout:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: scout
+    restart: unless-stopped
+
+    # tini as PID 1 — reaps zombie Chrome child processes
+    init: true
+
+    # Chrome needs more shared memory than Docker's default 64MB
+    shm_size: '2gb'
+
+    # Resource limits — prevent a runaway scraper from killing the host
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+          cpus: '2.0'
+        reservations:
+          memory: 1g
+
+    environment:
+      # Set to 'true' for headless-only mode (skips Xvfb startup)
+      SCOUT_HEADLESS: "false"
+      # Logging level
+      LOG_LEVEL: "INFO"
+      # Monitor interval in seconds (0 to disable)
+      MONITOR_INTERVAL: "60"
+      # Cleanup interval in seconds (0 to disable)
+      CLEANUP_INTERVAL: "300"
+      # API key for AI generation (only needed for first-time script generation)
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+
+    volumes:
+      # Persistent scripts volume — generated scripts survive container restarts
+      - scout_scripts:/app/scripts
+      # Mount your application script
+      # - ./run.py:/app/run.py:ro
+
+    # Health check — verifies the container is responsive
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import scout; print('ok')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    # File descriptor limits
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  # ---------------------------------------------------------------------------
+  # Battle Test Service — for stress testing
+  # ---------------------------------------------------------------------------
+  battle-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: scout-battle-test
+    init: true
+    shm_size: '2gb'
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+          cpus: '2.0'
+    environment:
+      SCOUT_HEADLESS: "true"
+      LOG_LEVEL: "INFO"
+      MONITOR_INTERVAL: "30"
+      CLEANUP_INTERVAL: "120"
+    volumes:
+      - scout_scripts:/app/scripts
+      - ./battle_test.py:/app/run.py:ro
+    profiles:
+      - test
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+volumes:
+  scout_scripts:
+    driver: local
