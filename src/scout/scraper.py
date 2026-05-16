@@ -192,6 +192,7 @@ def _build_metadata_docstring(
     url: str, task: str, model: str, timestamp: str,
     schema_hash: str = "",
     content_hash: str = "",
+    inputs_meta: str = "",
 ) -> str:
     """Build the metadata docstring for a saved script file."""
     return (
@@ -205,6 +206,7 @@ def _build_metadata_docstring(
         f"scout_version: {_get_scout_version()}\n"
         + (f"schema_hash:   {schema_hash}\n" if schema_hash else "")
         + (f"content_hash:  {content_hash}\n" if content_hash else "")
+        + (f"inputs:        {inputs_meta}\n" if inputs_meta else "")
         + '"""\n'
     )
 
@@ -245,6 +247,7 @@ def _save_script(
     task: str,
     model: str,
     schema_hash: str = "",
+    inputs_meta: str = "",
 ) -> None:
     """Write a script file with metadata docstring.
 
@@ -257,6 +260,7 @@ def _save_script(
         url, task, model, timestamp,
         schema_hash=schema_hash,
         content_hash=content_hash,
+        inputs_meta=inputs_meta,
     )
     content = docstring + "\n" + code
 
@@ -362,11 +366,13 @@ def _load_script(
             f"Fix the file or regenerate with scraper.regenerate()."
         )
 
-    # Check signature: exactly (page, start_url, checkpoint).
-    # Also accept the legacy (page, url, checkpoint) for backward compat.
+    # Check signature: (page, start_url, checkpoint) or with inputs.
+    # Also accept legacy (page, url, checkpoint) for backward compat.
     _ACCEPTED_PARAMS = [
         ["page", "start_url", "checkpoint"],
         ["page", "url", "checkpoint"],
+        ["page", "start_url", "inputs", "checkpoint"],
+        ["page", "url", "inputs", "checkpoint"],
     ]
     actual_params = [arg.arg for arg in scrape_func.args.args]
     if actual_params not in _ACCEPTED_PARAMS:
@@ -567,7 +573,7 @@ class Scraper:
         protect_script: bool = False,
         demo: bool = False,
         stop_on_captcha: bool = True,
-        disable_validator: bool = False,
+        disable_validator: bool = True,
     ) -> None:
         # -- url --
         if not isinstance(url, str) or not url.strip():
@@ -958,6 +964,7 @@ class Scraper:
         *args: Any,
         url: str | None = None,
         auto_fix: bool | str | None = None,
+        inputs: dict[str, Any] | None = None,
     ) -> ScraperResult:
         """Generate (if needed) and execute the scraping function.
 
@@ -967,6 +974,11 @@ class Scraper:
             auto_fix: Override the constructor's auto_fix setting for
                 this run only. Pass ``"always"`` to force regeneration
                 (discards any cached script).
+            inputs: Dynamic input values. Keys map to bare values or
+                :class:`Input` instances.  On the first run, triggers
+                generation of a script that accepts an ``inputs`` dict.
+                On subsequent runs, the cached script receives these
+                values.
 
         Returns:
             ScraperResult with validated data.
@@ -981,6 +993,10 @@ class Scraper:
         effective_url = self._resolve_url(url)
         start_time = time.monotonic()
 
+        # Normalize dynamic inputs.
+        from .inputs import normalize_inputs
+        input_values, input_defs = normalize_inputs(inputs)
+
         # Resolve effective auto_fix mode for this call
         if auto_fix is not None:
             if auto_fix is False:
@@ -994,7 +1010,10 @@ class Scraper:
 
         # -- Cached path: load from disk or memory --
         if not force_regenerate and (self._cached_fn is not None or self._has_script_on_disk()):
-            return await self._run_cached(effective_url, effective_mode)
+            return await self._run_cached(
+                effective_url, effective_mode,
+                input_values=input_values, input_defs=input_defs,
+            )
 
         # -- Generation path --
         if force_regenerate and self._script_path and self._script_path.exists():
@@ -1041,13 +1060,17 @@ class Scraper:
         self._check_api_key()
         self._check_playwright()
 
-        return await self._run_generate(effective_url, start_time)
+        return await self._run_generate(
+            effective_url, start_time,
+            input_values=input_values, input_defs=input_defs,
+        )
 
     def run(
         self,
         *args: Any,
         url: str | None = None,
         auto_fix: bool | str | None = None,
+        inputs: dict[str, Any] | None = None,
     ) -> ScraperResult:
         """Synchronous version of :meth:`async_run`.
 
@@ -1066,11 +1089,12 @@ class Scraper:
                 f"  You wrote:    scraper.run({hint!r})\n"
                 f"  Did you mean: scraper.run(url={hint!r})"
             )
+        _kw: dict[str, Any] = {"url": url, "auto_fix": auto_fix, "inputs": inputs}
         # Context-managed: dispatch to the background loop that owns
         # the shared browser.
         if self._context_managed and self._bg_loop is not None:
             future = asyncio.run_coroutine_threadsafe(
-                self.async_run(url=url, auto_fix=auto_fix),
+                self.async_run(**_kw),
                 self._bg_loop,
             )
             return future.result()
@@ -1078,7 +1102,7 @@ class Scraper:
         # Shared browser (sync path): dispatch to the Browser's loop.
         if self._shared_browser is not None and self._shared_browser._bg_loop is not None:
             future = asyncio.run_coroutine_threadsafe(
-                self.async_run(url=url, auto_fix=auto_fix),
+                self.async_run(**_kw),
                 self._shared_browser._bg_loop,
             )
             return future.result()
@@ -1095,7 +1119,7 @@ class Scraper:
                 import nest_asyncio
                 nest_asyncio.apply()
                 return loop.run_until_complete(
-                    self.async_run(url=url, auto_fix=auto_fix)
+                    self.async_run(**_kw)
                 )
             except ImportError:
                 raise Error(
@@ -1109,7 +1133,7 @@ class Scraper:
                     "    result = await scraper.async_run()"
                 ) from None
 
-        return asyncio.run(self.async_run(url=url, auto_fix=auto_fix))
+        return asyncio.run(self.async_run(**_kw))
 
     async def async_regenerate(
         self, *, url: str | None = None, force: bool = False,
@@ -1405,6 +1429,8 @@ class Scraper:
         self,
         effective_url: str,
         auto_fix_mode: AutoFixMode | None = None,
+        input_values: dict[str, Any] | None = None,
+        input_defs: list[dict[str, Any]] | None = None,
     ) -> ScraperResult:
         """Execute a cached scraping function."""
         # Load from disk if not in memory
@@ -1435,6 +1461,12 @@ class Scraper:
                         "If the script fails, regenerate: scraper.regenerate()"
                     )
 
+            # Validate dynamic inputs against script metadata.
+            from .inputs import validate_inputs_against_metadata
+            validate_inputs_against_metadata(
+                input_values, metadata.get("inputs"),
+            )
+
             self._cached_fn = fn
 
         # Auto-fix path: diagnosis handles execution with signal collection
@@ -1450,7 +1482,9 @@ class Scraper:
             else:
                 logger.info("Scraping → %s", effective_url)
 
-            return_value_json = await self._run_in_process(effective_url)
+            return_value_json = await self._run_in_process(
+                effective_url, inputs=input_values,
+            )
         else:
             logger.info(
                 "Running cached script → %s", self._script_path
@@ -1460,6 +1494,7 @@ class Scraper:
                 await self._execute_function(
                     self._get_function_source(),
                     effective_url,
+                    inputs=input_values,
                 )
             )
 
@@ -1664,7 +1699,9 @@ class Scraper:
 
     # -- Internal: in-process execution --
 
-    async def _run_in_process(self, effective_url: str) -> str | None:
+    async def _run_in_process(
+        self, effective_url: str, inputs: dict[str, Any] | None = None,
+    ) -> str | None:
         """Execute cached function in-process with shared browser.
 
         Returns the return value as a JSON string, or None on failure.
@@ -1698,10 +1735,11 @@ class Scraper:
                 logger.debug("[checkpoint] %s%s", label, dp)
 
             try:
-                data = await asyncio.wait_for(
-                    self._cached_fn(page, effective_url, checkpoint),
-                    timeout=self._timeout,
-                )
+                if inputs:
+                    call = self._cached_fn(page, effective_url, inputs, checkpoint)
+                else:
+                    call = self._cached_fn(page, effective_url, checkpoint)
+                data = await asyncio.wait_for(call, timeout=self._timeout)
             except asyncio.TimeoutError:
                 raise ScriptTimeoutError(
                     f"Script exceeded the {self._timeout}s timeout.\n\n"
@@ -1759,6 +1797,7 @@ class Scraper:
         self,
         function_source: str,
         url: str,
+        inputs: dict[str, Any] | None = None,
     ) -> tuple[str, str | None, str, int]:
         """Run a scrape function in a fresh subprocess.
 
@@ -1784,6 +1823,7 @@ class Scraper:
                 sandbox=self._sandbox,
                 launch_options=resolved_opts,
                 profile_dir=profile_dir,
+                inputs=inputs,
             )
             script_path = script_dir / "script.py"
             script_path.write_text(wrapper_code, encoding="utf-8")
@@ -2197,6 +2237,8 @@ class Scraper:
         self,
         effective_url: str,
         start_time: float,
+        input_values: dict[str, Any] | None = None,
+        input_defs: list[dict[str, Any]] | None = None,
     ) -> ScraperResult:
         """Generate a scraping function via the AI agent."""
         from .agent.loop import AgentLoop
@@ -2220,6 +2262,8 @@ class Scraper:
             demo=self._demo,
             stop_on_captcha=self._stop_on_captcha,
             disable_validator=self._disable_validator,
+            inputs=input_values,
+            input_defs=input_defs,
         )
 
         try:
@@ -2248,6 +2292,10 @@ class Scraper:
 
         # Save script if script= was set
         if self._script_path is not None:
+            inputs_meta = ""
+            if input_defs:
+                from .inputs import format_inputs_metadata
+                inputs_meta = format_inputs_metadata(input_defs)
             _save_script(
                 result.final_script,
                 self._script_path,
@@ -2255,6 +2303,7 @@ class Scraper:
                 self._task,
                 self._model,
                 schema_hash=self._get_schema_hash(),
+                inputs_meta=inputs_meta,
             )
             elapsed = time.monotonic() - start_time
             # Count lines in the function

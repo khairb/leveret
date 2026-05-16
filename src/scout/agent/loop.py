@@ -229,6 +229,8 @@ class AgentLoop:
         demo: bool = False,
         stop_on_captcha: bool = True,
         disable_validator: bool = False,
+        inputs: dict[str, Any] | None = None,
+        input_defs: list[dict[str, Any]] | None = None,
     ) -> None:
         self._llm_config = llm_config or LLMConfig()
         self._max_steps = max_steps
@@ -252,6 +254,8 @@ class AgentLoop:
         self._demo = demo
         self._stop_on_captcha = stop_on_captcha
         self._disable_validator = disable_validator
+        self._inputs = inputs                # example values dict
+        self._input_defs = input_defs        # structured metadata
         self._overlay: DemoOverlay | None = None
         self._overlay_done_pushed = False
 
@@ -311,9 +315,16 @@ class AgentLoop:
                 if self._compiled_schema is not None
                 else ""
             )
+            # Build inputs prompt fragments (if inputs defined).
+            inputs_fragments = None
+            if self._input_defs:
+                from ..inputs import build_inputs_fragments
+                inputs_fragments = build_inputs_fragments(self._input_defs)
+
             system_prompt = build_system_prompt(
                 schema_prompt=schema_prompt,
                 sandbox=self._sandbox,
+                inputs_fragments=inputs_fragments,
             )
             # ── Exploration planner (await background result) ──
             exploration_checklist = None
@@ -340,8 +351,16 @@ class AgentLoop:
                         exc_info=True,
                     )
 
+            # Build inputs hint for the initial message.
+            inputs_hint = ""
+            if self._input_defs:
+                from ..inputs import build_inputs_hint
+                inputs_hint = build_inputs_hint(self._input_defs)
+
             initial_msg = build_initial_user_message(
-                task, url, exploration_checklist=exploration_checklist,
+                task, url,
+                exploration_checklist=exploration_checklist,
+                inputs_hint=inputs_hint,
             )
 
             # Start trace.
@@ -639,7 +658,9 @@ class AgentLoop:
                         conversation.add_user_message(debug_msg)
                         continue
                     if script:
-                        valid, error_msg = _validate_script(script)
+                        valid, error_msg = _validate_script(
+                            script, has_inputs=bool(self._inputs),
+                        )
                         tracer.log_script_extracted(script, valid, error_msg)
                         console.print_script_found(valid, error_msg)
                         if self._overlay:
@@ -749,6 +770,7 @@ class AgentLoop:
                                     checkpoint_dir=run_dir,
                                     sandbox=self._sandbox,
                                     launch_options=self._launch_options,
+                                    inputs=self._inputs,
                                 )
                             )
                             # Track for cleanup (finally block).
@@ -1576,7 +1598,9 @@ class AgentLoop:
                 text = _extract_text(content_blocks)
                 script = _extract_final_script(text)
                 if script:
-                    valid, error_msg = _validate_script(script)
+                    valid, error_msg = _validate_script(
+                        script, has_inputs=bool(self._inputs),
+                    )
                     tracer.log_script_extracted(
                         script, valid, error_msg,
                     )
@@ -1715,6 +1739,11 @@ class AgentLoop:
             checkpoint=checkpoint_guard,
         )
 
+        # Inject dynamic inputs into the REPL so the agent can use
+        # inputs["key"] from its very first tool call.
+        if self._inputs:
+            runtime.repl.inject(inputs=self._inputs)
+
         # Navigate to the target URL — triggers the hook.
         goto_code = (
             f'await page.goto("{url}", '
@@ -1848,22 +1877,38 @@ def _extract_final_script(text: str) -> str | None:
     return matches[-1].strip()
 
 
-_EXPECTED_PARAMS = ["page", "start_url", "checkpoint"]
-_REQUIRED_SIG = "async def scrape(page, start_url, checkpoint) -> JsonValue:"
+_EXPECTED_PARAMS_NO_INPUTS = ["page", "start_url", "checkpoint"]
+_EXPECTED_PARAMS_WITH_INPUTS = ["page", "start_url", "inputs", "checkpoint"]
+_REQUIRED_SIG_NO_INPUTS = "async def scrape(page, start_url, checkpoint) -> JsonValue:"
+_REQUIRED_SIG_WITH_INPUTS = "async def scrape(page, start_url, inputs, checkpoint) -> JsonValue:"
 
 
-def _validate_script(script: str) -> tuple[bool, str]:
+def _validate_script(
+    script: str, *, has_inputs: bool = False,
+) -> tuple[bool, str]:
     """Validate the agent's function code.
 
     Checks:
     1. Valid Python syntax
     2. Contains a function named ``scrape``
     3. The function is async
-    4. Parameters are exactly ``(page, start_url, checkpoint)`` in order
+    4. Parameters match the expected signature
+
+    When *has_inputs* is True, the expected signature includes an
+    ``inputs`` parameter before ``checkpoint``.
 
     Returns ``(True, "")`` on success or ``(False, error_message)`` on
     the first failure.
     """
+    expected_params = (
+        _EXPECTED_PARAMS_WITH_INPUTS if has_inputs
+        else _EXPECTED_PARAMS_NO_INPUTS
+    )
+    required_sig = (
+        _REQUIRED_SIG_WITH_INPUTS if has_inputs
+        else _REQUIRED_SIG_NO_INPUTS
+    )
+
     # Step 1: Syntax.
     try:
         tree = ast.parse(script)
@@ -1879,7 +1924,7 @@ def _validate_script(script: str) -> tuple[bool, str]:
     if not scrape_funcs:
         return False, (
             "No function named `scrape` found. Your code must define:\n"
-            f"    {_REQUIRED_SIG}"
+            f"    {required_sig}"
         )
 
     func = scrape_funcs[-1]  # last definition wins
@@ -1893,33 +1938,33 @@ def _validate_script(script: str) -> tuple[bool, str]:
 
     # Step 4: Parameter signature.
     params = [arg.arg for arg in func.args.args]
-    if params == _EXPECTED_PARAMS:
+    if params == expected_params:
         return True, ""
 
     actual_sig = f"async def scrape({', '.join(params)})"
 
     # Check for missing parameters.
-    for p in _EXPECTED_PARAMS:
+    for p in expected_params:
         if p not in params:
             return False, (
                 f"Parameter `{p}` is missing from `scrape`. "
-                f"Required signature:\n    {_REQUIRED_SIG}\n"
+                f"Required signature:\n    {required_sig}\n"
                 f"Your signature:\n    {actual_sig}"
             )
 
     # Check for extra parameters.
-    extras = [p for p in params if p not in _EXPECTED_PARAMS]
+    extras = [p for p in params if p not in expected_params]
     if extras:
         return False, (
             f"Unexpected parameter `{extras[0]}` in `scrape`. "
-            f"Required signature:\n    {_REQUIRED_SIG}\n"
+            f"Required signature:\n    {required_sig}\n"
             f"Your signature:\n    {actual_sig}"
         )
 
     # Must be wrong order.
     return False, (
         f"Parameters are in the wrong order. "
-        f"Required signature:\n    {_REQUIRED_SIG}\n"
+        f"Required signature:\n    {required_sig}\n"
         f"Your signature:\n    {actual_sig}"
     )
 
@@ -2049,6 +2094,7 @@ async def _run_script_in_process(
     checkpoint_dir: Path | None = None,
     sandbox: bool = False,
     launch_options: dict | None = None,
+    inputs: dict[str, Any] | None = None,
 ) -> InProcessScriptResult:
     """Run the agent's scrape function in-process with a second browser.
 
@@ -2217,10 +2263,11 @@ async def _run_script_in_process(
 
         try:
             sys.stdout = stdout_buf
-            return_data = await asyncio.wait_for(
-                scrape_fn(page, start_url, checkpoint),
-                timeout=timeout,
-            )
+            if inputs:
+                call = scrape_fn(page, start_url, inputs, checkpoint)
+            else:
+                call = scrape_fn(page, start_url, checkpoint)
+            return_data = await asyncio.wait_for(call, timeout=timeout)
         except asyncio.TimeoutError:
             scrape_error = f"Function timed out after {timeout} seconds"
         except Exception:

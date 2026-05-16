@@ -28,7 +28,7 @@ The function must work when called with a fresh page, today and in the future.
 ## Your Tool
 
 ### python
-Execute Python code in a live browser environment. A Patchright `page` object \
+Execute Python code in a live browser environment. A Patchright `page` object{inputs_tool_desc} \
 is already available. Variables and functions persist across calls. Use \
 `await` for all Patchright async calls.
 
@@ -124,7 +124,7 @@ happened and what to try next.
 3. **Designing the final function** — before writing the complete function, \
 outline its structure: what it extracts, how it navigates, how it handles \
 pagination, and how it shapes the data to match the output schema.
-
+{inputs_section}
 ---
 
 ## Workflow
@@ -232,22 +232,7 @@ states, then let the final function handle the full sweep.
 text message. Briefly explain what the function does, then include the \
 complete function in a single fenced Python code block:
 
-```python
-async def scrape(page, start_url, checkpoint):
-    # page: a NEW browser page — not your exploration session. No cookies,
-    #        no dismissed popups, no navigation history.
-    # start_url: the original URL. Navigate here or to a more direct
-    #            URL if you discovered one during exploration (e.g. a
-    #            search URL with query params already filled in).
-    # checkpoint: await checkpoint("label", data_preview?) to record state
-    #
-    # Return value must match the output schema below.
-    # Raise an exception if scraping fails.
-
-    await page.goto(start_url)  # or a more direct URL you discovered
-    ...
-    return data
-```
+{phase3_code_example}
 
 You can define helper functions and constants above `scrape` — the engine \
 only calls `scrape`, but your function can use any helpers you define.
@@ -422,6 +407,7 @@ full page state for debugging. Use clear, descriptive labels \
 (e.g. `"navigated_to_search_results"`, `"page_3_loaded"`, \
 `"extraction_complete"`). Optionally pass \
 `data_preview=items[:3]` to include a sample of extracted data.
+{inputs_rule}
 
 ---
 
@@ -451,20 +437,42 @@ _MODULES_SANDBOX = (
 )
 
 
-def build_system_prompt(*, schema_prompt: str, sandbox: bool = False) -> str:
+def build_system_prompt(
+    *,
+    schema_prompt: str,
+    sandbox: bool = False,
+    inputs_fragments: dict[str, str] | None = None,
+) -> str:
     """Assemble the complete system prompt.
 
     Args:
         schema_prompt: The rendered ``## Output Schema`` section
             (Structure + Requirements) from ``compile_schema()``.
         sandbox: When True, list only sandbox-allowed modules.
+        inputs_fragments: When provided, a dict of prompt fragments
+            for dynamic inputs keyed by placeholder name.  When
+            ``None``, all inputs placeholders render as empty strings.
     """
+    from ..inputs import _PHASE3_EXAMPLE_NO_INPUTS
+
     guide = _load_patchright_guide()
     modules_section = _MODULES_SANDBOX if sandbox else _MODULES_DEFAULT
+
+    # Default placeholder values — no inputs.
+    defaults = {
+        "inputs_tool_desc": "",
+        "inputs_section": "\n",
+        "phase3_code_example": _PHASE3_EXAMPLE_NO_INPUTS,
+        "inputs_rule": "",
+    }
+    if inputs_fragments is not None:
+        defaults.update(inputs_fragments)
+
     return _SYSTEM_PROMPT_TEMPLATE.format(
         patchright_guide=guide,
         schema_section=schema_prompt,
         available_modules_section=modules_section,
+        **defaults,
     )
 
 
@@ -560,7 +568,10 @@ in a few turns and your notes will be all that remains.
 
 
 def build_initial_user_message(
-    task: str, url: str, exploration_checklist: str | None = None,
+    task: str,
+    url: str,
+    exploration_checklist: str | None = None,
+    inputs_hint: str = "",
 ) -> str:
     """Build the first user message with the task and page URL.
 
@@ -568,15 +579,23 @@ def build_initial_user_message(
         task: Natural language description of what to extract.
         url: The current page URL.
         exploration_checklist: Optional checklist from the planner agent.
+        inputs_hint: When non-empty, a sentence about ``inputs`` appended
+            after the ``show_page`` line.
 
     Returns:
         The initial user message string.
     """
+    show_page_line = (
+        "The page is loaded. Call `await show_page(page)` to view its content."
+    )
+    if inputs_hint:
+        show_page_line += inputs_hint
+
     parts = [
         f"## Task\n\n{task}\n\n"
         f"## Current Page\n\n"
         f"**URL:** {url}\n\n"
-        f"The page is loaded. Call `await show_page(page)` to view its content.",
+        f"{show_page_line}",
     ]
 
     if exploration_checklist:

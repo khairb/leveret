@@ -126,7 +126,7 @@ async def _run():
             _viewport = _launch_opts.get("viewport") or {{"width": 1920, "height": 1080}}
             await page.set_viewport_size(_viewport)
             _goto_response = await page.goto(start_url, wait_until="domcontentloaded")
-
+{inputs_line}
 {call_section}
 
             await context.close()
@@ -149,6 +149,7 @@ def generate_subprocess_wrapper(
     sandbox: bool = False,
     launch_options: dict | None = None,
     profile_dir: str | None = None,
+    inputs: dict | None = None,
 ) -> str:
     """Generate the subprocess wrapper script.
 
@@ -185,15 +186,24 @@ def generate_subprocess_wrapper(
     # (via the `or tempfile.mkdtemp(...)` in the template).
     # When the parent provides one, it owns cleanup — no orphan risk.
 
+    has_inputs = inputs is not None and len(inputs) > 0
     if collect_page_signals:
-        call_section = _build_call_section_with_signals()
+        call_section = _build_call_section_with_signals(has_inputs=has_inputs)
     else:
-        call_section = _build_call_section_basic()
+        call_section = _build_call_section_basic(has_inputs=has_inputs)
+
+    # Embed inputs as a JSON literal in the wrapper when provided.
+    if has_inputs:
+        inputs_json = json.dumps(inputs, ensure_ascii=False)
+        inputs_line = f"\n            _INPUTS = json.loads({inputs_json!r})\n"
+    else:
+        inputs_line = ""
 
     runner = _ENGINE_RUNNER.format(
         url=url,
         launch_options=launch_options,
         profile_dir=profile_dir,
+        inputs_line=inputs_line,
         call_section=call_section,
     )
 
@@ -258,15 +268,20 @@ scrape = _agent_ns["scrape"]
 """
 
 
-def _build_call_section_basic() -> str:
+def _build_call_section_basic(*, has_inputs: bool = False) -> str:
     """Build the call section without signal collection (default)."""
+    scrape_call = (
+        "data = await scrape(page, start_url, _INPUTS, checkpoint)"
+        if has_inputs
+        else "data = await scrape(page, start_url, checkpoint)"
+    )
     return f"""\
             # Create checkpoint closure: agent calls checkpoint("label"),
             # wrapper injects page automatically.
             async def checkpoint(label, data_preview=None):
                 await _raw_checkpoint(page, label, data_preview=data_preview)
 
-            data = await scrape(page, start_url, checkpoint)
+            {scrape_call}
 
             # Serialize return value between markers.
             try:
@@ -285,7 +300,7 @@ def _build_call_section_basic() -> str:
             print("{RETURN_VALUE_END}")"""
 
 
-def _build_call_section_with_signals() -> str:
+def _build_call_section_with_signals(*, has_inputs: bool = False) -> str:
     """Build the call section with page signal collection (auto-fix §6/§7).
 
     Collects page signals (URL, content, HTTP status, headers, cookies)
@@ -325,7 +340,7 @@ def _build_call_section_with_signals() -> str:
             _scrape_exc = None
             _scrape_data = None
             try:
-                _scrape_data = await scrape(page, start_url, checkpoint)
+                _scrape_data = await scrape(page, start_url, {"_INPUTS, checkpoint" if has_inputs else "checkpoint"})
             except Exception as _exc:
                 _scrape_exc = _exc
 
@@ -400,6 +415,7 @@ def generate_standalone_script(
     agent_code: str,
     url: str,
     task: str,
+    inputs: dict | None = None,
 ) -> str:
     """Generate a self-contained, runnable script for the user.
 
@@ -411,14 +427,28 @@ def generate_standalone_script(
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     safe_task = task.replace('"""', r'\"\"\"')
 
-    call_section = """\
-            data = await scrape(page, start_url, _checkpoint)
+    has_inputs = inputs is not None and len(inputs) > 0
+    if has_inputs:
+        scrape_call = "data = await scrape(page, start_url, _INPUTS, _checkpoint)"
+    else:
+        scrape_call = "data = await scrape(page, start_url, _checkpoint)"
+
+    call_section = f"""\
+            {scrape_call}
 
             print(json.dumps(data, ensure_ascii=False, indent=2, default=str))"""
+
+    if has_inputs:
+        inputs_json = json.dumps(inputs, ensure_ascii=False)
+        inputs_line = f"\n            _INPUTS = json.loads({inputs_json!r})\n"
+    else:
+        inputs_line = ""
 
     runner = _ENGINE_RUNNER.format(
         url=url,
         launch_options=default_opts,
+        profile_dir=None,
+        inputs_line=inputs_line,
         call_section=call_section,
     )
 

@@ -15,6 +15,7 @@ from .errors import (
 )
 from .autofix.types import AutoFixMode
 from .browser import Browser, LaunchOptions
+from .inputs import Input
 from .schema.types import Field, Items
 from .scraper import Scraper, ScraperResult
 
@@ -40,6 +41,7 @@ __all__ = [
     "Scraper",
     "ScraperResult",
     "Field",
+    "Input",
     "Items",
     "List",
     "AutoFixMode",

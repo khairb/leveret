@@ -743,7 +743,7 @@ class TestRunWrapper:
             s.run(url="https://example.com/other", auto_fix="always")
 
         mock_async.assert_awaited_once_with(
-            url="https://example.com/other", auto_fix="always",
+            url="https://example.com/other", auto_fix="always", inputs=None,
         )
 
 
