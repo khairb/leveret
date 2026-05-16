@@ -42,17 +42,17 @@ class TestStructureRendering:
         assert any("..." in l and "tags" not in l for l in lines)
 
     def test_list_constraint_on_continuation_line(self):
-        root = parse_schema(List(str, min=10))
+        root = parse_schema(List(str, min_items=10))
         s = render_structure(root)
         assert "# minimum 10 items" in s
 
     def test_list_constraint_both_bounds(self):
-        root = parse_schema(List(str, min=5, max=50))
+        root = parse_schema(List(str, min_items=5, max_items=50))
         s = render_structure(root)
         assert "# 5 to 50 items" in s
 
     def test_list_constraint_singular(self):
-        root = parse_schema(List(str, min=1))
+        root = parse_schema(List(str, min_items=1))
         s = render_structure(root)
         assert "# minimum 1 item" in s
         assert "items" not in s.split("# minimum 1 item")[0].split("\n")[-1]
@@ -105,12 +105,12 @@ class TestRequirementsRendering:
         assert "`count`" in r
 
     def test_list_constraint_text(self):
-        root = parse_schema(List({"x": str}, min=20))
+        root = parse_schema(List({"x": str}, min_items=20))
         r = render_requirements(root)
         assert "at least **20 items**" in r
 
     def test_list_constraint_both_bounds(self):
-        root = parse_schema(List(str, min=10, max=50))
+        root = parse_schema(List(str, min_items=10, max_items=50))
         r = render_requirements(root)
         assert "**10 to 50 items**" in r
 
@@ -174,7 +174,7 @@ class TestRequirementsRendering:
         assert "Each object in `team` must have:" in r
 
     def test_flat_list_of_strings(self):
-        root = parse_schema(List(str, min=10))
+        root = parse_schema(List(str, min_items=10))
         r = render_requirements(root)
         assert "**list of strings**" in r
 
@@ -243,7 +243,7 @@ class TestPromptAgentFriendliness:
                 "size": Field(str, enum=["S", "M", "L", "XL"]),
                 "price": Field(float, min=0),
             }],
-        }, min=10)
+        }, min_items=10)
         prompt = render_schema_prompt(parse_schema(schema))
 
         # Agent should see: what to return

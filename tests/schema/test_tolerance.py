@@ -194,7 +194,7 @@ class TestStructuralConstraints:
         # Only 5 items, min is 20 — should fail regardless of tolerance
         data = _make_items(good=5, bad=0)
         valid, msg = _validate_with_tolerance(
-            Items({"name": str, "price": float}, min=20),
+            Items({"name": str, "price": float}, min_items=20),
             data,
             Tolerance.TOLERANT,
         )
@@ -203,7 +203,7 @@ class TestStructuralConstraints:
 
     def test_empty_list_with_min_fails(self):
         valid, msg = _validate_with_tolerance(
-            Items({"name": str}, min=1),
+            Items({"name": str}, min_items=1),
             [],
             Tolerance.TOLERANT,
         )
@@ -213,7 +213,7 @@ class TestStructuralConstraints:
     def test_max_still_enforced_with_tolerant(self):
         data = _make_items(good=50, bad=0)
         valid, msg = _validate_with_tolerance(
-            Items({"name": str, "price": float}, max=10),
+            Items({"name": str, "price": float}, max_items=10),
             data,
             Tolerance.TOLERANT,
         )
@@ -347,7 +347,7 @@ class TestNestedLists:
 
     def test_inner_list_min_violation_tolerated_at_outer_level(self):
         """Inner list min/max violation counts as one failed item in outer list."""
-        schema = Items({"name": str, "reviews": Items({"text": str}, min=5)})
+        schema = Items({"name": str, "reviews": Items({"text": str}, min_items=5)})
         # 9 products with enough reviews, 1 product with too few
         data = [
             {"name": f"Product {i}", "reviews": [{"text": f"r{j}"} for j in range(5)]}
@@ -360,7 +360,7 @@ class TestNestedLists:
 
     def test_inner_list_min_violation_fails_when_too_many(self):
         """Too many inner min violations → outer list fails tolerance."""
-        schema = Items({"name": str, "reviews": Items({"text": str}, min=5)})
+        schema = Items({"name": str, "reviews": Items({"text": str}, min_items=5)})
         # 5 good, 5 with too few reviews → 50% < 80%
         data = [
             {"name": f"Good {i}", "reviews": [{"text": f"r{j}"} for j in range(5)]}

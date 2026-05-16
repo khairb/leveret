@@ -19,11 +19,22 @@ from .validate import RawError
 
 
 class Tolerance(Enum):
-    """How strictly to enforce per-item validation in lists."""
+    """How strictly to enforce per-item validation in lists.
 
-    STRICT = "strict"        # 100% of items must pass
-    BALANCED = "balanced"    # 80% of items must pass
-    TOLERANT = "tolerant"    # 50% of items must pass
+    Web scraping often returns slightly inconsistent data — a few
+    items may be missing a field or have an unexpected value. Tolerance
+    controls what percentage of list items must pass schema validation
+    for the overall result to be accepted.
+
+    Members:
+        STRICT: 100% of items must pass validation.
+        BALANCED: 80% of items must pass (default).
+        TOLERANT: 50% of items must pass.
+    """
+
+    STRICT = "strict"
+    BALANCED = "balanced"
+    TOLERANT = "tolerant"
 
 
 # Minimum fraction of items that must pass validation.

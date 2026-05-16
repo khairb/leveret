@@ -622,7 +622,7 @@ class TestBattle:
 
         Common — pagination changes, stock depletion, seasonal products.
         The script works perfectly — extracts all 2 items. But the
-        schema says min=5. Schema validation fails.
+        schema says min_items=5. Schema validation fails.
 
         The algorithm should regenerate — the extraction logic may
         need updating for the new page structure.

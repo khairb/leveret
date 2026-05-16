@@ -10,7 +10,7 @@ Tests verify:
   - ScoutAutoFixError is in the correct exception hierarchy
   - ScoutAutoFixError can be raised and caught at multiple levels
   - ScraperResult.auto_fixed defaults to False (backward compatibility)
-  - ScraperResult.auto_fixed=True works and implies cached=False
+  - ScraperResult.auto_fixed=True works and implies generated=True
   - ScraperResult repr shows auto_fixed only when True
   - ScoutAutoFixError is importable from the top-level package
   - Subprocess adapter returns AttemptResult with page signals
@@ -19,7 +19,7 @@ Tests verify:
   - auto_fix parameter validation (False, True, str modes, invalid)
   - auto_fix without script= logs warning, disables auto_fix
   - _run_cached_with_autofix() delegates to diagnose()
-  - Diagnosis success returns ScraperResult(cached=True)
+  - Diagnosis success returns ScraperResult(generated=False)
   - Diagnosis RAISE raises appropriate exception type per category
   - Diagnosis REGENERATE triggers _run_generate()
   - Successful regeneration returns ScraperResult(auto_fixed=True)
@@ -30,6 +30,7 @@ Tests verify:
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 
@@ -102,8 +103,8 @@ class TestScraperResultAutoFixed:
             data={"title": "Test"},
             url="https://example.com",
             timestamp="2024-01-01T00:00:00.000000Z",
-            cached=True,
-            script_path="/path/to/script.py",
+            generated=False,
+            script_path=Path("/path/to/script.py"),
         )
         assert result.auto_fixed is False
 
@@ -112,7 +113,7 @@ class TestScraperResultAutoFixed:
             data=[1, 2, 3],
             url="https://example.com",
             timestamp="2024-01-01T00:00:00.000000Z",
-            cached=True,
+            generated=False,
             script_path=None,
             auto_fixed=False,
         )
@@ -123,8 +124,8 @@ class TestScraperResultAutoFixed:
             data=[1, 2, 3],
             url="https://example.com",
             timestamp="2024-01-01T00:00:00.000000Z",
-            cached=False,
-            script_path="/path/to/script.py",
+            generated=True,
+            script_path=Path("/path/to/script.py"),
             auto_fixed=True,
         )
         assert result.auto_fixed is True
@@ -135,12 +136,12 @@ class TestScraperResultAutoFixed:
             [{"a": 1}],
             "https://example.com",
             "2024-01-01T00:00:00.000000Z",
-            True,
+            False,
             None,
         )
         assert result.auto_fixed is False
         assert result.data == [{"a": 1}]
-        assert result.cached is True
+        assert result.generated is False
 
     def test_auto_fixed_is_a_dataclass_field(self):
         """auto_fixed is a proper dataclass field, not just an attribute."""
@@ -162,19 +163,19 @@ class TestScraperResultRepr:
             data=[1, 2, 3],
             url="https://example.com",
             timestamp="t",
-            cached=True,
+            generated=False,
             script_path=None,
         )
         r = repr(result)
         assert "auto_fixed" not in r
-        assert "cached=True" in r
+        assert "generated=False" in r
 
     def test_repr_with_auto_fixed_false(self):
         result = ScraperResult(
             data=[1, 2, 3],
             url="https://example.com",
             timestamp="t",
-            cached=True,
+            generated=False,
             script_path=None,
             auto_fixed=False,
         )
@@ -186,13 +187,13 @@ class TestScraperResultRepr:
             data=[1, 2, 3],
             url="https://example.com",
             timestamp="t",
-            cached=False,
-            script_path="/path/to/script.py",
+            generated=True,
+            script_path=Path("/path/to/script.py"),
             auto_fixed=True,
         )
         r = repr(result)
         assert "auto_fixed=True" in r
-        assert "cached=False" in r
+        assert "generated=True" in r
 
     def test_repr_preserves_existing_format(self):
         """Existing repr format is preserved for non-auto-fixed results."""
@@ -200,7 +201,7 @@ class TestScraperResultRepr:
             data=[{"title": "A"}, {"title": "B"}],
             url="https://shop.example.com",
             timestamp="t",
-            cached=True,
+            generated=False,
             script_path=None,
         )
         r = repr(result)
@@ -208,7 +209,7 @@ class TestScraperResultRepr:
         assert r.endswith(")")
         assert "url='https://shop.example.com'" in r
         assert "items=2" in r
-        assert "cached=True" in r
+        assert "generated=False" in r
 
 
 # -- ScoutAutoFixError in package __all__ ------------------------------------
@@ -415,7 +416,7 @@ class TestSubprocessExecuteAdapter:
         # Schema requires min 1 item but script returns []
         from scout.schema.types import List
 
-        s = _make_scraper(script=str(script), schema=List({"title": str}, min=1))
+        s = _make_scraper(script=str(script), schema=List({"title": str}, min_items=1))
         from scout.scraper import _load_script
 
         fn, _ = _load_script(script)
@@ -635,7 +636,7 @@ class TestRunCachedWithAutofix:
 
     @pytest.mark.asyncio
     async def test_diagnosis_success_returns_data(self, tmp_path):
-        """When diagnosis attempt succeeds, return ScraperResult(cached=True)."""
+        """When diagnosis attempt succeeds, return ScraperResult(generated=False)."""
         from scout.autofix.types import AttemptResult
 
         s = self._make_scraper_with_autofix(tmp_path)
@@ -648,7 +649,7 @@ class TestRunCachedWithAutofix:
             result = await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
 
         assert result.data == [{"title": "Found"}]
-        assert result.cached is True
+        assert result.generated is False
         assert result.auto_fixed is False
         assert result.url == VALID_URL
         mock_diag.assert_awaited_once()
@@ -806,8 +807,8 @@ class TestRegenerationFlow:
             data=[{"title": "New"}],
             url=VALID_URL,
             timestamp="2026-04-19T00:00:00.000000Z",
-            cached=False,
-            script_path=str(tmp_path / "scraper.py"),
+            generated=True,
+            script_path=tmp_path / "scraper.py",
         )
 
         with (
@@ -819,7 +820,7 @@ class TestRegenerationFlow:
             result = await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
 
         assert result.auto_fixed is True
-        assert result.cached is False
+        assert result.generated is True
         assert result.data == [{"title": "New"}]
 
     @pytest.mark.asyncio
@@ -835,8 +836,8 @@ class TestRegenerationFlow:
             data=[{"title": "New"}],
             url=VALID_URL,
             timestamp="2026-04-19T00:00:00.000000Z",
-            cached=False,
-            script_path=str(tmp_path / "scraper.py"),
+            generated=True,
+            script_path=tmp_path / "scraper.py",
         )
 
         fn_before_regen = None
@@ -916,8 +917,8 @@ class TestRegenerationFlow:
             data=[{"title": "New"}],
             url=VALID_URL,
             timestamp="2026-04-19T00:00:00.000000Z",
-            cached=False,
-            script_path=str(tmp_path / "scraper.py"),
+            generated=True,
+            script_path=tmp_path / "scraper.py",
         )
 
         with (
@@ -992,8 +993,8 @@ class TestRunCachedAutoFixBranch:
             data=[{"title": "Test"}],
             url=VALID_URL,
             timestamp="2026-04-19T00:00:00.000000Z",
-            cached=True,
-            script_path=str(script),
+            generated=False,
+            script_path=script,
         )
 
         with patch.object(

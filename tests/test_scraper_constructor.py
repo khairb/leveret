@@ -58,7 +58,7 @@ class TestConstructorHappyPath:
         assert s._headless is True
         assert s._api_key is None
         assert s._timeout == 600
-        assert s._max_attempts == 6
+        assert s._max_retries == 5
         assert s._script_path is None
         assert s._cached_fn is None
         assert s._browser_mgr is None
@@ -69,13 +69,13 @@ class TestConstructorHappyPath:
         s = Scraper(
             "https://shop.example.com/products",
             "Extract all product listings",
-            schema=List({"title": str, "price": Field(float, min=0)}, min=10),
+            schema=List({"title": str, "price": Field(float, min=0)}, min_items=10),
             script=str(script),
             model="claude-sonnet-4-5-20250514",
             headless=False,
             api_key="sk-test-key",
             timeout=300,
-            max_attempts=3,
+            max_retries=2,
         )
         assert s._url == "https://shop.example.com/products"
         assert s._task == "Extract all product listings"
@@ -84,7 +84,7 @@ class TestConstructorHappyPath:
         assert s._headless is False
         assert s._api_key == "sk-test-key"
         assert s._timeout == 300
-        assert s._max_attempts == 3
+        assert s._max_retries == 2
 
     def test_url_and_task_are_positional(self):
         """url and task can be passed positionally."""
@@ -121,7 +121,7 @@ class TestConstructorHappyPath:
                 "brand": str,
                 "sku": Field(str, optional=True),
             },
-        }, min=20)
+        }, min_items=20)
         s = _make(schema=schema)
         assert s._compiled_schema.prompt  # non-empty prompt
         valid, _ = s._compiled_schema.validate([
@@ -327,26 +327,22 @@ class TestTimeoutValidation:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# max_attempts validation
+# max_retries validation
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestMaxAttemptsValidation:
-
-    def test_zero(self):
-        with pytest.raises(ScoutError, match="max_attempts must be at least 1"):
-            _make(max_attempts=0)
+class TestMaxRetriesValidation:
 
     def test_negative(self):
-        with pytest.raises(ScoutError, match="max_attempts must be at least 1"):
-            _make(max_attempts=-1)
+        with pytest.raises(ScoutError, match="max_retries must be a non-negative integer"):
+            _make(max_retries=-1)
 
     def test_float_rejected(self):
-        with pytest.raises(ScoutError, match="max_attempts must be at least 1"):
-            _make(max_attempts=3.0)
+        with pytest.raises(ScoutError, match="max_retries must be a non-negative integer"):
+            _make(max_retries=3.0)
 
-    def test_one_is_minimum(self):
-        s = _make(max_attempts=1)
-        assert s._max_attempts == 1
+    def test_zero_is_minimum(self):
+        s = _make(max_retries=0)
+        assert s._max_retries == 0
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -498,7 +494,7 @@ class TestScraperRepr:
         assert "cached=True" not in r  # not cached yet
 
     def test_with_cached_fn(self, tmp_path):
-        """When _cached_fn is set, cached=True appears."""
+        """When _cached_fn is set, cached=True appears in Scraper repr."""
         script = tmp_path / "hn.py"
         s = _make(script=str(script))
         s._cached_fn = lambda: None  # simulate cached state
@@ -521,18 +517,18 @@ class TestScraperResultRepr:
             data=[{"a": 1}, {"a": 2}],
             url="https://example.com",
             timestamp="2024-01-01T00:00:00Z",
-            cached=True,
-            script_path="/path/to/script.py",
+            generated=False,
+            script_path=Path("/path/to/script.py"),
         )
         assert "items=2" in repr(r)
-        assert "cached=True" in repr(r)
+        assert "generated=False" in repr(r)
 
     def test_dict_data(self):
         r = ScraperResult(
             data={"name": "test", "count": 42},
             url="https://x.com",
             timestamp="2024-01-01T00:00:00Z",
-            cached=False,
+            generated=True,
             script_path=None,
         )
         assert "keys=" in repr(r)
@@ -589,7 +585,7 @@ class TestEdgeCases:
 
     def test_compiled_schema_has_prompt(self):
         """The compiled schema includes a non-empty prompt string."""
-        s = _make(schema=List({"title": str, "price": float}, min=10))
+        s = _make(schema=List({"title": str, "price": float}, min_items=10))
         assert "## Output Schema" in s._compiled_schema.prompt
         assert "title" in s._compiled_schema.prompt
         assert "price" in s._compiled_schema.prompt
@@ -629,7 +625,7 @@ class TestSpecExamples:
                 "title": str,
                 "url": str,
                 "points": int,
-            }, min=20),
+            }, min_items=20),
             script=str(script),
         )
         assert scraper._url == "https://news.ycombinator.com"
@@ -653,7 +649,7 @@ class TestSpecExamples:
                 "currency": Field(str, enum=["USD", "EUR", "GBP"]),
                 "rating": Field(int, min=1, max=5, optional=True),
                 "in_stock": bool,
-            }, min=20),
+            }, min_items=20),
         )
         assert scraper._compiled_schema is not None
 
@@ -690,7 +686,7 @@ class TestListDeprecation:
         from scout.schema.types import List
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            result = List({"title": str}, min=5)
+            result = List({"title": str}, min_items=5)
             assert len(w) == 1
             assert issubclass(w[0].category, DeprecationWarning)
             assert "Items" in str(w[0].message)
@@ -700,9 +696,9 @@ class TestListDeprecation:
         from scout.schema.types import Items, List
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
-            result = List({"title": str}, min=5)
+            result = List({"title": str}, min_items=5)
             assert isinstance(result, Items)
-            assert result.min == 5
+            assert result.min_items == 5
 
 
 class TestProtectScript:

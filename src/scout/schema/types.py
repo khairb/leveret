@@ -14,8 +14,19 @@ from typing import Any, Union
 class Field:
     """A schema field with type and optional constraints.
 
-    The first positional argument is always the type. All constraints
-    are keyword-only.
+    Use ``Field`` when you need more control than a bare type. The
+    first positional argument is always the Python type (``str``,
+    ``int``, ``float``, or ``bool``). All constraints are keyword-only.
+
+    Args:
+        type_: Base Python type — ``str``, ``int``, ``float``, or ``bool``.
+        min: Minimum numeric value (``int``/``float`` fields only).
+        max: Maximum numeric value (``int``/``float`` fields only).
+        min_length: Minimum string length (``str`` fields only).
+        max_length: Maximum string length (``str`` fields only).
+        pattern: Regex pattern the string must match (``str`` only).
+        enum: List of allowed string values (``str`` fields only).
+        optional: When ``True``, the field may be ``None``.
 
     Examples::
 
@@ -73,39 +84,49 @@ class Field:
 
 
 class Items:
-    """A list schema with item type and optional length constraints.
+    """A list schema with item type and optional count constraints.
 
+    Use ``Items`` when the scraper should return a list of results.
     The first positional argument is the item schema — a base type,
-    a ``Field()``, a dict (object schema), or another ``Items()``.
+    a ``Field()``, a dict (object schema), or another ``Items()``
+    for nested lists.
+
+    Args:
+        item: Schema for each item in the list — a type, ``Field``,
+            dict, or nested ``Items``.
+        min_items: Minimum number of items the list must contain.
+        max_items: Maximum number of items the list may contain.
+        allow_empty: When ``True``, an empty list passes validation
+            even without an explicit ``min_items=0``.
 
     Examples::
 
-        Items(str, min=5)                       # at least 5 strings
-        Items({"title": str}, min=20)           # at least 20 objects
-        Items(str, min=5, max=50)               # bounded list
+        Items(str, min_items=5)                       # at least 5 strings
+        Items({"title": str}, min_items=20)           # at least 20 objects
+        Items(str, min_items=5, max_items=50)         # bounded list
     """
 
-    __slots__ = ("item", "min", "max", "allow_empty")
+    __slots__ = ("item", "min_items", "max_items", "allow_empty")
 
     def __init__(
         self,
         item: Any,
         *,
-        min: int | None = None,
-        max: int | None = None,
+        min_items: int | None = None,
+        max_items: int | None = None,
         allow_empty: bool = False,
     ) -> None:
         self.item = item
-        self.min = min
-        self.max = max
+        self.min_items = min_items
+        self.max_items = max_items
         self.allow_empty = allow_empty
 
     def __repr__(self) -> str:
         parts = [repr(self.item)]
-        if self.min is not None:
-            parts.append(f"min={self.min!r}")
-        if self.max is not None:
-            parts.append(f"max={self.max!r}")
+        if self.min_items is not None:
+            parts.append(f"min_items={self.min_items!r}")
+        if self.max_items is not None:
+            parts.append(f"max_items={self.max_items!r}")
         if self.allow_empty:
             parts.append("allow_empty=True")
         return f"Items({', '.join(parts)})"

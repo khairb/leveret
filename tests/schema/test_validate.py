@@ -130,14 +130,14 @@ class TestTier2:
     """List count constraints with correct short-circuiting."""
 
     def test_empty_list_short_circuits(self):
-        root = parse_schema(List({"x": str, "y": int}, min=20))
+        root = parse_schema(List({"x": str, "y": int}, min_items=20))
         errs = validate([], root)
         # Only 1 error — doesn't try to validate items
         assert len(errs) == 1
         assert "empty" in errs[0].message
 
     def test_under_count_continues_to_validate_items(self):
-        root = parse_schema(List({"x": str}, min=10))
+        root = parse_schema(List({"x": str}, min_items=10))
         errs = validate([{"x": 42}], root)  # 1 item (under 10), wrong type
         # Should have BOTH the count error AND the type error
         messages = [e.message for e in errs]
@@ -145,15 +145,15 @@ class TestTier2:
         assert any("expected str" in m for m in messages)
 
     def test_over_count_caps_validation_at_50(self):
-        root = parse_schema(List({"x": str}, max=10))
+        root = parse_schema(List({"x": str}, max_items=10))
         data = [{"x": "ok"}] * 100
         errs = validate(data, root)
         # Should report over-count, but not validate all 100
         assert any("returned 100" in e.message for e in errs)
 
     def test_max_zero_works(self):
-        """Edge case: max=0 should be handled correctly (not falsy)."""
-        root = parse_schema(List(str, max=0))
+        """Edge case: max_items=0 should be handled correctly (not falsy)."""
+        root = parse_schema(List(str, max_items=0))
         errs = validate(["a"], root)
         assert any("maximum is 0" in e.message for e in errs)
 
@@ -326,7 +326,7 @@ class TestErrorFormatterGrouping:
     """Errors are grouped, sorted, and capped correctly."""
 
     def test_groups_same_error_across_items(self):
-        root = parse_schema(List({"price": float}, min=1))
+        root = parse_schema(List({"price": float}, min_items=1))
         data = [{"price": f"${i}"} for i in range(50)]
         errs = validate(data, root)
         output = format_errors(errs, total_items=50, node_tree=root)
@@ -335,7 +335,7 @@ class TestErrorFormatterGrouping:
         assert output.count("[*].price") == 1
 
     def test_type_errors_before_constraint_errors(self):
-        root = parse_schema(List({"x": Field(int, min=0)}, min=1))
+        root = parse_schema(List({"x": Field(int, min=0)}, min_items=1))
         data = [{"x": "bad"}, {"x": -1}]
         errs = validate(data, root)
         output = format_errors(errs, total_items=2, node_tree=root)
@@ -367,28 +367,28 @@ class TestErrorFormatterMessages:
 
     def test_empty_path_formatted_cleanly(self):
         """Top-level errors don't show an empty path."""
-        cs = compile_schema(List(str, min=10))
+        cs = compile_schema(List(str, min_items=10))
         _, msg = cs.validate([])
         # Should NOT have double space or empty path
         assert "  [1] List is empty" in msg
 
     def test_systematic_price_bug_is_obvious(self):
         """The most common real-world bug: prices as strings."""
-        cs = compile_schema(List({"price": Field(float, min=0)}, min=1))
+        cs = compile_schema(List({"price": Field(float, min=0)}, min_items=1))
         data = [{"price": f"${i}.99"} for i in range(30)]
         _, msg = cs.validate(data)
         assert "30 of 30 items" in msg
         assert "$" in msg  # shows the actual values so agent sees the $ prefix
 
     def test_optional_field_note_with_concrete_values(self):
-        cs = compile_schema(List({"r": Field(int, min=1, max=5, optional=True)}, min=1))
+        cs = compile_schema(List({"r": Field(int, min=1, max=5, optional=True)}, min_items=1))
         data = [{"r": 0}, {"r": -1}]
         _, msg = cs.validate(data)
         assert "null is valid" in msg
         assert "0" in msg
 
     def test_optional_field_note_deduplicates_values(self):
-        cs = compile_schema(List({"r": Field(int, min=1, max=5, optional=True)}, min=1))
+        cs = compile_schema(List({"r": Field(int, min=1, max=5, optional=True)}, min_items=1))
         data = [{"r": 0}, {"r": 0}, {"r": 0}]
         _, msg = cs.validate(data)
         # Should say "but 0 is not", NOT "but 0, 0, and 0 are not"
@@ -397,7 +397,7 @@ class TestErrorFormatterMessages:
 
     def test_count_context_always_plural_with_total(self):
         """'1 of 5 items' not '1 of 5 item'."""
-        cs = compile_schema(List({"x": int}, min=1))
+        cs = compile_schema(List({"x": int}, min_items=1))
         data = [{"x": "bad"}] + [{"x": 1}] * 4
         _, msg = cs.validate(data)
         assert "1 of 5 items" in msg
@@ -413,7 +413,7 @@ class TestEndToEndValidation:
             "price": Field(float, min=0),
             "rating": Field(int, min=1, max=5, optional=True),
             "url": str,
-        }, min=20))
+        }, min_items=20))
 
         # Agent got 8 items (not enough), some have type errors
         data = [
@@ -476,8 +476,8 @@ class TestEmptyRootList:
         assert msg == ""
 
     def test_no_double_error_with_explicit_min(self):
-        """Items(str, min=5) with [] → uses existing min error, not the new one."""
-        cs = compile_schema(Items(str, min=5))
+        """Items(str, min_items=5) with [] → uses existing min error, not the new one."""
+        cs = compile_schema(Items(str, min_items=5))
         valid, msg = cs.validate([])
         assert not valid
         assert "minimum is 5" in msg

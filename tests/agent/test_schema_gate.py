@@ -59,7 +59,7 @@ class TestSchemaGatePass:
             "title": Field(str, min_length=1),
             "price": Field(float, min=0),
             "currency": Field(str, enum=["USD", "EUR"]),
-        }, min=5))
+        }, min_items=5))
         data = [
             {"title": f"P{i}", "price": float(i), "currency": "USD"}
             for i in range(10)
@@ -135,7 +135,7 @@ class TestSchemaGateFail:
         assert "not one of" in msg
 
     def test_list_too_short(self):
-        cs = compile_schema(List({"x": str}, min=5))
+        cs = compile_schema(List({"x": str}, min_items=5))
         data = [{"x": "a"}]
         valid, msg = _simulate_schema_gate(cs, json.dumps(data))
         assert valid is False
@@ -205,7 +205,7 @@ class TestRealWorldAgentMistakes:
         cs = compile_schema(List({
             "title": str,
             "price": Field(float, min=0),
-        }, min=10))
+        }, min_items=10))
         data = [
             {"title": f"Product {i}", "price": f"${i * 10}.99"}
             for i in range(20)
@@ -274,7 +274,7 @@ class TestRealWorldAgentMistakes:
 
     def test_too_few_items_with_pagination_missed(self):
         """Agent only extracted first page (10 items) but min is 50."""
-        cs = compile_schema(List({"title": str}, min=50))
+        cs = compile_schema(List({"title": str}, min_items=50))
         data = [{"title": f"P{i}"} for i in range(10)]
         valid, msg = _simulate_schema_gate(cs, json.dumps(data))
         assert valid is False
@@ -286,7 +286,7 @@ class TestRealWorldAgentMistakes:
             "title": Field(str, min_length=1),
             "price": Field(float, min=0),
             "rating": Field(int, min=1, max=5),
-        }, min=10))
+        }, min_items=10))
         data = []
         for i in range(15):
             item = {"title": f"P{i}", "price": float(i), "rating": i % 6}
@@ -343,7 +343,7 @@ class TestRealWorldAgentMistakes:
             "rating": Field(int, min=1, max=5, optional=True),
             "in_stock": bool,
             "tags": [str],
-        }, min=10))
+        }, min_items=10))
         data = [
             {
                 "title": f"Product {i}",

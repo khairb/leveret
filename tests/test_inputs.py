@@ -46,7 +46,7 @@ class TestInputClass:
         assert i.type_ is bool
 
     def test_explicit_type_overrides_inference(self):
-        i = Input("50", type=str)
+        i = Input("50", type_=str)
         assert i.type_ is str
 
     def test_description_stored(self):
@@ -59,7 +59,7 @@ class TestInputClass:
 
     def test_unsupported_explicit_type_raises(self):
         with pytest.raises(ConfigError, match="one of str, int, float, bool"):
-            Input("x", type=list)
+            Input("x", type_=list)
 
     def test_repr_basic(self):
         r = repr(Input("hello"))

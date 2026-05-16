@@ -59,7 +59,7 @@ class TestCompiledSchemaValidate:
         assert "return statement" in msg
 
     def test_empty_list_with_min(self):
-        cs = compile_schema(List(str, min=5))
+        cs = compile_schema(List(str, min_items=5))
         valid, msg = cs.validate([])
         assert valid is False
         assert "empty" in msg
@@ -80,7 +80,7 @@ class TestCompileSchemaPromptQuality:
     """The compiled prompt is agent-ready."""
 
     def test_prompt_has_structure_and_requirements(self):
-        cs = compile_schema(List({"title": str, "price": float}, min=10))
+        cs = compile_schema(List({"title": str, "price": float}, min_items=10))
         assert "### Structure" in cs.prompt
         assert "### Requirements" in cs.prompt
         assert "minimum 10" in cs.prompt
@@ -112,7 +112,7 @@ class TestRoundTrip:
             "price": Field(float, min=0),
             "currency": Field(str, enum=["USD", "EUR", "GBP"]),
             "in_stock": bool,
-        }, min=5))
+        }, min_items=5))
 
         # Good data
         good = [{"title": f"P{i}", "price": float(i), "currency": "USD",
@@ -136,7 +136,7 @@ class TestRoundTrip:
                 "max": Field(int, min=0, optional=True),
             },
             "posted": Field(str, pattern=r"\d{4}-\d{2}-\d{2}"),
-        }, min=10))
+        }, min_items=10))
 
         good = [{"title": "Engineer", "company": "Acme",
                  "salary": {"min": 80000, "max": 120000},

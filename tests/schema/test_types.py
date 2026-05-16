@@ -90,32 +90,32 @@ class TestList:
     def test_bare_item(self):
         lst = List(str)
         assert lst.item is str
-        assert lst.min is None
-        assert lst.max is None
+        assert lst.min_items is None
+        assert lst.max_items is None
 
     def test_with_constraints(self):
-        lst = List(str, min=5, max=50)
-        assert lst.min == 5
-        assert lst.max == 50
+        lst = List(str, min_items=5, max_items=50)
+        assert lst.min_items == 5
+        assert lst.max_items == 50
 
     def test_dict_item(self):
-        lst = List({"title": str, "price": float}, min=20)
+        lst = List({"title": str, "price": float}, min_items=20)
         assert isinstance(lst.item, dict)
-        assert lst.min == 20
+        assert lst.min_items == 20
 
     def test_nested_field_item(self):
-        lst = List(Field(str, min_length=1), min=5)
+        lst = List(Field(str, min_length=1), min_items=5)
         assert isinstance(lst.item, Field)
 
     def test_nested_list_item(self):
-        inner = List(str, min=1)
-        outer = List(inner, min=5)
+        inner = List(str, min_items=1)
+        outer = List(inner, min_items=5)
         assert isinstance(outer.item, List)
 
     def test_repr_with_constraints(self):
-        r = repr(List(str, min=5, max=10))
-        assert "min=5" in r
-        assert "max=10" in r
+        r = repr(List(str, min_items=5, max_items=10))
+        assert "min_items=5" in r
+        assert "max_items=10" in r
 
     def test_repr_no_constraints(self):
         r = repr(List(str))

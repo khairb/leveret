@@ -38,7 +38,7 @@ ECOMMERCE_SCHEMA = List({
         "size": Field(str, enum=["XS", "S", "M", "L", "XL", "XXL"]),
         "price_override": Field(float, min=0, optional=True),
     }],
-}, min=20)
+}, min_items=20)
 
 
 class TestEcommerceScenario:
@@ -181,7 +181,7 @@ JOB_SCHEMA = List({
     "posted": Field(str, pattern=r"\d{4}-\d{2}-\d{2}"),
     "remote": bool,
     "skills": [str],
-}, min=10)
+}, min_items=10)
 
 
 class TestJobListingsScenario:
@@ -290,7 +290,7 @@ SERP_SCHEMA = {
         "snippet": Field(str, max_length=500),
         "published": Field(str, pattern=r"\d{4}-\d{2}-\d{2}", optional=True),
         "source": str,
-    }, min=10, max=50),
+    }, min_items=10, max_items=50),
 }
 
 
@@ -391,7 +391,7 @@ REALESTATE_SCHEMA = List({
         "phone": Field(str, pattern=r"\d{3}-\d{3}-\d{4}", optional=True),
         "company": str,
     },
-}, min=15)
+}, min_items=15)
 
 
 class TestRealEstateScenario:
@@ -672,7 +672,7 @@ class TestHierarchicalShortCircuiting:
         cs = compile_schema(List({
             "title": Field(str, min_length=1),
             "price": Field(float, min=0),
-        }, min=20))
+        }, min_items=20))
 
         valid, msg = cs.validate(None)
         assert valid is False
@@ -701,8 +701,8 @@ class TestSpecCase4ExactMatch:
                     "in_stock": bool,
                 }],
                 "specs": dict,
-            }, min=1),
-        }, min=3))
+            }, min_items=1),
+        }, min_items=3))
 
     def test_structure_has_correct_nesting(self, cs):
         struct = cs.prompt.split("### Structure")[1].split("### Requirements")[0]

@@ -211,13 +211,22 @@ class PageSignals:
 
 
 class AutoFixMode(enum.Enum):
-    """User-selected risk tolerance for automatic regeneration (spec S3).
+    """Controls how aggressively auto-fix regenerates broken scripts.
 
-    Controls evidence thresholds in the decision engine:
-    - CONSERVATIVE: Only high-confidence categories (B, G). Never D/E.
-    - BALANCED: High-confidence + ambiguous when page verified real.
-    - AGGRESSIVE: Lower thresholds, tolerates some tainted attempts.
-    - ALWAYS: Skip cache entirely, force fresh generation every run.
+    When a cached script fails at runtime, auto-fix diagnoses the
+    error and decides whether to regenerate the script or raise the
+    error. This enum controls the risk threshold for that decision.
+
+    Members:
+        CONSERVATIVE: Only regenerate on high-confidence failures
+            (script crashed or schema mismatch). Safest option.
+        BALANCED: Regenerate on high-confidence failures plus
+            ambiguous cases when the page is verified to be real.
+            This is what ``auto_fix=True`` uses.
+        AGGRESSIVE: Lower thresholds — tolerates noisier error
+            signals and regenerates more liberally.
+        ALWAYS: Skip the cache entirely and force a fresh AI
+            generation on every ``run()`` call.
     """
 
     CONSERVATIVE = "conservative"

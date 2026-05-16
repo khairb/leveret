@@ -28,14 +28,25 @@ _NAME_TO_TYPE = {"str": str, "int": int, "float": float, "bool": bool}
 class Input:
     """A dynamic input parameter for a scraping script.
 
-    The first positional argument is the example value used during script
-    generation and for type inference.
+    Use ``Input`` to attach metadata (description, explicit type) to
+    values passed via ``scraper.run(inputs={...})``. For simple cases,
+    bare Python values work too — the type is inferred automatically.
+
+    Args:
+        value: Example value used during script generation and for
+            type inference. The generated script will use
+            ``inputs["key"]`` instead of hardcoding this value.
+        description: Human-readable description of what this input
+            represents. Helps the AI generate better code.
+        type_: Explicit Python type (``str``, ``int``, ``float``, or
+            ``bool``). When omitted, the type is inferred from
+            ``value``.
 
     Examples::
 
         Input("python developer")
         Input("Berlin", description="City to filter by")
-        Input(50, type=int, description="Max listings")
+        Input(50, type_=int, description="Max listings")
     """
 
     __slots__ = ("value", "type_", "description")
@@ -45,17 +56,17 @@ class Input:
         value: Any,
         *,
         description: str | None = None,
-        type: type | None = None,
+        type_: type | None = None,
     ) -> None:
-        if type is not None:
-            if type not in _SUPPORTED_TYPES:
+        if type_ is not None:
+            if type_ not in _SUPPORTED_TYPES:
                 raise ConfigError(
-                    f"Input type must be one of str, int, float, bool "
-                    f"(got {type.__name__})"
+                    f"Input type_ must be one of str, int, float, bool "
+                    f"(got {type_.__name__})"
                 )
-            self.type_ = type
+            self.type_ = type_
         else:
-            inferred = builtins_type(value)
+            inferred = type(value)
             if inferred not in _SUPPORTED_TYPES:
                 raise ConfigError(
                     f"Cannot infer input type from {inferred.__name__!r}. "
@@ -70,10 +81,6 @@ class Input:
         if self.description is not None:
             parts.append(f"description={self.description!r}")
         return f"Input({', '.join(parts)})"
-
-
-# Alias to avoid shadowing the ``type`` builtin inside Input.__init__.
-builtins_type = type
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -106,7 +113,7 @@ def normalize_inputs(
     if not isinstance(raw, dict):
         raise ConfigError(
             f"inputs must be a dict mapping names to values "
-            f"(got {builtins_type(raw).__name__})"
+            f"(got {type(raw).__name__})"
         )
 
     example_values: dict[str, Any] = {}
@@ -127,13 +134,13 @@ def normalize_inputs(
             description = val.description
         else:
             example = val
-            inferred = builtins_type(val)
+            inferred = type(val)
             if inferred not in _SUPPORTED_TYPES:
                 raise ConfigError(
                     f"Input {key!r} has unsupported type "
                     f"{inferred.__name__!r}. "
                     f"Supported: str, int, float, bool. "
-                    f"Wrap in Input(value, type=...) for explicit typing."
+                    f"Wrap in Input(value, type_=...) for explicit typing."
                 )
             type_ = inferred
             description = None
@@ -395,7 +402,7 @@ def validate_inputs_against_metadata(
         # Unwrap Input instances.
         if isinstance(actual_val, Input):
             actual_val = actual_val.value
-        actual_type = builtins_type(actual_val)
+        actual_type = type(actual_val)
         # Allow int where float is expected.
         if expected_type is float and actual_type is int:
             continue

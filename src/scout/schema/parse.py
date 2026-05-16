@@ -43,8 +43,8 @@ def parse_schema(schema: Any) -> Node:
         _validate_list_constraints(schema)
         return ListNode(
             item=parse_schema(schema.item),
-            min=schema.min,
-            max=schema.max,
+            min=schema.min_items,
+            max=schema.max_items,
             allow_empty=schema.allow_empty,
         )
 
@@ -94,7 +94,7 @@ def parse_schema(schema: Any) -> Node:
         f"  Quick examples:\n"
         f"    schema={{'title': str, 'price': float}}  # single object\n"
         f"    schema=[{{'title': str}}]                 # list of objects\n"
-        f"    schema=Items({{'title': str}}, min=10)    # list with constraints"
+        f"    schema=Items({{'title': str}}, min_items=10)    # list with constraints"
     )
 
 
@@ -284,19 +284,19 @@ def _validate_list_constraints(lst: Items) -> None:
     Raises:
         ScoutSchemaError: If constraints are invalid.
     """
-    if lst.min is not None and lst.min < 0:
+    if lst.min_items is not None and lst.min_items < 0:
         raise ScoutSchemaError(
-            f"'min' must be non-negative, got {lst.min}"
+            f"'min_items' must be non-negative, got {lst.min_items}"
         )
-    if lst.max is not None and lst.max < 0:
+    if lst.max_items is not None and lst.max_items < 0:
         raise ScoutSchemaError(
-            f"'max' must be non-negative, got {lst.max}"
+            f"'max_items' must be non-negative, got {lst.max_items}"
         )
     if (
-        lst.min is not None
-        and lst.max is not None
-        and lst.min > lst.max
+        lst.min_items is not None
+        and lst.max_items is not None
+        and lst.min_items > lst.max_items
     ):
         raise ScoutSchemaError(
-            f"'min' ({lst.min}) must be <= 'max' ({lst.max})"
+            f"'min_items' ({lst.min_items}) must be <= 'max_items' ({lst.max_items})"
         )

@@ -90,13 +90,13 @@ class TestParseLists:
         assert isinstance(node.item, ObjectNode)
 
     def test_list_class_with_constraints(self):
-        node = parse_schema(List(str, min=5, max=50))
+        node = parse_schema(List(str, min_items=5, max_items=50))
         assert isinstance(node, ListNode)
         assert node.min == 5
         assert node.max == 50
 
     def test_list_class_with_dict_item(self):
-        node = parse_schema(List({"title": str, "price": float}, min=20))
+        node = parse_schema(List({"title": str, "price": float}, min_items=20))
         assert isinstance(node, ListNode)
         assert isinstance(node.item, ObjectNode)
         assert node.min == 20
@@ -133,7 +133,7 @@ class TestParseDeepNesting:
                     "variants": [{"color": str, "size": str}],
                 }],
             }],
-        }, min=1)
+        }, min_items=1)
         node = parse_schema(schema)
         assert isinstance(node, ListNode)
         cat_node = node.item.fields["categories"][0]
@@ -256,12 +256,12 @@ class TestListConstraintErrors:
 
     def test_negative_min(self):
         with pytest.raises(ScoutSchemaError, match="non-negative"):
-            parse_schema(List(str, min=-1))
+            parse_schema(List(str, min_items=-1))
 
     def test_negative_max(self):
         with pytest.raises(ScoutSchemaError, match="non-negative"):
-            parse_schema(List(str, max=-1))
+            parse_schema(List(str, max_items=-1))
 
     def test_min_greater_than_max(self):
-        with pytest.raises(ScoutSchemaError, match=r"'min' \(10\) must be <= 'max' \(5\)"):
-            parse_schema(List(str, min=10, max=5))
+        with pytest.raises(ScoutSchemaError, match=r"'min_items' \(10\) must be <= 'max_items' \(5\)"):
+            parse_schema(List(str, min_items=10, max_items=5))

@@ -101,7 +101,7 @@ class TestSchemaInjection:
 
     def test_constraints_appear_in_prompt(self):
         prompt = _build_prompt_with_schema(
-            List({"x": Field(int, min=1, max=5)}, min=10)
+            List({"x": Field(int, min=1, max=5)}, min_items=10)
         )
         assert "minimum 10" in prompt or "at least **10" in prompt
         assert "between 1 and 5" in prompt.lower() or "Between 1 and 5" in prompt
@@ -192,7 +192,7 @@ class TestPromptCoherence:
             "currency": Field(str, enum=["USD", "EUR", "GBP"]),
             "rating": Field(int, min=1, max=5, optional=True),
             "in_stock": bool,
-        }, min=20)
+        }, min_items=20)
         prompt = _build_prompt_with_schema(schema)
 
         # Agent sees the schema heading
