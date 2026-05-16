@@ -20,9 +20,12 @@ import asyncio
 import io
 import operator
 import types
-from datetime import datetime
+import datetime as _datetime_module
+import xml.etree.ElementTree as _real_ET
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import (
+    parse_qs, quote, quote_plus, unquote, urlencode, urljoin, urlparse,
+)
 
 from RestrictedPython import compile_restricted_exec, safe_builtins
 from RestrictedPython.Guards import (
@@ -110,6 +113,11 @@ class ScoutTransformer(RestrictingNodeTransformer):
     def visit_MatchOr(self, node):
         return self.node_contents_visit(node)
 
+    # ── Allow type annotations (AI generates these frequently) ──
+
+    def visit_AnnAssign(self, node):
+        return self.node_contents_visit(node)
+
     # ── Allow underscore-prefixed variable names ──
     #    AI frequently generates _items, _count, _temp, etc.
 
@@ -157,21 +165,21 @@ ALLOWED_MODULES = frozenset({
     "json", "re", "math", "itertools", "functools",
     "decimal", "fractions", "statistics",
     # Pure string/text manipulation
-    "string", "textwrap", "unicodedata", "difflib",
+    "string", "textwrap", "unicodedata", "difflib", "fnmatch",
     # HTML handling — pure parsing
     "html", "html.parser", "html.entities",
-    # Date/time
-    "datetime", "calendar", "time",
+    # Date/time — _strptime is a CPython internal used by datetime.strptime()
+    "datetime", "calendar", "time", "_strptime",
     # URL handling (NOT urllib.request — that does HTTP)
     "urllib.parse",
     # Encoding/hashing — bytes in/out
-    "base64", "binascii", "hashlib", "hmac",
+    "base64", "binascii", "hashlib", "hmac", "struct",
     # Data formats — works with file-like objects only
     "csv",
     # Type system — no runtime behavior
-    "typing", "enum", "dataclasses",
+    "typing", "enum", "dataclasses", "numbers",
     # Data structures
-    "collections", "operator", "copy",
+    "collections", "operator", "copy", "heapq",
     # Compression — in-memory only (no file functions)
     "zlib",
     # Misc safe
@@ -214,7 +222,32 @@ _safe_asyncio = types.SimpleNamespace(
     #   start_unix_server
 )
 
-_PROXY_MODULES: dict[str, Any] = {"asyncio": _safe_asyncio}
+# ── Safe xml.etree.ElementTree Proxy ──
+# Exposes in-memory parsing only. NOT exposed: parse(), iterparse(),
+# ElementTree class — these do file I/O via C, bypassing Python's open().
+
+_safe_xml_et = types.SimpleNamespace(
+    fromstring=_real_ET.fromstring,
+    XML=_real_ET.XML,
+    Element=_real_ET.Element,
+    SubElement=_real_ET.SubElement,
+    tostring=_real_ET.tostring,
+    indent=_real_ET.indent,
+    Comment=_real_ET.Comment,
+    QName=_real_ET.QName,
+    ParseError=_real_ET.ParseError,
+)
+
+_safe_xml = types.SimpleNamespace(
+    etree=types.SimpleNamespace(ElementTree=_safe_xml_et),
+)
+
+_PROXY_MODULES: dict[str, Any] = {
+    "asyncio": _safe_asyncio,
+    "xml": _safe_xml,
+    "xml.etree": _safe_xml.etree,
+    "xml.etree.ElementTree": _safe_xml_et,
+}
 
 _real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__  # type: ignore[union-attr]
 
@@ -232,7 +265,15 @@ def _safe_import(
 
     top = name.split(".")[0]
 
-    # Return proxy for modules with dangerous subsets
+    # Return proxy for modules with dangerous subsets.
+    # Check exact name first (for dotted modules like xml.etree.ElementTree),
+    # then fall back to top-level match (for asyncio, etc.).
+    if name in _PROXY_MODULES:
+        if fromlist:
+            # 'from xml.etree.ElementTree import X' → return deepest proxy
+            return _PROXY_MODULES[name]
+        # 'import xml.etree.ElementTree as ET' → top-level for attr navigation
+        return _PROXY_MODULES.get(top, _PROXY_MODULES[name])
     if top in _PROXY_MODULES:
         return _PROXY_MODULES[top]
 
@@ -272,7 +313,7 @@ _EXTRA_BUILTINS: dict[str, Any] = {
     "classmethod": classmethod,
     # Output and formatting
     "print": print, "sorted": sorted, "zip": zip,
-    "bin": bin, "ascii": ascii,
+    "bin": bin, "ascii": ascii, "format": format,
     # Import (our whitelist version)
     "__import__": _safe_import,
 }
@@ -287,6 +328,9 @@ def build_restricted_builtins() -> dict[str, Any]:
     """
     builtins = dict(safe_builtins)
     builtins.update(_EXTRA_BUILTINS)
+    # Guarded setattr/delattr — defined alongside other guards below
+    builtins["setattr"] = _guarded_setattr
+    builtins["delattr"] = _guarded_delattr
     return builtins
 
 
@@ -333,11 +377,17 @@ def build_safe_pre_imports() -> dict[str, Any]:
         "math": math,
         "time": __import__("time"),
         "asyncio": _safe_asyncio,
-        "datetime": datetime,
+        "datetime": _datetime_module,
         "urljoin": urljoin,
         "urlparse": urlparse,
+        "urlencode": urlencode,
+        "quote": quote,
+        "quote_plus": quote_plus,
+        "parse_qs": parse_qs,
+        "unquote": unquote,
         "StringIO": io.StringIO,
         "BytesIO": io.BytesIO,
+        "SimpleNamespace": types.SimpleNamespace,
     }
 
 
@@ -383,12 +433,29 @@ def _guarded_write(obj: Any) -> Any:
     Allows writes to normal objects (dicts, lists, user objects) but
     prevents patching module attributes.
     """
-    import types
     if isinstance(obj, types.ModuleType):
         raise AttributeError(
             "Cannot modify module attributes in sandbox mode"
         )
     return obj
+
+
+def _guarded_setattr(obj: Any, name: str, value: Any) -> None:
+    """Setattr guard — blocks attribute writes to modules."""
+    if isinstance(obj, types.ModuleType):
+        raise AttributeError(
+            "Cannot modify module attributes in sandbox mode"
+        )
+    setattr(obj, name, value)
+
+
+def _guarded_delattr(obj: Any, name: str) -> None:
+    """Delattr guard — blocks attribute deletion on modules."""
+    if isinstance(obj, types.ModuleType):
+        raise AttributeError(
+            "Cannot modify module attributes in sandbox mode"
+        )
+    delattr(obj, name)
 
 
 def build_restricted_globals(
