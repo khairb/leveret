@@ -253,6 +253,7 @@ class AgentLoop:
         self._stop_on_captcha = stop_on_captcha
         self._disable_validator = disable_validator
         self._overlay: DemoOverlay | None = None
+        self._overlay_done_pushed = False
 
         # Resolve launch options — ensures demo flag affects browser config
         # even when AgentLoop is used directly (e.g. from CLI).
@@ -957,6 +958,33 @@ class AgentLoop:
                                     out_path.write_text(
                                         combined_output, encoding="utf-8",
                                     )
+
+                                # Show results viewer immediately — before
+                                # the slow script browser cleanup.
+                                if self._overlay and self._demo:
+                                    try:
+                                        await self._overlay.push_done(
+                                            True, "",
+                                        )
+                                        if result.return_value:
+                                            await self._overlay.push_results(
+                                                result.return_value,
+                                            )
+                                            await self._overlay.wait_for_dismiss(
+                                                main_page=(
+                                                    runtime.page
+                                                    if runtime
+                                                    else None
+                                                ),
+                                            )
+                                    except Exception:
+                                        logger.debug(
+                                            "[overlay] results viewer failed",
+                                            exc_info=True,
+                                        )
+                                    # Mark as handled so finally block skips.
+                                    self._overlay_done_pushed = True
+
                                 # Script approved — close script browser.
                                 await active_script_result.cleanup()
                                 active_script_result = None
@@ -1589,6 +1617,23 @@ class AgentLoop:
             except (NameError, Exception):
                 pass
 
+            # Push final status to overlay BEFORE stopping the runtime.
+            # On the success + demo path, push_done and results are
+            # already handled in the approval block above (to avoid the
+            # delay from script browser cleanup).  The flag
+            # _overlay_done_pushed guards against double-pushing.
+            if self._overlay and not getattr(
+                self, "_overlay_done_pushed", False,
+            ):
+                try:
+                    await self._overlay.push_done(
+                        result.success, result.error or "",
+                    )
+                except Exception:
+                    logger.debug(
+                        "[overlay] push_done failed", exc_info=True,
+                    )
+
             if runtime is not None:
                 try:
                     await runtime.stop()
@@ -1611,13 +1656,6 @@ class AgentLoop:
             except Exception:
                 logger.exception("Failed to finalize trace")
 
-        if self._overlay:
-            try:
-                await self._overlay.push_done(
-                    result.success, result.error or "",
-                )
-            except Exception:
-                pass
         console.print_result(result)
         return result
 

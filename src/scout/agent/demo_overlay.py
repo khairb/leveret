@@ -16,6 +16,7 @@ Architecture:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, TYPE_CHECKING
 
@@ -514,6 +515,286 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
     from { opacity:0; transform:translateY(3px); }
     to   { opacity:1; transform:translateY(0); }
   }
+
+  /* ═══════════ JSON Results Viewer ═══════════ */
+  .results-section {
+    padding: 0; margin: 0;
+    animation: bootIn 0.3s ease;
+  }
+  .results-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px 8px;
+    position: sticky; top: -6px; z-index: 5;
+    background: rgba(22,22,24,0.97);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .results-header-left {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .results-title {
+    font-size: 12px; font-weight: 600;
+    color: rgba(255,255,255,0.85);
+    letter-spacing: 0.02em; text-transform: uppercase;
+  }
+  .results-count {
+    font-size: 10px; font-weight: 500;
+    padding: 2px 7px; border-radius: 4px;
+    background: rgba(255,255,255,0.06);
+    color: #8e8e93;
+  }
+  .results-copy-all {
+    font-size: 11px; font-weight: 500;
+    padding: 4px 10px; border-radius: 6px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.06);
+    color: #8e8e93; cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .results-copy-all:hover {
+    background: rgba(255,255,255,0.08);
+    color: #d1d1d6;
+  }
+  .results-copy-all.copied {
+    background: rgba(48,209,88,0.08);
+    border-color: rgba(48,209,88,0.15);
+    color: #30d158;
+  }
+
+  /* Breadcrumb */
+  .jt-breadcrumb {
+    display: flex; align-items: center; gap: 0;
+    padding: 4px 16px 8px;
+    font-size: 11px; color: #636366;
+    overflow-x: auto; white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .jt-breadcrumb::-webkit-scrollbar { display: none; }
+  .jt-breadcrumb-seg {
+    color: #8e8e93; cursor: pointer;
+    padding: 1px 3px; border-radius: 3px;
+    transition: background 0.12s ease;
+  }
+  .jt-breadcrumb-seg:hover {
+    background: rgba(255,255,255,0.06);
+    color: #d1d1d6;
+  }
+  .jt-breadcrumb-sep {
+    color: rgba(255,255,255,0.15);
+    padding: 0 3px; user-select: none;
+  }
+
+  /* Search */
+  .results-search {
+    padding: 0 16px 8px;
+  }
+  .results-search-input {
+    width: 100%; padding: 7px 10px 7px 30px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px; color: #e5e5e7;
+    font-size: 12px; font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s ease;
+  }
+  .results-search-input::placeholder { color: rgba(255,255,255,0.2); }
+  .results-search-input:focus {
+    border-color: rgba(94,92,230,0.4);
+  }
+  .results-search-wrap {
+    position: relative;
+  }
+  .results-search-icon {
+    position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
+    font-size: 12px; color: rgba(255,255,255,0.2);
+    pointer-events: none;
+  }
+
+  /* Tree */
+  .results-tree {
+    padding: 4px 0 8px 12px;
+  }
+  .jt-row {
+    display: flex; align-items: flex-start;
+    padding: 2px 12px 2px 4px;
+    min-height: 24px; line-height: 20px;
+    position: relative;
+    transition: background 0.08s ease;
+  }
+  .jt-row:hover {
+    background: rgba(255,255,255,0.025);
+  }
+  .jt-row.jt-zebra {
+    border-top: 1px solid rgba(255,255,255,0.03);
+  }
+  .jt-row.jt-hidden { display: none; }
+  .jt-children { display: none; }
+  .jt-children.jt-open { display: block; }
+
+  /* Indentation guides */
+  .jt-indent {
+    display: inline-block; width: 20px; flex-shrink: 0;
+    position: relative; align-self: stretch;
+  }
+  .jt-indent::after {
+    content: ''; position: absolute;
+    left: 9px; top: 0; bottom: 0;
+    border-left: 1px solid rgba(255,255,255,0.04);
+  }
+
+  /* Toggle triangle */
+  .jt-toggle {
+    width: 16px; height: 20px; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; color: rgba(255,255,255,0.25);
+    transition: transform 0.15s cubic-bezier(0.4,0,0.2,1),
+                color 0.12s ease;
+    font-size: 9px; user-select: none;
+  }
+  .jt-toggle:hover { color: rgba(255,255,255,0.5); }
+  .jt-toggle.jt-expanded { transform: rotate(90deg); }
+  .jt-toggle-placeholder {
+    width: 16px; flex-shrink: 0;
+  }
+
+  /* Key and value — VS Code dark theme JSON colors */
+  .jt-key {
+    color: #9CDCFE;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; white-space: nowrap;
+  }
+  .jt-colon {
+    color: #D4D4D4;
+    margin: 0 4px 0 0;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+  .jt-punct {
+    color: #D4D4D4;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+  .jt-comma {
+    color: #D4D4D4;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+  .jt-val {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; word-break: break-word;
+  }
+  .jt-val.jt-string { color: #CE9178; }
+  .jt-val.jt-number { color: #B5CEA8; }
+  .jt-val.jt-boolean { color: #569CD6; }
+  .jt-val.jt-null { color: #569CD6; }
+
+  /* Gutter index for array items */
+  .jt-gutter {
+    color: rgba(255,255,255,0.18);
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 10px; min-width: 20px;
+    text-align: right; padding-right: 6px;
+    user-select: none; flex-shrink: 0;
+    line-height: 20px;
+  }
+
+  /* Collapsed badge */
+  .jt-badge {
+    display: inline-block;
+    font-size: 10px; font-weight: 500;
+    padding: 1px 6px; margin-left: 4px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.05);
+    color: #636366;
+    font-family: inherit;
+  }
+  .jt-type-hint {
+    color: #D4D4D4; font-size: 12px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  /* Copy button */
+  .jt-copy {
+    opacity: 0; margin-left: auto; padding-left: 8px;
+    flex-shrink: 0; cursor: pointer;
+    font-size: 11px; color: rgba(255,255,255,0.25);
+    transition: opacity 0.12s ease, color 0.12s ease;
+    white-space: nowrap; user-select: none;
+    display: flex; align-items: center; height: 20px;
+  }
+  .jt-row:hover .jt-copy { opacity: 0.5; }
+  .jt-copy:hover { opacity: 1 !important; color: rgba(255,255,255,0.7); }
+  .jt-copy.copied { color: #30d158; opacity: 1 !important; }
+
+  /* Search highlight */
+  .jt-search-match {
+    background: rgba(255,214,10,0.2);
+    border-radius: 2px; padding: 0 1px;
+  }
+
+  /* Long string truncation */
+  .jt-long-toggle {
+    color: #5e5ce6; cursor: pointer;
+    font-size: 11px; margin-left: 4px;
+    font-family: inherit;
+  }
+  .jt-long-toggle:hover { text-decoration: underline; }
+
+  /* Show more for large arrays */
+  .jt-show-more {
+    padding: 4px 16px 4px 0;
+    display: flex; align-items: center;
+  }
+  .jt-show-more-btn {
+    font-size: 11px; font-weight: 500;
+    color: #5e5ce6; cursor: pointer;
+    padding: 3px 10px; border-radius: 5px;
+    background: rgba(94,92,230,0.08);
+    border: none; font-family: inherit;
+    transition: background 0.12s ease;
+  }
+  .jt-show-more-btn:hover {
+    background: rgba(94,92,230,0.14);
+  }
+
+  /* Footer with buttons */
+  .results-footer {
+    padding: 12px 16px;
+    background: rgba(22,22,24,0.95);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-top: 1px solid rgba(255,255,255,0.06);
+    display: flex; flex-direction: column; gap: 8px;
+    flex-shrink: 0;
+  }
+  .btn-expand {
+    width: 100%; padding: 8px 16px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    color: #d1d1d6; font-size: 12px; font-weight: 500;
+    font-family: inherit; cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn-expand:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.12);
+  }
+  .btn-expand.active {
+    background: rgba(255,255,255,0.08);
+  }
+  .btn-finish {
+    width: 100%; padding: 10px 24px;
+    background: linear-gradient(135deg, #5e5ce6, #bf5af2);
+    border: none; border-radius: 10px;
+    color: #fff; font-size: 13px; font-weight: 600;
+    font-family: inherit; cursor: pointer;
+    transition: filter 0.15s ease, transform 0.1s ease;
+    letter-spacing: 0.01em;
+  }
+  .btn-finish:hover { filter: brightness(1.12); }
+  .btn-finish:active { transform: scale(0.98); filter: brightness(0.95); }
 </style>
 </head>
 <body>
@@ -560,6 +841,508 @@ _OVERLAY_JS = r"""
   }
   function trim() {
     while (feed.children.length > 120) feed.removeChild(feed.firstChild);
+  }
+
+  /* ═══════════ JSON Results Viewer ═══════════ */
+  const INITIAL_BATCH = 10;
+  const BATCH_SIZE = 50;
+  const MAX_STRING_LEN = 500;
+  let _jtBreadcrumbPath = [];
+
+  function copyToClipboard(text, el) {
+    const write = () => navigator.clipboard.writeText(text);
+    write().catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.cssText = 'position:fixed;left:-9999px';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); ta.remove();
+    });
+    if (el) {
+      const prev = el.textContent;
+      el.textContent = '\u2713'; el.classList.add('copied');
+      setTimeout(() => { el.textContent = prev; el.classList.remove('copied'); }, 1200);
+    }
+  }
+
+  function jtCount(val) {
+    if (Array.isArray(val)) return val.length + ' item' + (val.length !== 1 ? 's' : '');
+    if (val && typeof val === 'object') {
+      const n = Object.keys(val).length;
+      return n + ' key' + (n !== 1 ? 's' : '');
+    }
+    return '';
+  }
+
+  function jtTypeClass(val) {
+    if (val === null || val === undefined) return 'jt-null';
+    if (typeof val === 'string') return 'jt-string';
+    if (typeof val === 'number') return 'jt-number';
+    if (typeof val === 'boolean') return 'jt-boolean';
+    return '';
+  }
+
+  function jtDisplayVal(val) {
+    if (val === null) return 'null';
+    if (val === undefined) return 'undefined';
+    if (typeof val === 'string') {
+      if (val.length > MAX_STRING_LEN) return '"' + esc(val.slice(0, MAX_STRING_LEN)) + '\u2026"';
+      return '"' + esc(val) + '"';
+    }
+    if (typeof val === 'boolean') return val ? 'true' : 'false';
+    return String(val);
+  }
+
+  function jtIsComplex(val) {
+    return val !== null && typeof val === 'object';
+  }
+
+  function updateBreadcrumb(bcEl, path) {
+    _jtBreadcrumbPath = path;
+    bcEl.innerHTML = '';
+    path.forEach((seg, i) => {
+      if (i > 0) {
+        const sep = document.createElement('span');
+        sep.className = 'jt-breadcrumb-sep';
+        sep.textContent = '\u203A';
+        bcEl.appendChild(sep);
+      }
+      const s = document.createElement('span');
+      s.className = 'jt-breadcrumb-seg';
+      s.textContent = seg;
+      bcEl.appendChild(s);
+    });
+    bcEl.scrollLeft = bcEl.scrollWidth;
+  }
+
+  function renderNode(value, parent, key, depth, path, isArrayItem, arrayIndex, bcEl, isLastSibling) {
+    const isComplex = jtIsComplex(value);
+    const isArr = Array.isArray(value);
+    const showComma = !isLastSibling;
+
+    const row = document.createElement('div');
+    row.className = 'jt-row';
+    if (depth === 1 && isArrayItem && arrayIndex % 2 === 0) row.classList.add('jt-zebra');
+    row._jtPath = path;
+    row._jtValue = value;
+
+    // Gutter number for array items
+    if (isArrayItem) {
+      const gutter = document.createElement('span');
+      gutter.className = 'jt-gutter';
+      gutter.textContent = String(arrayIndex + 1);
+      row.appendChild(gutter);
+    }
+
+    // Indentation
+    for (let i = 0; i < depth; i++) {
+      const indent = document.createElement('span');
+      indent.className = 'jt-indent';
+      row.appendChild(indent);
+    }
+
+    if (isComplex) {
+      // Toggle
+      const toggle = document.createElement('span');
+      toggle.className = 'jt-toggle';
+      toggle.textContent = '\u25B6';
+      row.appendChild(toggle);
+
+      // Key (quoted for object properties, omitted for array items)
+      if (key !== null && key !== undefined && !isArrayItem) {
+        const k = document.createElement('span');
+        k.className = 'jt-key';
+        k.textContent = '"' + key + '"';
+        row.appendChild(k);
+        const colon = document.createElement('span');
+        colon.className = 'jt-colon';
+        colon.textContent = ': ';
+        row.appendChild(colon);
+      }
+
+      // Opening bracket
+      const hint = document.createElement('span');
+      hint.className = 'jt-punct';
+      hint.textContent = isArr ? '[' : '{';
+      row.appendChild(hint);
+
+      // Badge — always visible to show total count
+      const badge = document.createElement('span');
+      badge.className = 'jt-badge';
+      badge.textContent = jtCount(value);
+      row.appendChild(badge);
+
+      // Closing bracket + comma (shown when collapsed)
+      const closeHint = document.createElement('span');
+      closeHint.className = 'jt-punct';
+      closeHint.textContent = (isArr ? ']' : '}') + (showComma ? ',' : '');
+      row.appendChild(closeHint);
+
+      // Copy button
+      const cp = document.createElement('span');
+      cp.className = 'jt-copy';
+      cp.textContent = 'Copy';
+      cp.addEventListener('click', (e) => {
+        e.stopPropagation();
+        copyToClipboard(JSON.stringify(value, null, 2), cp);
+      });
+      row.appendChild(cp);
+
+      parent.appendChild(row);
+
+      // Children container
+      const children = document.createElement('div');
+      children.className = 'jt-children';
+      children._jtData = value;
+      children._jtDepth = depth + 1;
+      children._jtPath = path;
+      children._jtRendered = false;
+      children._jtBcEl = bcEl;
+      parent.appendChild(children);
+
+      // Closing bracket row (shown when expanded)
+      const closeRow = document.createElement('div');
+      closeRow.className = 'jt-row';
+      closeRow.style.display = 'none';
+      if (isArrayItem) {
+        const g = document.createElement('span');
+        g.className = 'jt-gutter'; g.textContent = '';
+        closeRow.appendChild(g);
+      }
+      for (let i = 0; i < depth; i++) {
+        const indent = document.createElement('span');
+        indent.className = 'jt-indent';
+        closeRow.appendChild(indent);
+      }
+      const closePlaceholder = document.createElement('span');
+      closePlaceholder.className = 'jt-toggle-placeholder';
+      closeRow.appendChild(closePlaceholder);
+      const closeBracket = document.createElement('span');
+      closeBracket.className = 'jt-punct';
+      closeBracket.textContent = (isArr ? ']' : '}') + (showComma ? ',' : '');
+      closeRow.appendChild(closeBracket);
+      parent.appendChild(closeRow);
+
+      const autoExpand = depth < 2;
+
+      function expandNode() {
+        if (!children._jtRendered) {
+          children._jtRendered = true;
+          const entries = isArr ? value.map((v, i) => [i, v]) : Object.entries(value);
+          const total = entries.length;
+          let rendered = 0;
+
+          function renderBatch(start, count) {
+            const end = Math.min(start + count, total);
+            for (let i = start; i < end; i++) {
+              const [ek, ev] = entries[i];
+              const childPath = path.concat(isArr ? '[' + ek + ']' : ek);
+              const isLast = (i === total - 1);
+              renderNode(ev, children, ek, depth + 1, childPath, isArr, i, bcEl, isLast);
+            }
+            rendered = end;
+
+            // Show more button for large collections
+            if (end < total) {
+              const existing = children.querySelector('.jt-show-more');
+              if (existing) existing.remove();
+              const more = document.createElement('div');
+              more.className = 'jt-show-more';
+              if (isArr) {
+                const g = document.createElement('span');
+                g.className = 'jt-gutter'; g.textContent = '';
+                more.appendChild(g);
+              }
+              for (let i = 0; i <= depth; i++) {
+                const indent = document.createElement('span');
+                indent.className = 'jt-indent';
+                more.appendChild(indent);
+              }
+              const btn = document.createElement('button');
+              btn.className = 'jt-show-more-btn';
+              btn.textContent = 'Show ' + Math.min(BATCH_SIZE, total - end) + ' more of ' + (total - end) + ' remaining';
+              btn.addEventListener('click', () => {
+                more.remove();
+                renderBatch(end, BATCH_SIZE);
+              });
+              more.appendChild(btn);
+              children.appendChild(more);
+            }
+          }
+
+          renderBatch(0, INITIAL_BATCH);
+        }
+        toggle.classList.add('jt-expanded');
+        children.classList.add('jt-open');
+        closeHint.style.display = 'none';
+        closeRow.style.display = '';
+        updateBreadcrumb(bcEl, path);
+      }
+
+      function collapseNode() {
+        toggle.classList.remove('jt-expanded');
+        children.classList.remove('jt-open');
+        closeHint.style.display = '';
+        closeRow.style.display = 'none';
+      }
+
+      toggle.addEventListener('click', () => {
+        if (children.classList.contains('jt-open')) collapseNode();
+        else expandNode();
+      });
+      row.addEventListener('dblclick', () => {
+        if (children.classList.contains('jt-open')) collapseNode();
+        else expandNode();
+      });
+
+      if (autoExpand) expandNode();
+
+    } else {
+      // Primitive leaf node
+      const placeholder = document.createElement('span');
+      placeholder.className = 'jt-toggle-placeholder';
+      row.appendChild(placeholder);
+
+      // Key (quoted for object properties, omitted for array items)
+      if (key !== null && key !== undefined && !isArrayItem) {
+        const k = document.createElement('span');
+        k.className = 'jt-key';
+        k.textContent = '"' + key + '"';
+        row.appendChild(k);
+        const colon = document.createElement('span');
+        colon.className = 'jt-colon';
+        colon.textContent = ': ';
+        row.appendChild(colon);
+      }
+
+      const v = document.createElement('span');
+      v.className = 'jt-val ' + jtTypeClass(value);
+      v.textContent = jtDisplayVal(value);
+      v._jtRawValue = value;
+      row.appendChild(v);
+
+      // Comma
+      if (showComma) {
+        const comma = document.createElement('span');
+        comma.className = 'jt-comma';
+        comma.textContent = ',';
+        row.appendChild(comma);
+      }
+
+      // Long string toggle
+      if (typeof value === 'string' && value.length > MAX_STRING_LEN) {
+        let showFull = false;
+        const toggle = document.createElement('span');
+        toggle.className = 'jt-long-toggle';
+        toggle.textContent = 'Show full';
+        toggle.addEventListener('click', () => {
+          showFull = !showFull;
+          v.textContent = showFull
+            ? '"' + value + '"'
+            : jtDisplayVal(value);
+          toggle.textContent = showFull ? 'Collapse' : 'Show full';
+        });
+        row.appendChild(toggle);
+      }
+
+      // Copy button
+      const cp = document.createElement('span');
+      cp.className = 'jt-copy';
+      cp.textContent = 'Copy';
+      cp.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const raw = typeof value === 'string' ? value : JSON.stringify(value);
+        copyToClipboard(raw, cp);
+      });
+      row.appendChild(cp);
+
+      parent.appendChild(row);
+    }
+  }
+
+  function filterTree(treeEl, query) {
+    const rows = treeEl.querySelectorAll('.jt-row');
+    const q = query.toLowerCase();
+
+    // Remove old highlights
+    treeEl.querySelectorAll('.jt-search-match').forEach(el => {
+      el.replaceWith(el.textContent);
+    });
+
+    if (!q) {
+      rows.forEach(r => r.classList.remove('jt-hidden'));
+      return;
+    }
+
+    const matched = new Set();
+
+    rows.forEach(row => {
+      const keyEl = row.querySelector('.jt-key');
+      const valEl = row.querySelector('.jt-val');
+      const keyText = keyEl ? keyEl.textContent.toLowerCase() : '';
+      const valText = valEl ? valEl.textContent.toLowerCase() : '';
+
+      if (keyText.includes(q) || valText.includes(q)) {
+        matched.add(row);
+        // Walk up to mark ancestors visible
+        let el = row.parentElement;
+        while (el && el !== treeEl) {
+          if (el.classList && el.classList.contains('jt-row')) matched.add(el);
+          // Ensure parent containers are open
+          if (el.classList && el.classList.contains('jt-children')) {
+            el.classList.add('jt-open');
+          }
+          el = el.parentElement;
+        }
+
+        // Highlight matches in text
+        [keyEl, valEl].forEach(target => {
+          if (!target) return;
+          const text = target.textContent;
+          const idx = text.toLowerCase().indexOf(q);
+          if (idx === -1) return;
+          const before = text.slice(0, idx);
+          const match = text.slice(idx, idx + q.length);
+          const after = text.slice(idx + q.length);
+          target.innerHTML = esc(before)
+            + '<span class="jt-search-match">' + esc(match) + '</span>'
+            + esc(after);
+        });
+      }
+    });
+
+    rows.forEach(row => {
+      if (matched.has(row)) row.classList.remove('jt-hidden');
+      else row.classList.add('jt-hidden');
+    });
+  }
+
+  function buildResultsViewer(jsonStr) {
+    let data;
+    try {
+      data = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
+    } catch (e) {
+      // Invalid JSON — show raw text fallback
+      const d = document.createElement('div');
+      d.className = 'results-section';
+      d.innerHTML = '<div class="results-header"><div class="results-header-left">'
+        + '<span class="results-title">Results</span></div></div>'
+        + '<pre style="padding:12px 16px;font-size:11px;color:#8e8e93;overflow:auto;white-space:pre-wrap;word-break:break-word">'
+        + esc(String(jsonStr)) + '</pre>';
+      feed.appendChild(d);
+      // Footer
+      const footer = document.createElement('div');
+      footer.className = 'results-footer';
+      footer.innerHTML = '<button class="btn-expand" id="btn-expand">Expand view</button>'
+        + '<button class="btn-finish" id="btn-finish">Finish</button>';
+      root.appendChild(footer);
+      footer.querySelector('#btn-finish').addEventListener('click', () => {
+        if (window.__scout_dismiss) window.__scout_dismiss();
+      });
+      footer.querySelector('#btn-expand').addEventListener('click', function() {
+        this.classList.toggle('active');
+        this.textContent = this.classList.contains('active') ? 'Collapse view' : 'Expand view';
+        if (window.__scout_expand) window.__scout_expand(this.classList.contains('active'));
+      });
+      scrollDown();
+      return;
+    }
+
+    window.__scout_json_data = data;
+
+    const section = document.createElement('div');
+    section.className = 'results-section';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'results-header';
+    const headerLeft = document.createElement('div');
+    headerLeft.className = 'results-header-left';
+    const title = document.createElement('span');
+    title.className = 'results-title';
+    title.textContent = 'Results';
+    headerLeft.appendChild(title);
+    const count = jtCount(data);
+    if (count) {
+      const countEl = document.createElement('span');
+      countEl.className = 'results-count';
+      countEl.textContent = count;
+      headerLeft.appendChild(countEl);
+    }
+    header.appendChild(headerLeft);
+    const copyAll = document.createElement('button');
+    copyAll.className = 'results-copy-all';
+    copyAll.textContent = 'Copy JSON';
+    copyAll.addEventListener('click', () => {
+      copyToClipboard(JSON.stringify(data, null, 2), copyAll);
+    });
+    header.appendChild(copyAll);
+    section.appendChild(header);
+
+    // Breadcrumb
+    const bc = document.createElement('div');
+    bc.className = 'jt-breadcrumb';
+    section.appendChild(bc);
+    updateBreadcrumb(bc, ['root']);
+
+    // Search
+    const searchWrap = document.createElement('div');
+    searchWrap.className = 'results-search';
+    searchWrap.innerHTML = '<div class="results-search-wrap">'
+      + '<span class="results-search-icon">\uD83D\uDD0D</span>'
+      + '<input class="results-search-input" placeholder="Search keys and values\u2026" type="text">'
+      + '</div>';
+    section.appendChild(searchWrap);
+
+    // Tree
+    const tree = document.createElement('div');
+    tree.className = 'results-tree';
+    section.appendChild(tree);
+
+    // Render root node
+    renderNode(data, tree, null, 0, ['root'], false, 0, bc, true);
+
+    feed.appendChild(section);
+
+    // Wire up search
+    let searchTimer;
+    const searchInput = searchWrap.querySelector('.results-search-input');
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => filterTree(tree, searchInput.value.trim()), 200);
+    });
+
+    // Footer (appended to root, outside feed, so it stays sticky at bottom)
+    const footer = document.createElement('div');
+    footer.className = 'results-footer';
+    footer.id = 'results-footer';
+
+    const expandBtn = document.createElement('button');
+    expandBtn.className = 'btn-expand';
+    expandBtn.id = 'btn-expand';
+    expandBtn.textContent = 'Expand view';
+    expandBtn.addEventListener('click', () => {
+      expandBtn.classList.toggle('active');
+      expandBtn.textContent = expandBtn.classList.contains('active') ? 'Collapse view' : 'Expand view';
+      if (window.__scout_expand) window.__scout_expand(expandBtn.classList.contains('active'));
+    });
+    footer.appendChild(expandBtn);
+
+    const finishBtn = document.createElement('button');
+    finishBtn.className = 'btn-finish';
+    finishBtn.id = 'btn-finish';
+    finishBtn.textContent = 'Finish';
+    finishBtn.addEventListener('click', () => {
+      if (window.__scout_dismiss) window.__scout_dismiss();
+    });
+    footer.appendChild(finishBtn);
+
+    root.appendChild(footer);
+
+    // Scroll to results
+    requestAnimationFrame(() => {
+      _userNearBottom = true;
+      feed.scrollTop = feed.scrollHeight;
+    });
   }
 
   /* ═══════════ Markdown parser ═══════════
@@ -957,6 +1740,11 @@ _OVERLAY_JS = r"""
         feed.appendChild(d);
         setStatus(ok ? 'Complete' : 'Failed', ok ? '#30d158' : '#ff453a');
         scrollDown(); return;
+      }
+
+      if (t === 'results') {
+        buildResultsViewer(ev.data);
+        return;
       }
 
       if (t === 'system') {
@@ -1532,6 +2320,280 @@ class DemoOverlay:
 
     async def push_plan(self, items: list[str]) -> None:
         await self.push({"type": "plan", "items": items})
+
+    # ── JSON Results Viewer ───────────────────────────────────────
+
+    async def push_results(self, json_data: str) -> None:
+        """Show the interactive JSON results viewer in the overlay.
+
+        Must be called after ``push_done()`` while the browser is still
+        open.  Sets up the ``__scout_expand`` callback so the JS side
+        can request window resizing.
+        """
+        if not self._overlay_page or not self._injected:
+            return
+
+        # Expose the expand callback so JS can trigger window resize.
+        try:
+            await self._overlay_page.expose_function(
+                "__scout_expand_cb",
+                lambda expanded: asyncio.ensure_future(
+                    self._resize_windows(bool(expanded)),
+                ),
+            )
+            await self._overlay_page.evaluate(
+                "window.__scout_expand = (x) => __scout_expand_cb(x)",
+            )
+        except Exception:
+            # expose_function may fail if already registered or page is
+            # closing — non-fatal, expand just won't work.
+            logger.debug("[overlay] expose __scout_expand_cb failed",
+                         exc_info=True)
+
+        await self.push({"type": "results", "data": json_data})
+
+    async def _resize_windows(self, expanded: bool) -> None:
+        """Resize overlay and main windows for expand/collapse toggle."""
+        if not self._main_page or not self._overlay_page:
+            return
+        from ..browser import compute_demo_layout, compute_expanded_layout
+
+        try:
+            screen = await self._main_page.evaluate(
+                "({ w: screen.availWidth, h: screen.availHeight })",
+            )
+            sw, sh = screen["w"], screen["h"]
+        except Exception:
+            sw, sh = 1920, 1080
+
+        layout_fn = compute_expanded_layout if expanded else compute_demo_layout
+        layout = layout_fn(sw, sh)
+        pw = layout["page_width"]
+        ph = layout["height"]
+        panelw = layout["panel_width"]
+        panelx = layout["panel_x"]
+
+        # Use CDP Browser.setWindowBounds for reliable positioning —
+        # window.moveTo() is unreliable for popup windows in Chrome.
+        async def _cdp_set_bounds(page, x, y, w, h):
+            try:
+                cdp = await page.context.new_cdp_session(page)
+                target = await cdp.send("Browser.getWindowForTarget")
+                wid = target["windowId"]
+                await cdp.send("Browser.setWindowBounds", {
+                    "windowId": wid,
+                    "bounds": {
+                        "left": x, "top": y,
+                        "width": w, "height": h,
+                        "windowState": "normal",
+                    },
+                })
+                await cdp.detach()
+            except Exception:
+                # Fallback to JS resize.
+                try:
+                    await page.evaluate(
+                        f"window.moveTo({x},{y});"
+                        f"window.resizeTo({w},{h})",
+                    )
+                except Exception:
+                    pass
+
+        await _cdp_set_bounds(self._main_page, 0, 0, pw, ph)
+        await _cdp_set_bounds(self._overlay_page, panelx, 0, panelw, ph)
+
+    async def wait_for_dismiss(
+        self,
+        *,
+        main_page: Any = None,
+        timeout_s: float = 600.0,
+    ) -> None:
+        """Block until the user clicks Finish, closes browser, or timeout.
+
+        Racing conditions:
+          1. User clicks "Finish" → JS calls __scout_dismiss_cb → resolves
+          2. User closes overlay (X) → pill injected on website, keep waiting
+          3. User closes browser window → resolves immediately
+          4. Timeout (default 10 min) → resolves with warning
+        """
+        if not self._overlay_page:
+            return
+
+        loop = asyncio.get_event_loop()
+        dismiss_future: asyncio.Future[str] = loop.create_future()
+
+        def _resolve(reason: str) -> None:
+            if not dismiss_future.done():
+                logger.info("[overlay] dismiss resolved: %s", reason)
+                dismiss_future.set_result(reason)
+
+        # Use page.evaluate with a JS Promise that resolves when the
+        # user clicks Finish.  This avoids expose_function race conditions.
+        # We set window.__scout_dismiss as a resolver; the Finish button
+        # (created by buildResultsViewer) calls it on click.
+
+        # Handler: overlay page closed → inject pill, keep waiting.
+        def _on_overlay_close() -> None:
+            logger.info("[overlay] overlay page close event fired")
+            if dismiss_future.done():
+                return
+            asyncio.ensure_future(
+                self._inject_floating_pill(main_page, dismiss_future),
+            )
+
+        # Handler: main browser page closed → finish immediately.
+        def _on_main_close() -> None:
+            logger.info("[overlay] main page close event fired")
+            _resolve("browser_closed")
+
+        overlay_ref = self._overlay_page
+        overlay_ref.on("close", _on_overlay_close)
+        if main_page:
+            main_page.on("close", _on_main_close)
+
+        # Start a background task that awaits the JS Promise.
+        # The Promise resolves when window.__scout_dismiss() is called.
+        # If the user clicked Finish in the gap before this runs,
+        # __scout_dismiss_pending is set — resolve immediately.
+        async def _await_js_dismiss() -> None:
+            try:
+                await self._overlay_page.evaluate(
+                    "new Promise(resolve => {"
+                    "  window.__scout_dismiss = resolve;"
+                    "})",
+                )
+                _resolve("finish_clicked")
+            except Exception:
+                # Page closed or crashed — the close handlers will deal with it.
+                logger.debug("[overlay] JS dismiss promise rejected",
+                             exc_info=True)
+
+        dismiss_task = asyncio.ensure_future(_await_js_dismiss())
+
+        try:
+            await asyncio.wait_for(dismiss_future, timeout=timeout_s)
+        except asyncio.TimeoutError:
+            logger.info(
+                "[overlay] results viewer timed out after %.0fs", timeout_s,
+            )
+        finally:
+            dismiss_task.cancel()
+            try:
+                overlay_ref.remove_listener("close", _on_overlay_close)
+            except Exception:
+                pass
+            if main_page:
+                try:
+                    main_page.remove_listener("close", _on_main_close)
+                except Exception:
+                    pass
+
+    async def _inject_floating_pill(
+        self,
+        main_page: Any,
+        dismiss_future: asyncio.Future[str],
+    ) -> None:
+        """Inject a floating pill into the website when the overlay is closed.
+
+        Provides a "Finish" button so the user can still signal completion
+        without the overlay panel.
+        """
+        if not main_page or main_page.is_closed():
+            if not dismiss_future.done():
+                dismiss_future.set_result("page_gone")
+            return
+
+        def _pill_dismiss() -> None:
+            if not dismiss_future.done():
+                dismiss_future.set_result("pill_finish")
+
+        try:
+            await main_page.expose_function(
+                "__scout_pill_dismiss", _pill_dismiss,
+            )
+        except Exception:
+            # May fail if already registered from a previous overlay close.
+            pass
+
+        pill_js = r"""(() => {
+            if (document.getElementById('scout-pill')) return;
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes scout-pill-in {
+                    from { opacity: 0; transform: translateY(10px); }
+                    to   { opacity: 1; transform: translateY(0); }
+                }
+                #scout-pill {
+                    position: fixed; bottom: 20px; right: 20px;
+                    z-index: 2147483647;
+                    display: flex; align-items: center; gap: 10px;
+                    padding: 10px 12px 10px 16px; border-radius: 24px;
+                    background: rgba(22, 22, 24, 0.92);
+                    backdrop-filter: blur(20px) saturate(180%);
+                    -webkit-backdrop-filter: blur(20px) saturate(180%);
+                    border: 1px solid rgba(255,255,255,0.1);
+                    box-shadow: 0 4px 24px rgba(0,0,0,0.4),
+                                0 0 0 0.5px rgba(255,255,255,0.05);
+                    font: 500 13px/1 -apple-system, BlinkMacSystemFont,
+                          "SF Pro Text", "Helvetica Neue", sans-serif;
+                    color: rgba(255,255,255,0.85);
+                    animation: scout-pill-in 0.3s cubic-bezier(0.4,0,0.2,1);
+                }
+                #scout-pill .pill-label {
+                    color: rgba(255,255,255,0.35);
+                    font-weight: 600; letter-spacing: 0.02em;
+                }
+                #scout-pill .pill-sep {
+                    color: rgba(255,255,255,0.1);
+                    font-weight: 300;
+                }
+                #scout-pill .pill-finish {
+                    background: linear-gradient(135deg, #5e5ce6, #bf5af2);
+                    color: #fff; font-weight: 600; font-size: 12px;
+                    border: none; cursor: pointer;
+                    padding: 6px 14px; border-radius: 8px;
+                    transition: filter 0.15s ease, transform 0.1s ease;
+                }
+                #scout-pill .pill-finish:hover {
+                    filter: brightness(1.12);
+                }
+                #scout-pill .pill-finish:active {
+                    transform: scale(0.96); filter: brightness(0.95);
+                }
+            `;
+            document.head.appendChild(style);
+
+            const pill = document.createElement('div');
+            pill.id = 'scout-pill';
+
+            const label = document.createElement('span');
+            label.className = 'pill-label';
+            label.textContent = 'Scout';
+
+            const sep = document.createElement('span');
+            sep.className = 'pill-sep';
+            sep.textContent = '|';
+
+            const btn = document.createElement('button');
+            btn.className = 'pill-finish';
+            btn.textContent = 'Finish';
+            btn.addEventListener('click', () => {
+                window.__scout_pill_dismiss();
+                pill.style.transition = 'opacity 0.2s, transform 0.2s';
+                pill.style.opacity = '0';
+                pill.style.transform = 'translateY(10px)';
+                setTimeout(() => pill.remove(), 250);
+            });
+
+            pill.append(label, sep, btn);
+            document.body.appendChild(pill);
+        })()"""
+
+        try:
+            await main_page.evaluate(pill_js)
+        except Exception:
+            if not dismiss_future.done():
+                dismiss_future.set_result("pill_inject_failed")
 
     # ── Section highlighting (main page) ───────────────────────────
 

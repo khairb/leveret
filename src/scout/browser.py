@@ -252,6 +252,27 @@ def compute_demo_layout(
     }
 
 
+def compute_expanded_layout(
+    screen_width: int, screen_height: int,
+) -> dict[str, int]:
+    """Compute window sizes for the expanded 50/50 results view.
+
+    Returns a dict with keys: panel_width, page_width, panel_x, height.
+    """
+    if screen_width < 800:
+        screen_width = 1920
+    if screen_height < 400:
+        screen_height = 1080
+    panel_width = screen_width // 2
+    page_width = screen_width - panel_width
+    return {
+        "panel_width": panel_width,
+        "page_width": page_width,
+        "panel_x": page_width,
+        "height": screen_height,
+    }
+
+
 # ── Shared Browser ──────────────────────────────────────────────
 
 class Browser:

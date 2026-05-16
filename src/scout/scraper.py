@@ -679,7 +679,10 @@ class Scraper:
                 )
 
         # -- headless (resolve None to default) --
+        # Demo mode requires a visible browser window.
         resolved_headless = headless if headless is not None else True
+        if demo:
+            resolved_headless = False
 
         # -- Store validated state --
         self._url = url
