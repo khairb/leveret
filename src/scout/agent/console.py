@@ -460,3 +460,55 @@ def print_deferred_highlights(count: int, resolved: int, drawn: int) -> None:
         f" {count} after-nav selectors"
         f" → {resolved} resolved → {drawn} drawn"
     )
+
+
+def print_param_detection(
+    fill_count: int,
+    match_count: int,
+    matches: list[tuple[str, str, str, str]],
+    noise_filtered: int = 0,
+    complex_count: int = 0,
+) -> None:
+    """Print URL parameter detection results.
+
+    Args:
+        fill_count: Total fill values extracted from the code.
+        match_count: Number of URL params that matched fill values.
+        matches: List of (param_name, param_value, action, fill_value)
+                 tuples for each match.
+        noise_filtered: Number of params filtered as tracking noise.
+        complex_count: Number of complex-encoded params (Tier 2).
+    """
+    if fill_count == 0 and complex_count == 0:
+        return
+
+    tag = _c(_MAGENTA, "[param-detect]")
+
+    if match_count == 0 and complex_count == 0:
+        detail = f"{fill_count} fill(s), no URL param matches"
+        if noise_filtered:
+            detail += f" ({noise_filtered} noise filtered)"
+        print(f"    {tag} {_DIM}{detail}{_RESET}")
+        return
+
+    if match_count > 0:
+        print(
+            f"    {tag}"
+            f" {_c(_GREEN, f'{match_count} match(es)')}"
+            f" from {fill_count} fill(s)"
+        )
+        for param_name, param_value, action, fill_value in matches:
+            print(
+                f"    {_DIM}  {_c(_GREEN, '●')}"
+                f" {param_name}={param_value}"
+                f"  ←  {action}(\"{fill_value}\")"
+                f"{_RESET}"
+            )
+    elif complex_count > 0:
+        print(
+            f"    {tag}"
+            f" {_c(_YELLOW, f'{complex_count} complex-encoded param(s)')}"
+            f" (Tier 2 hint shown)"
+        )
+    if noise_filtered:
+        print(f"    {_DIM}  {noise_filtered} noise param(s) filtered{_RESET}")

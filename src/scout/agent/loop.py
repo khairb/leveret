@@ -142,6 +142,23 @@ _PYTHON_FENCE_RE = re.compile(
 # Regex to extract section IDs from zoom markers.
 _ZOOM_IDS_RE = re.compile(r"__ZOOM_START__\|([^|]*)\|")
 
+# Regex for stripping internal markers from overlay output.
+_TURN_TAG_RE = re.compile(r"__TURN_\d+__\n?")
+_PAGE_BLOCK_RE = re.compile(
+    r"__PAGE_VIEW_START__.*?__PAGE_VIEW_END__\n?", re.DOTALL,
+)
+_ZOOM_BLOCK_RE = re.compile(
+    r"__ZOOM_START__\|[^|]*\|.*?__ZOOM_END__\n?", re.DOTALL,
+)
+
+
+def _strip_overlay_markers(text: str) -> str:
+    """Remove internal markers from text shown in the overlay panel."""
+    text = _PAGE_BLOCK_RE.sub("", text)
+    text = _ZOOM_BLOCK_RE.sub("", text)
+    text = _TURN_TAG_RE.sub("", text)
+    return text.strip()
+
 
 def _extract_zoom_selectors(
     tool_results: list[dict],
@@ -422,7 +439,7 @@ class AgentLoop:
                 self._turn_ref[0] = turn_number
                 console.print_turn_start(turn_number)
                 if self._overlay:
-                    await self._overlay.push_turn(turn_number)
+                    await self._overlay.push_thinking_start()
 
                 # ── History compression check ─────────────────
                 # Compress if the last LLM call's input tokens
@@ -462,15 +479,18 @@ class AgentLoop:
                     ]
                 messages_for_api = conversation.get_messages()
                 tracer.log_llm_request(messages_for_api, current_tools)
-
-                llm_start = time.time()
-                response = await call_llm(
-                    self._llm_config,
-                    system=system_prompt,
-                    messages=messages_for_api,
-                    tools=current_tools,
-                )
-                llm_duration_ms = (time.time() - llm_start) * 1000
+                try:
+                    llm_start = time.time()
+                    response = await call_llm(
+                        self._llm_config,
+                        system=system_prompt,
+                        messages=messages_for_api,
+                        tools=current_tools,
+                    )
+                    llm_duration_ms = (time.time() - llm_start) * 1000
+                finally:
+                    if self._overlay:
+                        await self._overlay.push_thinking_end()
 
                 tracer.log_llm_response(response, llm_duration_ms)
                 usage = response.usage
@@ -486,6 +506,11 @@ class AgentLoop:
                 # Parse the response into content blocks.
                 content_blocks = response.content
                 stop_reason = response.stop_reason
+
+                # Push turn separator + thinking to overlay after
+                # the LLM responds, so reasoning appears first.
+                if self._overlay:
+                    await self._overlay.push_turn(turn_number)
 
                 # Print any text the agent says.
                 for b in content_blocks:
@@ -797,10 +822,19 @@ class AgentLoop:
                                 combined_output, stderr, returncode,
                             )
                             if self._overlay:
+                                _sandbox_blocked = (
+                                    self._sandbox
+                                    and returncode != 0
+                                    and (
+                                        "SANDBOX VIOLATION" in stderr
+                                        or "sandbox mode" in stderr
+                                    )
+                                )
                                 await self._overlay.push_script_output(
                                     combined_output, returncode,
                                     duration_s=f"{_script_elapsed:.1f}",
                                     timeout_s=f"{self._script_timeout:.0f}",
+                                    sandbox_blocked=_sandbox_blocked,
                                 )
                             console.print_checkpoints_summary(checkpoints)
                             tracer.log_system_event(
@@ -1420,25 +1454,40 @@ class AgentLoop:
                         # expand and see everything.
                         _out = ""
                         _err = ""
-                        if "Output:\n" in tool_result.content:
-                            _oi = tool_result.content.find("Output:\n") + 8
-                            # Find the next section boundary (Error:,
-                            # Info:, or --- heading) instead of "\n\n"
-                            # which cuts multi-paragraph output.
-                            _oe = len(tool_result.content)
-                            for _marker in ("\nError:\n", "\nInfo:", "\n---"):
-                                _mi = tool_result.content.find(_marker, _oi)
+                        _content = tool_result.content
+                        if "Output:\n" in _content:
+                            _oi = _content.find("Output:\n") + 8
+                            # Section markers like "\n---" can appear
+                            # inside a page view dump.  Skip past the
+                            # __PAGE_VIEW_END__ marker before searching
+                            # for boundaries so we don't cut mid-page.
+                            _search_from = _oi
+                            _pve = _content.find(
+                                "__PAGE_VIEW_END__", _oi,
+                            )
+                            if _pve != -1:
+                                _search_from = _pve
+                            _oe = len(_content)
+                            for _m in ("\nError:\n", "\nInfo:", "\n---"):
+                                _mi = _content.find(_m, _search_from)
                                 if _mi != -1 and _mi < _oe:
                                     _oe = _mi
-                            _out = tool_result.content[_oi:_oe].strip()
-                        if "Error:\n" in tool_result.content:
-                            _ei = tool_result.content.find("Error:\n") + 7
-                            _ee = len(tool_result.content)
-                            for _marker in ("\nInfo:", "\n---"):
-                                _mi = tool_result.content.find(_marker, _ei)
+                            _out = _content[_oi:_oe].strip()
+                        # Strip internal markers from user-visible
+                        # output — the structured cards (page map,
+                        # zoom viewer) already show this content.
+                        if _out:
+                            _out = _strip_overlay_markers(_out)
+                        if "Error:\n" in _content:
+                            _ei = _content.find("Error:\n") + 7
+                            _ee = len(_content)
+                            for _m in ("\nInfo:", "\n---"):
+                                _mi = _content.find(_m, _ei)
                                 if _mi != -1 and _mi < _ee:
                                     _ee = _mi
-                            _err = tool_result.content[_ei:_ee].strip()
+                            _err = _content[_ei:_ee].strip()
+                        if _err:
+                            _err = _strip_overlay_markers(_err)
                         await self._overlay.push_tool_result(
                             is_error=tool_result.is_error,
                             duration_s=f"{tool_duration_ms / 1000:.1f}",
@@ -1515,9 +1564,19 @@ class AgentLoop:
                 sp_result = self._show_page_result_ref[0]
                 if is_show_page_turn and sp_result is not None:
                     if self._overlay:
+                        _section_data = [
+                            {
+                                "id": s.section_id,
+                                "role": s.semantic_role,
+                                "interactive": s.interactive_count,
+                                "content": s.content[:800],
+                            }
+                            for s in sp_result.sections[:30]
+                        ]
                         await self._overlay.push_page_update(
                             url=runtime.page.url if runtime.page else "",
                             sections=len(sp_result.sections),
+                            section_data=_section_data,
                         )
                         await self._overlay.show_page_overlay()
                     self._show_page_result_ref[0] = None
@@ -1566,6 +1625,31 @@ class AgentLoop:
                             "zoom_structural_capture",
                         )
 
+                        # Push zoom view to overlay panel.
+                        if self._overlay:
+                            for _tr in tool_results:
+                                _trc = _tr.get("content", "")
+                                if (
+                                    isinstance(_trc, str)
+                                    and _ZOOM_START in _trc
+                                ):
+                                    _zm = _ZOOM_IDS_RE.search(_trc)
+                                    _zids = _zm.group(1) if _zm else ""
+                                    _zs = _trc.find("\n", _trc.find(_ZOOM_START)) + 1
+                                    _ze = _trc.find("__ZOOM_END__", _zs)
+                                    if _ze == -1:
+                                        _ze = len(_trc)
+                                    _zhtml = _trc[_zs:_ze].strip()
+                                    # Strip __TURN_N__ tag if present.
+                                    if _zhtml.startswith("__TURN_"):
+                                        _zhtml = _zhtml[
+                                            _zhtml.find("\n") + 1:
+                                        ]
+                                    await self._overlay.push_zoom_view(
+                                        _zids, _zhtml[:5000],
+                                    )
+                                    break
+
                         # Highlight zoomed sections on the main page.
                         if self._overlay:
                             hl_sels = _extract_zoom_selectors(
@@ -1600,14 +1684,20 @@ class AgentLoop:
                 messages_for_api = conversation.get_messages()
                 tracer.log_llm_request(messages_for_api, [])
 
-                llm_start = time.time()
-                response = await call_llm(
-                    self._llm_config,
-                    system=system_prompt,
-                    messages=messages_for_api,
-                    tools=[],
-                )
-                llm_duration_ms = (time.time() - llm_start) * 1000
+                if self._overlay:
+                    await self._overlay.push_thinking_start()
+                try:
+                    llm_start = time.time()
+                    response = await call_llm(
+                        self._llm_config,
+                        system=system_prompt,
+                        messages=messages_for_api,
+                        tools=[],
+                    )
+                    llm_duration_ms = (time.time() - llm_start) * 1000
+                finally:
+                    if self._overlay:
+                        await self._overlay.push_thinking_end()
 
                 tracer.log_llm_response(response, llm_duration_ms)
                 usage = response.usage

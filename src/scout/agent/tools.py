@@ -14,6 +14,9 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from .param_detector import (
+    detect_url_params, extract_fill_values, format_hint, format_hint_complex,
+)
 from .timeout_predict import predict_timeout
 
 logger = logging.getLogger("scout")
@@ -298,10 +301,68 @@ async def _exec_python(
             )
         parts.append("\n".join(diag_parts))
 
+    # Accumulate fill values across code executions so that
+    # fills from earlier turns are available when the URL finally
+    # changes (form fill and submit are often separate steps).
+    _inputs_dict = runtime.repl.get("inputs") if runtime.repl else None
+    current_fills = extract_fill_values(code, inputs=_inputs_dict)
+    if not hasattr(runtime, "_recent_fills"):
+        runtime._recent_fills = []
+    if current_fills:
+        runtime._recent_fills.extend(current_fills)
+        logger.info(
+            "[param_detector] accumulated %d fill(s) this step, %d total",
+            len(current_fills), len(runtime._recent_fills),
+        )
+
     # Notify the agent if the URL changed (navigation occurred).
     url_after = runtime.page.url if runtime.page else None
     if url_before and url_after and url_after != url_before:
         parts.append(f"\nInfo: page URL changed to {url_after}")
+        # Detect if form fill values appear as URL query parameters.
+        # Use accumulated fills from recent code blocks — form fill
+        # and form submit are often in different steps.
+        all_fills = runtime._recent_fills if hasattr(runtime, "_recent_fills") else []
+        if all_fills or _inputs_dict:
+            detection = detect_url_params(
+                url_before, url_after, all_fills, inputs=_inputs_dict,
+            )
+            from . import console
+            if detection and detection.matches:
+                # Tier 1: clean key=value param matches found.
+                parts.append(format_hint(detection))
+                console.print_param_detection(
+                    fill_count=len(all_fills),
+                    match_count=len(detection.matches),
+                    matches=[
+                        (m.param_name, m.param_value, m.fill.action, m.fill.value)
+                        for m in detection.matches
+                    ],
+                )
+                # Store detection on runtime so the script generation
+                # phase can reference it even after history compression.
+                runtime._param_detection = detection
+                # Clear accumulated fills after successful detection
+                # (no need to re-detect on subsequent navigations).
+                runtime._recent_fills = []
+            elif detection and detection.complex_params:
+                # Tier 2: no clean matches but complex-encoded params
+                # (JSON blobs, etc.) — show the URL observationally.
+                parts.append(format_hint_complex(detection))
+                console.print_param_detection(
+                    fill_count=len(all_fills),
+                    match_count=0,
+                    matches=[],
+                    complex_count=len(detection.complex_params),
+                )
+                runtime._param_detection = detection
+                runtime._recent_fills = []
+            else:
+                console.print_param_detection(
+                    fill_count=len(all_fills),
+                    match_count=0,
+                    matches=[],
+                )
 
     return ToolResult(
         tool_use_id=tool_use_id,

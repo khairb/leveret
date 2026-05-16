@@ -99,6 +99,36 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
   @keyframes spin  { to{transform:rotate(360deg)} }
 
+  /* ── Thinking indicator (mirrors .sys) ── */
+  .thinking-indicator {
+    padding: 3px 16px;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px; color: #636366;
+    opacity: 0;
+    animation: fade-in 0.3s ease 0.8s forwards;
+  }
+  @keyframes fade-in { to { opacity: 1; } }
+  .thinking-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #48484a; flex-shrink: 0;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .thinking-dots span {
+    animation: dot-appear 1.4s ease-in-out infinite;
+    opacity: 0;
+  }
+  .thinking-dots span:nth-child(1) { animation-delay: 0s; }
+  .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes dot-appear {
+    0%, 80%, 100% { opacity: 0; }
+    40%           { opacity: 1; }
+  }
+  .thinking-elapsed {
+    font-size: 11px; color: #48484a;
+    font-variant-numeric: tabular-nums;
+  }
+
   /* ── Scroll area ── */
   .feed {
     flex: 1; overflow-y: auto; overscroll-behavior: contain;
@@ -228,22 +258,28 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
     display: grid; place-items: center;
     font-size: 0; line-height: 1;
   }
-  .action-ind.loading::after {
-    content: ''; width: 12px; height: 12px;
-    border: 1.5px solid rgba(255,255,255,0.06);
-    border-top-color: rgba(255,255,255,0.4);
-    border-radius: 50%; animation: spin 0.7s linear infinite;
-  }
-  .action-ind.ok  { color: #30d158; font-size: 13px; }
-  .action-ind.err { color: #ff453a; font-size: 13px; }
+  .action-ind svg { margin-right: 0 !important; }
 
   .action-label {
     flex: 1; font-size: 12.5px;
     color: #98989d; font-weight: 500;
+    white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; min-width: 0;
   }
   .action-meta {
     font-size: 11px; color: rgba(255,255,255,0.18);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .action-meta-ok { color: #30d158; font-weight: 600; margin-right: 4px; }
+  .action-meta-err { color: #ff453a; font-weight: 600; margin-right: 4px; }
+  /* Inline spinner shown in action-meta while running */
+  .action-meta-spinner {
+    display: inline-block; width: 10px; height: 10px;
+    border: 1.5px solid rgba(255,255,255,0.08);
+    border-top-color: rgba(255,255,255,0.35);
+    border-radius: 50%; animation: spin 0.7s linear infinite;
+    vertical-align: -1px; margin-right: 5px;
   }
   .action-chevron {
     font-size: 14px; color: rgba(255,255,255,0.12);
@@ -306,6 +342,19 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   .action-out::-webkit-scrollbar { width: 3px; height: 3px; }
   .action-out::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 3px; }
   .action-out.e { color: rgba(255,69,58,0.75); }
+  .sandbox-hint {
+    display: flex; align-items: flex-start; gap: 7px;
+    margin-top: 8px; padding: 8px 11px;
+    background: rgba(255,159,10,0.06);
+    border: 1px solid rgba(255,159,10,0.12);
+    border-radius: 8px;
+    font-size: 11px; line-height: 1.45;
+    color: rgba(255,159,10,0.8);
+  }
+  .sandbox-hint-icon {
+    flex-shrink: 0; margin-top: 1px;
+    font-size: 12px; line-height: 1;
+  }
   /* Toggle button — always a sibling below .action-out-wrap */
   .action-out-toggle {
     display: block; width: 100%; margin-top: 2px; padding: 3px 0;
@@ -335,6 +384,33 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
     font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase;
   }
   .turn-line { flex: 1; height: 1px; background: rgba(255,255,255,0.04); }
+
+  /* ═══════════ Final script divider ═══════════ */
+  .final-divider {
+    padding: 16px 16px 6px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .final-divider-line {
+    flex: 1; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(94,92,230,0.25), transparent);
+  }
+  .final-divider-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: rgba(94,92,230,0.6);
+    white-space: nowrap;
+  }
+
+  /* Final script action row — highlighted variant */
+  .action.final-script .action-row {
+    background: rgba(94,92,230,0.06);
+    border-color: rgba(94,92,230,0.15);
+  }
+  .action.final-script .action-row:hover {
+    background: rgba(94,92,230,0.09);
+  }
+  .action.final-script .action-label {
+    color: #c4c2f0; font-weight: 600;
+  }
 
   /* ═══════════ System message ═══════════ */
   .sys {
@@ -517,6 +593,175 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
     font-family: "SF Mono", Menlo, Consolas, monospace;
   }
 
+  /* ═══════════ Page map card (show_page) ═══════════ */
+  .pagemap { padding: 4px 16px; }
+  .pagemap-card {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.04);
+    border-radius: 10px; overflow: hidden;
+  }
+  .pagemap-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px;
+    font-size: 12px; font-weight: 500; color: #98989d;
+    cursor: pointer; user-select: none; -webkit-user-select: none;
+  }
+  .pagemap-chev {
+    font-size: 11px; color: rgba(255,255,255,0.1);
+    transition: transform 0.2s; flex-shrink: 0;
+  }
+  .pagemap-card.open .pagemap-chev { transform: rotate(90deg); }
+  .pagemap-sections-body {
+    max-height: 0; overflow: hidden; opacity: 0;
+    transition: max-height 0.35s cubic-bezier(0.4,0,0.2,1),
+                opacity 0.2s ease;
+  }
+  .pagemap-card.open .pagemap-sections-body {
+    max-height: 2000px; opacity: 1;
+  }
+  .pagemap-section.hidden-section { display: none; }
+  .pagemap-card.show-all .pagemap-section.hidden-section { display: block; }
+  .pagemap-more {
+    display: block; width: 100%; padding: 5px 0; margin: 0;
+    background: none; border: none; cursor: pointer;
+    font-size: 10.5px; color: rgba(255,255,255,0.2);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    font-weight: 500; text-align: center;
+    transition: color 0.15s;
+  }
+  .pagemap-more:hover { color: rgba(255,255,255,0.5); }
+  .pagemap-card.show-all .pagemap-more { display: none; }
+  .pagemap-icon {
+    width: 16px; height: 16px; flex-shrink: 0;
+    display: grid; place-items: center;
+  }
+  .pagemap-url {
+    flex: 1; font-size: 10.5px; color: rgba(255,255,255,0.2);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+  }
+  .pagemap-count {
+    font-size: 10px; color: rgba(255,255,255,0.2);
+    font-weight: 500; flex-shrink: 0;
+  }
+  .pagemap-sections { padding: 0 4px 4px; }
+  .pagemap-section {
+    border-radius: 8px;
+    transition: background 0.15s;
+  }
+  .pagemap-section:hover { background: rgba(255,255,255,0.02); }
+  .pagemap-section-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; cursor: pointer; user-select: none;
+    -webkit-user-select: none;
+  }
+  .pagemap-section-dot {
+    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  }
+  .pagemap-section-dot.role-navigation { background: #64d2ff; }
+  .pagemap-section-dot.role-content    { background: #30d158; }
+  .pagemap-section-dot.role-form       { background: #ff9f0a; }
+  .pagemap-section-dot.role-header     { background: #bf5af2; }
+  .pagemap-section-dot.role-footer     { background: #8e8e93; }
+  .pagemap-section-dot.role-other      { background: #636366; }
+  .pagemap-section-id {
+    font-size: 11px; font-weight: 600; color: #d1d1d6;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 140px; flex-shrink: 0;
+  }
+  .pagemap-section-role {
+    flex: 1; font-size: 10.5px; color: rgba(255,255,255,0.25);
+  }
+  .pagemap-section-badge {
+    font-size: 9.5px; padding: 1px 6px; border-radius: 8px;
+    background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.25);
+    flex-shrink: 0;
+  }
+  .pagemap-section-chev {
+    font-size: 11px; color: rgba(255,255,255,0.1);
+    transition: transform 0.2s; flex-shrink: 0;
+  }
+  .pagemap-section.open .pagemap-section-chev { transform: rotate(90deg); }
+  .pagemap-section-content {
+    max-height: 0; overflow: hidden; opacity: 0;
+    transition: max-height 0.3s cubic-bezier(0.4,0,0.2,1),
+                opacity 0.2s ease, padding 0.2s ease;
+    padding: 0 8px;
+  }
+  .pagemap-section.open .pagemap-section-content {
+    max-height: 300px; overflow-y: auto; opacity: 1;
+    padding: 0 8px 8px;
+  }
+  .pagemap-section-content::-webkit-scrollbar { width: 3px; }
+  .pagemap-section-content::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.06); border-radius: 3px;
+  }
+  .pagemap-section-pre {
+    margin: 0; padding: 8px 10px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.03);
+    border-radius: 6px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 10.5px; line-height: 1.45; color: #8e8e93;
+    white-space: pre-wrap; word-break: break-word;
+  }
+
+  /* ═══════════ Zoom viewer (zoom_section) ═══════════ */
+  .zoomview { padding: 4px 16px; }
+  .zoomview-card {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.04);
+    border-radius: 10px; overflow: hidden;
+  }
+  .zoomview-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px;
+    font-size: 12px; font-weight: 500; color: #98989d;
+    cursor: pointer; user-select: none; -webkit-user-select: none;
+  }
+  .zoomview-icon {
+    width: 16px; height: 16px; flex-shrink: 0;
+    display: grid; place-items: center;
+  }
+  .zoomview-ids {
+    flex: 1; font-size: 11px; color: rgba(255,255,255,0.18); font-weight: 500;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .zoomview-chev {
+    font-size: 11px; color: rgba(255,255,255,0.1);
+    transition: transform 0.2s; flex-shrink: 0;
+  }
+  .zoomview-card.open .zoomview-chev { transform: rotate(90deg); }
+  .zoomview-body {
+    max-height: 0; overflow: hidden; opacity: 0;
+    transition: max-height 0.3s cubic-bezier(0.4,0,0.2,1),
+                opacity 0.2s ease;
+  }
+  .zoomview-card.open .zoomview-body {
+    max-height: 10000px; overflow-y: auto; opacity: 1;
+  }
+  .zoomview-body::-webkit-scrollbar { width: 3px; }
+  .zoomview-body::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.06); border-radius: 3px;
+  }
+  .zoomview-pre {
+    margin: 0; padding: 10px 12px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 10.5px; line-height: 1.5; color: #8e8e93;
+    white-space: pre; overflow-x: auto;
+    border-top: 1px solid rgba(255,255,255,0.03);
+  }
+  .zoomview-pre::-webkit-scrollbar { height: 3px; }
+  .zoomview-pre::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 3px; }
+  /* HTML syntax highlighting */
+  .zoomview-pre .ht { color: #ff6482; }
+  .zoomview-pre .ha { color: #ff9f0a; }
+  .zoomview-pre .hv { color: #6cd68e; }
+  .zoomview-pre .hc { color: rgba(255,255,255,0.2); font-style: italic; }
+  .zoomview-pre .hp { color: #8e8e93; }
+
   /* ═══════════ Boot sequence ═══════════ */
   .boot { padding: 14px 16px 4px; }
   .boot-line {
@@ -646,13 +891,18 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   /* Tree */
   .results-tree {
     padding: 4px 0 8px 12px;
+    overflow-x: auto;
   }
+  .results-tree::-webkit-scrollbar { height: 4px; }
+  .results-tree::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+  .results-tree::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); }
   .jt-row {
     display: flex; align-items: flex-start;
     padding: 2px 12px 2px 4px;
     min-height: 24px; line-height: 20px;
     position: relative;
     transition: background 0.08s ease;
+    white-space: nowrap;
   }
   .jt-row:hover {
     background: rgba(255,255,255,0.025);
@@ -714,7 +964,7 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   }
   .jt-val {
     font-family: "SF Mono", Menlo, Consolas, monospace;
-    font-size: 12px; word-break: break-word;
+    font-size: 12px; white-space: nowrap;
   }
   .jt-val.jt-string { color: #CE9178; }
   .jt-val.jt-number { color: #B5CEA8; }
@@ -769,7 +1019,7 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   .jt-long-toggle {
     color: #5e5ce6; cursor: pointer;
     font-size: 11px; margin-left: 4px;
-    font-family: inherit;
+    font-family: inherit; flex-shrink: 0;
   }
   .jt-long-toggle:hover { text-decoration: underline; }
 
@@ -959,6 +1209,17 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   }
   .btn-finish:hover { filter: brightness(1.12); }
   .btn-finish:active { transform: scale(0.98); filter: brightness(0.95); }
+  .btn-finish.closing {
+    pointer-events: none; opacity: 0.7;
+  }
+  .btn-finish.closing::before {
+    content: ''; display: inline-block;
+    width: 12px; height: 12px; margin-right: 8px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%; animation: spin 0.7s linear infinite;
+    vertical-align: -2px;
+  }
 </style>
 </head>
 <body>
@@ -1638,7 +1899,9 @@ _OVERLAY_JS = r"""
       footer.innerHTML = '<button class="btn-expand" id="btn-expand">Expand view</button>'
         + '<button class="btn-finish" id="btn-finish">Finish</button>';
       root.appendChild(footer);
-      footer.querySelector('#btn-finish').addEventListener('click', () => {
+      footer.querySelector('#btn-finish').addEventListener('click', function() {
+        this.classList.add('closing');
+        this.textContent = 'Closing\u2026';
         if (window.__scout_dismiss) window.__scout_dismiss();
       });
       footer.querySelector('#btn-expand').addEventListener('click', function() {
@@ -1801,6 +2064,8 @@ _OVERLAY_JS = r"""
     finishBtn.id = 'btn-finish';
     finishBtn.textContent = 'Finish';
     finishBtn.addEventListener('click', () => {
+      finishBtn.classList.add('closing');
+      finishBtn.textContent = 'Closing\u2026';
       if (window.__scout_dismiss) window.__scout_dismiss();
     });
     footer.appendChild(finishBtn);
@@ -1993,7 +2258,46 @@ _OVERLAY_JS = r"""
   }
 
   const _pySvg = '<svg viewBox="0 0 256 255" xmlns="http://www.w3.org/2000/svg" style="width:14px;height:14px;vertical-align:-2px;margin-right:7px"><defs><linearGradient id="pa" x1="12.96%" y1="12.07%" x2="79.68%" y2="78.21%"><stop offset="0%" stop-color="#387EB8"/><stop offset="100%" stop-color="#366994"/></linearGradient><linearGradient id="pb" x1="19.13%" y1="20.58%" x2="90.08%" y2="88.29%"><stop offset="0%" stop-color="#FFE052"/><stop offset="100%" stop-color="#FFC331"/></linearGradient></defs><path d="M126.9.1c-64.8 0-60.8 28.1-60.8 28.1l.1 29.2h61.9v8.7H39.2S0 61.5 0 127.1c0 65.6 34.2 63.3 34.2 63.3h20.4v-30.5s-1.1-34.2 33.6-34.2h57.9s32.6.5 32.6-31.5V32.6S183.5.1 126.9.1zm-32.2 18.8a10.5 10.5 0 1 1 0 21 10.5 10.5 0 0 1 0-21z" fill="url(#pa)"/><path d="M128.8 254.1c64.8 0 60.8-28.1 60.8-28.1l-.1-29.2h-61.9v-8.7h88.9s39.2 4.6 39.2-61 -34.2-63.3-34.2-63.3h-20.4v30.5s1.1 34.2-33.6 34.2h-57.9s-32.6-.5-32.6 31.5v61.6s-4.9 32.5 51.8 32.5zm32.2-18.8a10.5 10.5 0 1 1 0-21 10.5 10.5 0 0 1 0 21z" fill="url(#pb)"/></svg>';
-  function inferLabel() { return _pySvg + 'Python'; }
+
+  /* ── HTML syntax highlighter ─────────────────────────────────── */
+  function hiHtml(code) {
+    const out = [];
+    const re = /(<!--[\s\S]*?-->)|(<\/?)([\w-]+)((?:\s+[\w-]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*))?)*)\s*(\/?>)|([^<]+)/g;
+    let m;
+    while ((m = re.exec(code)) !== null) {
+      if (m[1]) { out.push('<span class="hc">' + esc(m[1]) + '</span>'); }
+      else if (m[2]) {
+        out.push('<span class="hp">' + esc(m[2]) + '</span>');
+        out.push('<span class="ht">' + esc(m[3]) + '</span>');
+        if (m[4]) {
+          const attrStr = m[4];
+          const attrRe = /([\w-]+)(\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*))?/g;
+          let a;
+          while ((a = attrRe.exec(attrStr)) !== null) {
+            out.push(' <span class="ha">' + esc(a[1]) + '</span>');
+            if (a[2]) {
+              const eq = a[2].indexOf('=');
+              const val = a[2].slice(eq + 1).trim();
+              out.push('=<span class="hv">' + esc(val) + '</span>');
+            }
+          }
+        }
+        out.push('<span class="hp">' + esc(m[5]) + '</span>');
+      }
+      else if (m[6]) { out.push(esc(m[6])); }
+    }
+    return out.join('');
+  }
+
+  function roleClass(role) {
+    const r = (role || '').toLowerCase();
+    if (r.includes('nav')) return 'role-navigation';
+    if (r.includes('content') || r.includes('main') || r.includes('article')) return 'role-content';
+    if (r.includes('form') || r.includes('input') || r.includes('search')) return 'role-form';
+    if (r.includes('header') || r.includes('banner')) return 'role-header';
+    if (r.includes('footer')) return 'role-footer';
+    return 'role-other';
+  }
 
   /* ═══════════ State ═══════════ */
   let lastAction = null;
@@ -2002,8 +2306,14 @@ _OVERLAY_JS = r"""
     stopActionTimer();
     const t0 = Date.now();
     const suffix = budget ? ' / ' + budget + 's timeout' : '';
+    const spinnerEl = document.createElement('span');
+    spinnerEl.className = 'action-meta-spinner';
+    const timerText = document.createTextNode('');
+    metaEl.textContent = '';
+    metaEl.appendChild(spinnerEl);
+    metaEl.appendChild(timerText);
     function tick() {
-      metaEl.textContent = ((Date.now() - t0) / 1000).toFixed(1) + 's' + suffix;
+      timerText.textContent = ((Date.now() - t0) / 1000).toFixed(1) + 's' + suffix;
     }
     tick();
     _actionTimer = setInterval(tick, 100);
@@ -2019,9 +2329,47 @@ _OVERLAY_JS = r"""
     if (dot) { dot.style.animation = 'none'; dot.style.background = color; }
   }
 
+  /* ── Thinking indicator ── */
+  let _thinkingEl = null;
+  let _thinkingTimer = null;
+  function showThinking() {
+    removeThinking();
+    const el = document.createElement('div');
+    el.className = 'thinking-indicator';
+    const dot = document.createElement('span');
+    dot.className = 'thinking-dot';
+    el.appendChild(dot);
+    el.appendChild(document.createTextNode('Reasoning'));
+    const dots = document.createElement('span');
+    dots.className = 'thinking-dots';
+    for (let i = 0; i < 3; i++) {
+      const d = document.createElement('span');
+      d.textContent = '.';
+      dots.appendChild(d);
+    }
+    el.appendChild(dots);
+    const elapsed = document.createElement('span');
+    elapsed.className = 'thinking-elapsed';
+    el.appendChild(elapsed);
+    feedAppend(el);
+    scrollDown();
+    _thinkingEl = el;
+    const t0 = Date.now();
+    function tick() {
+      elapsed.textContent = ((Date.now() - t0) / 1000).toFixed(1) + 's';
+    }
+    tick();
+    _thinkingTimer = setInterval(tick, 100);
+  }
+  function removeThinking() {
+    if (_thinkingTimer) { clearInterval(_thinkingTimer); _thinkingTimer = null; }
+    if (_thinkingEl) { _thinkingEl.remove(); _thinkingEl = null; }
+  }
+
   /* ═══════════ Controller ═══════════ */
   window.__scout = {
     replayEvents(events) {
+      removeThinking();
       feed.innerHTML = '';
       feed.appendChild(_sentinel);
       root.classList.add('no-animate');
@@ -2045,7 +2393,11 @@ _OVERLAY_JS = r"""
         feedAppend(d); scrollDown(); return;
       }
 
+      if (t === 'thinking_start') { showThinking(); return; }
+      if (t === 'thinking_end')   { removeThinking(); return; }
+
       if (t === 'thinking') {
+        removeThinking();
         const entry = document.createElement('div');
         entry.className = 'think';
         const body = document.createElement('div');
@@ -2064,16 +2416,16 @@ _OVERLAY_JS = r"""
       }
 
       if (t === 'tool_call') {
-        const label = ev.label || inferLabel(ev.code);
         const entry = document.createElement('div');
         entry.className = 'action';
         const row = document.createElement('div');
         row.className = 'action-row';
         const ind = document.createElement('div');
-        ind.className = 'action-ind loading';
+        ind.className = 'action-ind';
+        ind.innerHTML = _pySvg;
         const lbl = document.createElement('span');
         lbl.className = 'action-label';
-        lbl.innerHTML = label;
+        lbl.textContent = 'Python';
         const meta = document.createElement('span');
         meta.className = 'action-meta';
         if (ev.step && ev.max_steps) meta.textContent = ev.step + '/' + ev.max_steps;
@@ -2100,18 +2452,19 @@ _OVERLAY_JS = r"""
         stopActionTimer();
         const target = lastAction;
         if (target) {
-          const ind = target.querySelector('.action-ind');
-          ind.className = 'action-ind ' + (ev.is_error ? 'err' : 'ok');
-          ind.textContent = ev.is_error ? '\u2717' : '\u2713';
           const meta = target.querySelector('.action-meta');
+          const ok = !ev.is_error;
+          const sym = ok ? '\u2713' : '\u2717';
+          const cls = ok ? 'action-meta-ok' : 'action-meta-err';
+          let metaHtml = '<span class="' + cls + '">' + sym + '</span> ';
           if (ev.duration_s) {
-            let metaText = ev.duration_s + 's';
+            metaHtml += ev.duration_s + 's';
             if (ev.timeout_info) {
               const m = ev.timeout_info.match(/^(\d+)s/);
-              if (m) metaText += ' / ' + m[1] + 's timeout';
+              if (m) metaHtml += ' / ' + m[1] + 's timeout';
             }
-            meta.textContent = metaText;
           }
+          meta.innerHTML = metaHtml;
           const detail = target.querySelector('.action-detail');
           if (ev.output) {
             detail.appendChild(makeActionOut(ev.output, false));
@@ -2125,10 +2478,94 @@ _OVERLAY_JS = r"""
       }
 
       if (t === 'page_update') {
+        /* Kept as a lightweight system line when no structured
+           section data is provided (fallback). */
+        if (!ev.section_data || !ev.section_data.length) {
+          const d = document.createElement('div');
+          d.className = 'sys';
+          d.innerHTML = '<span class="sys-dot"></span>Page captured \u2014 '
+                      + esc(String(ev.sections || '?')) + ' sections';
+          feedAppend(d); scrollDown(); return;
+        }
+        /* Structured page map card — starts open, collapsible. */
         const d = document.createElement('div');
-        d.className = 'sys';
-        d.innerHTML = '<span class="sys-dot"></span>Page captured \u2014 '
-                    + esc(String(ev.sections || '?')) + ' sections';
+        d.className = 'pagemap';
+        const card = document.createElement('div');
+        card.className = 'pagemap-card';
+        const hdr = document.createElement('div');
+        hdr.className = 'pagemap-header';
+        hdr.innerHTML = '<span class="pagemap-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64d2ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="4" rx="1"/><rect x="14" y="10" width="7" height="11" rx="1"/><rect x="3" y="13" width="7" height="8" rx="1"/></svg></span>'
+          + '<span style="flex-shrink:0">Page structure</span>'
+          + '<span class="pagemap-url">' + esc(ev.url || '') + '</span>'
+          + '<span class="pagemap-count">' + ev.section_data.length + ' sections</span>'
+          + '<span class="pagemap-chev">\u203A</span>';
+        hdr.addEventListener('click', () => card.classList.toggle('open'));
+        card.appendChild(hdr);
+        const sBody = document.createElement('div');
+        sBody.className = 'pagemap-sections-body';
+        const sWrap = document.createElement('div');
+        sWrap.className = 'pagemap-sections';
+        const VISIBLE = 5;
+        const total = ev.section_data.length;
+        ev.section_data.forEach((s, i) => {
+          const sec = document.createElement('div');
+          sec.className = 'pagemap-section' + (i >= VISIBLE ? ' hidden-section' : '');
+          const sRow = document.createElement('div');
+          sRow.className = 'pagemap-section-row';
+          const rc = roleClass(s.role);
+          sRow.innerHTML = '<span class="pagemap-section-dot ' + rc + '"></span>'
+            + '<span class="pagemap-section-id" title="' + esc(s.id) + '">' + esc(s.id) + '</span>'
+            + '<span style="flex:1"></span>'
+            + (s.interactive ? '<span class="pagemap-section-badge">'
+              + s.interactive + ' interactive</span>' : '')
+            + '<span class="pagemap-section-chev">\u203A</span>';
+          sec.appendChild(sRow);
+          if (s.content) {
+            const body = document.createElement('div');
+            body.className = 'pagemap-section-content';
+            const pre = document.createElement('pre');
+            pre.className = 'pagemap-section-pre';
+            pre.textContent = s.content;
+            body.appendChild(pre);
+            sec.appendChild(body);
+          }
+          sRow.addEventListener('click', (e) => { e.stopPropagation(); sec.classList.toggle('open'); });
+          sWrap.appendChild(sec);
+        });
+        sBody.appendChild(sWrap);
+        if (total > VISIBLE) {
+          const more = document.createElement('button');
+          more.className = 'pagemap-more';
+          more.textContent = 'Show all ' + total + ' sections';
+          more.addEventListener('click', (e) => { e.stopPropagation(); card.classList.add('show-all'); });
+          sBody.appendChild(more);
+        }
+        card.appendChild(sBody);
+        d.appendChild(card);
+        feedAppend(d); scrollDown(); return;
+      }
+
+      if (t === 'zoom_view') {
+        const d = document.createElement('div');
+        d.className = 'zoomview';
+        const card = document.createElement('div');
+        card.className = 'zoomview-card';
+        const hdr = document.createElement('div');
+        hdr.className = 'zoomview-header';
+        hdr.innerHTML = '<span class="zoomview-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ff9f0a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="11" y1="8" x2="11" y2="14"/></svg></span>'
+          + '<span style="flex-shrink:0">Zoomed section</span>'
+          + '<span class="zoomview-ids">' + esc(ev.ids || '') + '</span>'
+          + '<span class="zoomview-chev">\u203A</span>';
+        hdr.addEventListener('click', () => card.classList.toggle('open'));
+        card.appendChild(hdr);
+        const body = document.createElement('div');
+        body.className = 'zoomview-body';
+        const pre = document.createElement('pre');
+        pre.className = 'zoomview-pre';
+        pre.innerHTML = hiHtml(ev.html || '');
+        body.appendChild(pre);
+        card.appendChild(body);
+        d.appendChild(card);
         feedAppend(d); scrollDown(); return;
       }
 
@@ -2141,15 +2578,24 @@ _OVERLAY_JS = r"""
       }
 
       if (t === 'script_running') {
+        // ── Section divider ──
+        const divider = document.createElement('div');
+        divider.className = 'final-divider';
+        divider.innerHTML = '<span class="final-divider-line"></span>'
+          + '<span class="final-divider-label">Final Script</span>'
+          + '<span class="final-divider-line"></span>';
+        feedAppend(divider);
+
         const entry = document.createElement('div');
-        entry.className = 'action';
+        entry.className = 'action final-script';
         const row = document.createElement('div');
         row.className = 'action-row';
         const ind = document.createElement('div');
-        ind.className = 'action-ind loading';
+        ind.className = 'action-ind';
+        ind.innerHTML = _pySvg;
         const lbl = document.createElement('span');
         lbl.className = 'action-label';
-        lbl.textContent = 'Running extraction';
+        lbl.textContent = 'Running final script';
         const meta = document.createElement('span');
         meta.className = 'action-meta';
         const chev = document.createElement('span');
@@ -2170,19 +2616,30 @@ _OVERLAY_JS = r"""
         const target = lastAction;
         if (target) {
           const ok = ev.returncode === 0;
-          const ind = target.querySelector('.action-ind');
-          ind.className = 'action-ind ' + (ok ? 'ok' : 'err');
-          ind.textContent = ok ? '\u2713' : '\u2717';
+          const meta = target.querySelector('.action-meta');
+          const sym = ok ? '\u2713' : '\u2717';
+          const cls = ok ? 'action-meta-ok' : 'action-meta-err';
+          let metaHtml = '<span class="' + cls + '">' + sym + '</span> ';
+          if (ev.duration_s) {
+            metaHtml += ev.duration_s + 's';
+            if (ev.timeout_s) metaHtml += ' / ' + ev.timeout_s + 's timeout';
+          }
+          meta.innerHTML = metaHtml;
+          const detail = target.querySelector('.action-detail');
           if (ev.output) {
-            const detail = target.querySelector('.action-detail');
             detail.appendChild(makeActionOut(ev.output, !ok));
           }
-          const meta = target.querySelector('.action-meta');
-          if (ev.duration_s) {
-            let metaText = ev.duration_s + 's';
-            if (ev.timeout_s) metaText += ' / ' + ev.timeout_s + 's timeout';
-            meta.textContent = metaText;
+          if (ev.sandbox_blocked) {
+            const hint = document.createElement('div');
+            hint.className = 'sandbox-hint';
+            hint.innerHTML = '<span class="sandbox-hint-icon">\u26a0</span>'
+              + '<span>Code blocked by sandbox \u2014 '
+              + 'the AI used a restricted operation. '
+              + 'It will retry with a safe alternative.</span>';
+            detail.appendChild(hint);
           }
+          // Auto-open the final script card so output is always visible.
+          target.classList.add('open');
           lastAction = null;
         }
         scrollDown(); return;
@@ -2456,14 +2913,42 @@ class DemoOverlay:
             logger.warning("[overlay] init failed", exc_info=True)
             self._injected = False
 
+        # Register the expand callback early — expose_function triggers
+        # Patchright's install_inject_route() which can cause Chrome to
+        # reposition popup windows.  Doing it here (once, at init) avoids
+        # the side-effect when results are pushed later.
+        try:
+            await overlay_page.expose_function(
+                "__scout_expand_cb",
+                lambda expanded: asyncio.ensure_future(
+                    self._resize_windows(bool(expanded)),
+                ),
+            )
+            await overlay_page.evaluate(
+                "window.__scout_expand = (x) => __scout_expand_cb(x)",
+            )
+        except Exception:
+            logger.debug("[overlay] expose __scout_expand_cb failed",
+                         exc_info=True)
+
         if main_page is not None:
             await self._setup_highlight_host()
 
+    # Event types with large payloads that are safe to drop on
+    # replay — they carry supplementary UI content, not critical
+    # state.  Excluding them keeps the replay buffer lean and
+    # prevents Playwright serialisation failures.
+    _SKIP_BUFFER_TYPES = frozenset({
+        "page_update", "zoom_view", "results",
+        "thinking_start", "thinking_end",
+    })
+
     async def push(self, event: dict[str, Any]) -> None:
         """Buffer the event and push it to the overlay."""
-        self._events.append(event)
-        if len(self._events) > self._MAX_BUFFER:
-            self._events = self._events[-self._MAX_BUFFER:]
+        if event.get("type") not in self._SKIP_BUFFER_TYPES:
+            self._events.append(event)
+            if len(self._events) > self._MAX_BUFFER:
+                self._events = self._events[-self._MAX_BUFFER:]
 
         if not self._injected or self._overlay_page is None:
             return
@@ -2488,6 +2973,15 @@ class DemoOverlay:
                 _OVERLAY_HTML, wait_until="load",
             )
             await self._overlay_page.evaluate(_OVERLAY_JS)
+            # Re-establish the JS→Python bridge for the expand callback.
+            # expose_function persists on the Python side across recovery,
+            # but set_content wipes the JS-side function reference.
+            try:
+                await self._overlay_page.evaluate(
+                    "window.__scout_expand = (x) => __scout_expand_cb(x)",
+                )
+            except Exception:
+                pass
             if self._events:
                 await self._overlay_page.evaluate(
                     "events => window.__scout.replayEvents(events)",
@@ -2502,6 +2996,14 @@ class DemoOverlay:
 
     async def push_turn(self, turn: int) -> None:
         await self.push({"type": "turn", "turn": turn})
+
+    async def push_thinking_start(self) -> None:
+        """Show the animated thinking indicator."""
+        await self.push({"type": "thinking_start"})
+
+    async def push_thinking_end(self) -> None:
+        """Remove the animated thinking indicator."""
+        await self.push({"type": "thinking_end"})
 
     async def push_thinking(self, text: str) -> None:
         await self.push({"type": "thinking", "text": text})
@@ -2542,11 +3044,24 @@ class DemoOverlay:
             "timeout_info": timeout_info,
         })
 
-    async def push_page_update(self, url: str, sections: int) -> None:
+    async def push_page_update(
+        self,
+        url: str,
+        sections: int,
+        section_data: list[dict] | None = None,
+    ) -> None:
         await self.push({
             "type": "page_update",
             "url": url,
             "sections": sections,
+            "section_data": section_data or [],
+        })
+
+    async def push_zoom_view(self, ids: str, html: str) -> None:
+        await self.push({
+            "type": "zoom_view",
+            "ids": ids,
+            "html": html,
         })
 
     # ── Full-viewport "show_page" overlay ────────────────────────
@@ -2736,6 +3251,7 @@ class DemoOverlay:
     async def push_script_output(
         self, output: str, returncode: int,
         *, duration_s: str = "", timeout_s: str = "",
+        sandbox_blocked: bool = False,
     ) -> None:
         await self.push({
             "type": "script_output",
@@ -2743,6 +3259,7 @@ class DemoOverlay:
             "returncode": returncode,
             "duration_s": duration_s,
             "timeout_s": timeout_s,
+            "sandbox_blocked": sandbox_blocked,
         })
 
     async def push_approved(self) -> None:
@@ -2821,30 +3338,27 @@ class DemoOverlay:
         """Show the interactive JSON results viewer in the overlay.
 
         Must be called after ``push_done()`` while the browser is still
-        open.  Sets up the ``__scout_expand`` callback so the JS side
-        can request window resizing.
+        open.  The ``__scout_expand`` callback is already registered
+        during ``inject()`` so there are no page-level side effects here.
+
+        Unlike normal events, ``results`` is pushed directly without the
+        generic ``push()`` path.  The payload can be very large, and a
+        failed ``evaluate`` must **not** trigger ``_recover()`` — which
+        does ``set_content()`` and can cause Chrome to reposition the
+        popup window.
         """
         if not self._overlay_page or not self._injected:
             return
 
-        # Expose the expand callback so JS can trigger window resize.
+        # Push directly — do NOT use self.push() which triggers _recover
+        # on failure.  Results are also excluded from the replay buffer.
         try:
-            await self._overlay_page.expose_function(
-                "__scout_expand_cb",
-                lambda expanded: asyncio.ensure_future(
-                    self._resize_windows(bool(expanded)),
-                ),
-            )
             await self._overlay_page.evaluate(
-                "window.__scout_expand = (x) => __scout_expand_cb(x)",
+                "ev => window.__scout.pushEvent(ev)",
+                {"type": "results", "data": json_data},
             )
         except Exception:
-            # expose_function may fail if already registered or page is
-            # closing — non-fatal, expand just won't work.
-            logger.debug("[overlay] expose __scout_expand_cb failed",
-                         exc_info=True)
-
-        await self.push({"type": "results", "data": json_data})
+            logger.debug("[overlay] results push failed", exc_info=True)
 
     async def _resize_windows(self, expanded: bool) -> None:
         """Resize overlay and main windows for expand/collapse toggle."""
@@ -2869,7 +3383,7 @@ class DemoOverlay:
 
         # Use CDP Browser.setWindowBounds for reliable positioning —
         # window.moveTo() is unreliable for popup windows in Chrome.
-        async def _cdp_set_bounds(page, x, y, w, h):
+        async def _cdp_set_bounds(page, x, y, w, h, label=""):
             try:
                 cdp = await page.context.new_cdp_session(page)
                 target = await cdp.send("Browser.getWindowForTarget")
@@ -2883,7 +3397,16 @@ class DemoOverlay:
                     },
                 })
                 await cdp.detach()
+                logger.info(
+                    "[overlay] CDP setWindowBounds %s: x=%d w=%d",
+                    label, x, w,
+                )
             except Exception:
+                logger.info(
+                    "[overlay] CDP setWindowBounds %s failed, "
+                    "falling back to JS",
+                    label, exc_info=True,
+                )
                 # Fallback to JS resize.
                 try:
                     await page.evaluate(
@@ -2893,8 +3416,13 @@ class DemoOverlay:
                 except Exception:
                     pass
 
-        await _cdp_set_bounds(self._main_page, 0, 0, pw, ph)
-        await _cdp_set_bounds(self._overlay_page, panelx, 0, panelw, ph)
+        logger.info(
+            "[overlay] _resize_windows expanded=%s → "
+            "main(0,0,%d,%d) overlay(%d,0,%d,%d)",
+            expanded, pw, ph, panelx, panelw, ph,
+        )
+        await _cdp_set_bounds(self._main_page, 0, 0, pw, ph, "main")
+        await _cdp_set_bounds(self._overlay_page, panelx, 0, panelw, ph, "overlay")
 
     async def wait_for_dismiss(
         self,
@@ -3179,9 +3707,6 @@ class DemoOverlay:
                             position: fixed;
                             pointer-events: none;
                             border-radius: 6px;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
                             background-color: rgba(37,99,235,0.14);
                             background-image:
                                 linear-gradient(0deg,   rgba(59,130,246,0.45) 50%, transparent 50%),
@@ -3197,10 +3722,14 @@ class DemoOverlay:
                                 scout-fadein 0.35s ease;
                         }
                         .hl-label {
-                            padding: 6px 14px;
-                            border-radius: 4px;
-                            background: rgba(30,64,175,0.75);
-                            font: 500 13px/1.1 -apple-system, BlinkMacSystemFont,
+                            position: absolute;
+                            top: -1px;
+                            left: 8px;
+                            transform: translateY(-100%);
+                            padding: 3px 10px;
+                            border-radius: 4px 4px 0 0;
+                            background: rgba(30,64,175,0.85);
+                            font: 500 11px/1.2 -apple-system, BlinkMacSystemFont,
                                   "Segoe UI", Roboto, sans-serif;
                             color: rgba(255,255,255,0.92);
                             letter-spacing: 0.3px;
@@ -3686,9 +4215,6 @@ _INTERACTION_HIGHLIGHT_JS = r"""(items) => {
             position: fixed;
             pointer-events: none;
             border-radius: 6px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             background-size: 2px 12px, 12px 2px, 2px 12px, 12px 2px;
             background-repeat: repeat-y, repeat-x, repeat-y, repeat-x;
             opacity: 0;
@@ -3746,11 +4272,15 @@ _INTERACTION_HIGHLIGHT_JS = r"""(items) => {
             to   { border-right-color: transparent; }
         }
 
-        /* Labels — same size/style as zoom labels */
+        /* Labels — pinned to top-left edge, same style as zoom labels */
         .hl-interact-label {
-            padding: 6px 14px;
-            border-radius: 4px;
-            font: 500 13px/1.1 -apple-system, BlinkMacSystemFont,
+            position: absolute;
+            top: -1px;
+            left: 8px;
+            transform: translateY(-100%);
+            padding: 3px 10px;
+            border-radius: 4px 4px 0 0;
+            font: 500 11px/1.2 -apple-system, BlinkMacSystemFont,
                   "Segoe UI", Roboto, sans-serif;
             color: rgba(255,255,255,0.92);
             letter-spacing: 0.3px;

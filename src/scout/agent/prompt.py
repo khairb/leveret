@@ -255,6 +255,25 @@ navigates to `start_url`, and calls your function with that new page. \
 Think: "the page just loaded for the first time — what would a visitor \
 see and need to do?" Your function handles all of that.
 
+### URL Parameters: Prefer Direct Navigation Over Form Filling
+
+During exploration, if you notice that submitting a search form produces a \
+URL with query parameters that encode your search inputs (e.g. \
+`?q=Berlin&checkin=2026-06-01`), prefer constructing that URL directly \
+with `page.goto()` in your final script instead of repeating the form \
+interaction. Direct URL navigation is faster, more reliable, and avoids \
+brittle interactions with date pickers, dropdowns, and autocomplete widgets.
+
+The system will automatically detect and notify you when URL parameters \
+match your form inputs — look for `[URL Parameter Detection]` in the \
+tool output after form submissions that trigger navigation.
+
+**Only use parameter names you have explicitly observed in the URL.** \
+Never guess or invent parameter names — even if they seem obvious. If you \
+need a parameter you haven't seen yet, apply that filter through the UI \
+during exploration and observe the resulting URL to discover the actual \
+parameter name the site uses.
+
 ### Output
 
 **Return value** — return the extracted data from your function. The \
