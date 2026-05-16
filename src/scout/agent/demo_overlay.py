@@ -273,19 +273,49 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   }
   .action-code::-webkit-scrollbar { height: 3px; }
   .action-code::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 3px; }
+  .action-out-wrap { position: relative; margin-top: 6px; }
   .action-out {
-    margin-top: 6px; padding: 8px 12px;
+    padding: 8px 12px;
     background: rgba(0,0,0,0.25);
     border: 1px solid rgba(255,255,255,0.03);
     border-radius: 8px;
     font-family: "SF Mono", Menlo, Consolas, monospace;
     font-size: 11px; line-height: 1.45; color: #8e8e93;
     white-space: pre; overflow-x: auto;
-    max-height: 300px; overflow-y: auto;
+    position: relative;
+  }
+  .action-out-wrap.collapsed .action-out {
+    max-height: 120px; overflow: hidden; cursor: pointer;
+  }
+  .action-out-wrap.collapsed:hover + .action-out-toggle {
+    color: rgba(255,255,255,0.5);
+  }
+  /* Fade gradient overlay when collapsed */
+  .action-out-wrap.collapsed::after {
+    content: ''; position: absolute; bottom: 0; left: 0; right: 0;
+    height: 48px; border-radius: 0 0 8px 8px; pointer-events: none;
+    background: linear-gradient(
+      rgba(0,0,0,0) 0%,
+      rgba(0,0,0,0.18) 50%,
+      rgba(0,0,0,0.30) 100%
+    );
+  }
+  .action-out-wrap.expanded .action-out {
+    max-height: 600px; overflow-y: auto;
   }
   .action-out::-webkit-scrollbar { width: 3px; height: 3px; }
   .action-out::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 3px; }
   .action-out.e { color: rgba(255,69,58,0.75); }
+  /* Toggle button — always a sibling below .action-out-wrap */
+  .action-out-toggle {
+    display: block; width: 100%; margin-top: 2px; padding: 3px 0;
+    background: none; border: none; cursor: pointer;
+    font-size: 10.5px; color: rgba(255,255,255,0.2);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    font-weight: 500; text-align: center;
+    transition: color 0.15s;
+  }
+  .action-out-toggle:hover { color: rgba(255,255,255,0.5); }
 
   /* Syntax highlighting */
   .action-code .kw  { color: #ff6482; }
@@ -964,17 +994,82 @@ _OVERLAY_JS = r"""
 
   let _replaying = false;
   let _userNearBottom = true;
+  let _programmaticScroll = false;
+  let _scrollEndTimer = 0;
+
+  /* Sentinel element at the very bottom of the feed — used as the
+     scroll target so we always reach the true end. */
+  const _sentinel = document.createElement('div');
+  _sentinel.style.cssText = 'height:1px;width:100%;flex-shrink:0;';
+  feed.appendChild(_sentinel);
+
+  /* Detect whether user scrolled away from the bottom.
+     During a programmatic smooth scroll we ignore scroll events
+     because the sentinel hasn't been reached yet — without this
+     guard, the observer would set _userNearBottom=false mid-
+     animation and kill auto-scroll. */
   feed.addEventListener('scroll', () => {
-    const threshold = 80;
-    _userNearBottom = (feed.scrollHeight - feed.scrollTop - feed.clientHeight) < threshold;
+    if (_programmaticScroll) return;
+    const gap = feed.scrollHeight - feed.scrollTop - feed.clientHeight;
+    _userNearBottom = gap < 60;
   }, { passive: true });
+
   function scrollDown() {
     if (_replaying) return;
     if (!_userNearBottom) return;
-    requestAnimationFrame(() => { feed.scrollTop = feed.scrollHeight; });
+    _programmaticScroll = true;
+    clearTimeout(_scrollEndTimer);
+    feed.scrollTo({ top: feed.scrollHeight, behavior: 'smooth' });
+    /* Release the guard after the smooth scroll settles. */
+    _scrollEndTimer = setTimeout(() => { _programmaticScroll = false; }, 400);
   }
+  /* Insert content before the sentinel so it stays at the very bottom. */
+  function feedAppend(el) { feed.insertBefore(el, _sentinel); }
   function trim() {
-    while (feed.children.length > 120) feed.removeChild(feed.firstChild);
+    /* +1 accounts for the sentinel element at the end. */
+    while (feed.children.length > 121) feed.removeChild(feed.firstChild);
+  }
+
+  const _OUT_COLLAPSE_LINES = 8;
+  function makeActionOut(text, isError) {
+    const frag = document.createDocumentFragment();
+    const wrap = document.createElement('div');
+    wrap.className = 'action-out-wrap';
+    const o = document.createElement('div');
+    o.className = 'action-out' + (isError ? ' e' : '');
+    o.textContent = text;
+    wrap.appendChild(o);
+    frag.appendChild(wrap);
+
+    const lines = text.split('\n').length;
+    if (lines > _OUT_COLLAPSE_LINES) {
+      wrap.classList.add('collapsed');
+      const btn = document.createElement('button');
+      btn.className = 'action-out-toggle';
+      btn.textContent = 'Show all ' + lines + ' lines';
+      frag.appendChild(btn);
+
+      function expand() {
+        wrap.classList.remove('collapsed');
+        wrap.classList.add('expanded');
+        btn.textContent = 'Show less';
+      }
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (wrap.classList.contains('collapsed')) {
+          expand();
+        } else {
+          wrap.classList.remove('expanded');
+          wrap.classList.add('collapsed');
+          btn.textContent = 'Show all ' + lines + ' lines';
+        }
+      });
+      /* Click anywhere on collapsed output expands it. */
+      o.addEventListener('click', () => {
+        if (wrap.classList.contains('collapsed')) expand();
+      });
+    }
+    return frag;
   }
 
   /* ═══════════ JSON Results Viewer ═══════════ */
@@ -1536,7 +1631,7 @@ _OVERLAY_JS = r"""
         + '<span class="results-title">Results</span></div></div>'
         + '<pre style="padding:12px 16px;font-size:11px;color:#8e8e93;overflow:auto;white-space:pre-wrap;word-break:break-word">'
         + esc(String(jsonStr)) + '</pre>';
-      feed.appendChild(d);
+      feedAppend(d);
       // Footer
       const footer = document.createElement('div');
       footer.className = 'results-footer';
@@ -1654,7 +1749,7 @@ _OVERLAY_JS = r"""
     tableWrap.className = 'results-table-wrap';
     section.appendChild(tableWrap);
 
-    feed.appendChild(section);
+    feedAppend(section);
 
     // ── View switching ──
     function switchView(view) {
@@ -1897,18 +1992,25 @@ _OVERLAY_JS = r"""
     return out.join('');
   }
 
-  function inferLabel(code) {
-    if (!code) return 'Interacting with the website';
-    const c = code.toLowerCase();
-    if (c.includes('show_page') || c.includes('get_page_html') || c.includes('page_html'))
-      return 'Looking at the website';
-    if (c.includes('show_section') || c.includes('get_section'))
-      return 'Inspecting the page';
-    return 'Interacting with the website';
-  }
+  const _pySvg = '<svg viewBox="0 0 256 255" xmlns="http://www.w3.org/2000/svg" style="width:14px;height:14px;vertical-align:-2px;margin-right:7px"><defs><linearGradient id="pa" x1="12.96%" y1="12.07%" x2="79.68%" y2="78.21%"><stop offset="0%" stop-color="#387EB8"/><stop offset="100%" stop-color="#366994"/></linearGradient><linearGradient id="pb" x1="19.13%" y1="20.58%" x2="90.08%" y2="88.29%"><stop offset="0%" stop-color="#FFE052"/><stop offset="100%" stop-color="#FFC331"/></linearGradient></defs><path d="M126.9.1c-64.8 0-60.8 28.1-60.8 28.1l.1 29.2h61.9v8.7H39.2S0 61.5 0 127.1c0 65.6 34.2 63.3 34.2 63.3h20.4v-30.5s-1.1-34.2 33.6-34.2h57.9s32.6.5 32.6-31.5V32.6S183.5.1 126.9.1zm-32.2 18.8a10.5 10.5 0 1 1 0 21 10.5 10.5 0 0 1 0-21z" fill="url(#pa)"/><path d="M128.8 254.1c64.8 0 60.8-28.1 60.8-28.1l-.1-29.2h-61.9v-8.7h88.9s39.2 4.6 39.2-61 -34.2-63.3-34.2-63.3h-20.4v30.5s1.1 34.2-33.6 34.2h-57.9s-32.6-.5-32.6 31.5v61.6s-4.9 32.5 51.8 32.5zm32.2-18.8a10.5 10.5 0 1 1 0-21 10.5 10.5 0 0 1 0 21z" fill="url(#pb)"/></svg>';
+  function inferLabel() { return _pySvg + 'Python'; }
 
   /* ═══════════ State ═══════════ */
   let lastAction = null;
+  let _actionTimer = null;
+  function startActionTimer(metaEl, budget) {
+    stopActionTimer();
+    const t0 = Date.now();
+    const suffix = budget ? ' / ' + budget + 's timeout' : '';
+    function tick() {
+      metaEl.textContent = ((Date.now() - t0) / 1000).toFixed(1) + 's' + suffix;
+    }
+    tick();
+    _actionTimer = setInterval(tick, 100);
+  }
+  function stopActionTimer() {
+    if (_actionTimer) { clearInterval(_actionTimer); _actionTimer = null; }
+  }
 
   function setStatus(text, color) {
     const st = document.getElementById('status-text');
@@ -1921,6 +2023,7 @@ _OVERLAY_JS = r"""
   window.__scout = {
     replayEvents(events) {
       feed.innerHTML = '';
+      feed.appendChild(_sentinel);
       root.classList.add('no-animate');
       lastAction = null;
       _replaying = true;
@@ -1939,7 +2042,7 @@ _OVERLAY_JS = r"""
         d.className = 'turn';
         d.innerHTML = '<span class="turn-line"></span>Turn ' + ev.turn
                     + '<span class="turn-line"></span>';
-        feed.appendChild(d); scrollDown(); return;
+        feedAppend(d); scrollDown(); return;
       }
 
       if (t === 'thinking') {
@@ -1949,7 +2052,7 @@ _OVERLAY_JS = r"""
         body.className = 'think-body';
         body.innerHTML = md(ev.text || '');
         entry.appendChild(body);
-        feed.appendChild(entry); trim(); scrollDown();
+        feedAppend(entry); trim(); scrollDown();
         requestAnimationFrame(() => {
           if (body.scrollHeight > body.clientHeight + 4) {
             body.classList.add('clipped');
@@ -1970,7 +2073,7 @@ _OVERLAY_JS = r"""
         ind.className = 'action-ind loading';
         const lbl = document.createElement('span');
         lbl.className = 'action-label';
-        lbl.textContent = label;
+        lbl.innerHTML = label;
         const meta = document.createElement('span');
         meta.className = 'action-meta';
         if (ev.step && ev.max_steps) meta.textContent = ev.step + '/' + ev.max_steps;
@@ -1988,11 +2091,13 @@ _OVERLAY_JS = r"""
         }
         entry.append(row, detail);
         row.addEventListener('click', () => entry.classList.toggle('open'));
-        feed.appendChild(entry); lastAction = entry; trim(); scrollDown();
+        feedAppend(entry); lastAction = entry; trim(); scrollDown();
+        startActionTimer(meta, ev.timeout_budget || '');
         return;
       }
 
       if (t === 'tool_result') {
+        stopActionTimer();
         const target = lastAction;
         if (target) {
           const ind = target.querySelector('.action-ind');
@@ -2001,21 +2106,18 @@ _OVERLAY_JS = r"""
           const meta = target.querySelector('.action-meta');
           if (ev.duration_s) {
             let metaText = ev.duration_s + 's';
-            if (ev.timeout_info) metaText += ' \u00b7 ' + ev.timeout_info;
+            if (ev.timeout_info) {
+              const m = ev.timeout_info.match(/^(\d+)s/);
+              if (m) metaText += ' / ' + m[1] + 's timeout';
+            }
             meta.textContent = metaText;
           }
           const detail = target.querySelector('.action-detail');
           if (ev.output) {
-            const o = document.createElement('div');
-            o.className = 'action-out';
-            o.textContent = ev.output;
-            detail.appendChild(o);
+            detail.appendChild(makeActionOut(ev.output, false));
           }
           if (ev.error) {
-            const e = document.createElement('div');
-            e.className = 'action-out e';
-            e.textContent = ev.error;
-            detail.appendChild(e);
+            detail.appendChild(makeActionOut(ev.error, true));
           }
           lastAction = null;
         }
@@ -2027,7 +2129,7 @@ _OVERLAY_JS = r"""
         d.className = 'sys';
         d.innerHTML = '<span class="sys-dot"></span>Page captured \u2014 '
                     + esc(String(ev.sections || '?')) + ' sections';
-        feed.appendChild(d); scrollDown(); return;
+        feedAppend(d); scrollDown(); return;
       }
 
       if (t === 'script_found') {
@@ -2035,7 +2137,7 @@ _OVERLAY_JS = r"""
         d.className = 'sys';
         d.innerHTML = '<span class="sys-dot"></span>'
           + (ev.valid ? 'Script extracted' : 'Script issue \u2014 ' + esc(ev.error || ''));
-        feed.appendChild(d); scrollDown(); return;
+        feedAppend(d); scrollDown(); return;
       }
 
       if (t === 'script_running') {
@@ -2058,11 +2160,13 @@ _OVERLAY_JS = r"""
         detail.className = 'action-detail';
         entry.append(row, detail);
         row.addEventListener('click', () => entry.classList.toggle('open'));
-        feed.appendChild(entry); lastAction = entry; scrollDown();
+        feedAppend(entry); lastAction = entry; scrollDown();
+        startActionTimer(meta, ev.timeout_budget || '');
         return;
       }
 
       if (t === 'script_output') {
+        stopActionTimer();
         const target = lastAction;
         if (target) {
           const ok = ev.returncode === 0;
@@ -2071,10 +2175,13 @@ _OVERLAY_JS = r"""
           ind.textContent = ok ? '\u2713' : '\u2717';
           if (ev.output) {
             const detail = target.querySelector('.action-detail');
-            const o = document.createElement('div');
-            o.className = 'action-out' + (ok ? '' : ' e');
-            o.textContent = ev.output;
-            detail.appendChild(o);
+            detail.appendChild(makeActionOut(ev.output, !ok));
+          }
+          const meta = target.querySelector('.action-meta');
+          if (ev.duration_s) {
+            let metaText = ev.duration_s + 's';
+            if (ev.timeout_s) metaText += ' / ' + ev.timeout_s + 's timeout';
+            meta.textContent = metaText;
           }
           lastAction = null;
         }
@@ -2086,8 +2193,8 @@ _OVERLAY_JS = r"""
         d.className = 'terminal';
         d.innerHTML = '<div class="terminal-card success">'
           + '<div class="terminal-icon">\u2713</div>'
-          + '<div class="terminal-title">Approved</div></div>';
-        feed.appendChild(d); setStatus('Complete', '#30d158'); scrollDown();
+          + '<div class="terminal-title">Script generated successfully</div></div>';
+        feedAppend(d); setStatus('Complete', '#30d158'); scrollDown();
         return;
       }
 
@@ -2099,20 +2206,23 @@ _OVERLAY_JS = r"""
           + '<div class="terminal-title">Needs revision</div>'
           + (ev.feedback ? '<div class="terminal-sub">' + md(ev.feedback) + '</div>' : '')
           + '</div>';
-        feed.appendChild(d); scrollDown(); return;
+        feedAppend(d); scrollDown(); return;
       }
 
       if (t === 'done') {
         const ok = ev.success;
+        /* On success the 'approved' event already showed the final
+           card and set the status — skip the duplicate. */
+        if (ok) { return; }
         const d = document.createElement('div');
         d.className = 'terminal';
-        d.innerHTML = '<div class="terminal-card ' + (ok ? 'success' : 'fail') + '">'
-          + '<div class="terminal-icon">' + (ok ? '\u2713' : '\u2717') + '</div>'
-          + '<div class="terminal-title">' + (ok ? 'Complete' : 'Failed') + '</div>'
-          + (!ok && ev.error ? '<div class="terminal-sub">' + md(ev.error) + '</div>' : '')
+        d.innerHTML = '<div class="terminal-card fail">'
+          + '<div class="terminal-icon">\u2717</div>'
+          + '<div class="terminal-title">Failed</div>'
+          + (ev.error ? '<div class="terminal-sub">' + md(ev.error) + '</div>' : '')
           + '</div>';
-        feed.appendChild(d);
-        setStatus(ok ? 'Complete' : 'Failed', ok ? '#30d158' : '#ff453a');
+        feedAppend(d);
+        setStatus('Failed', '#ff453a');
         scrollDown(); return;
       }
 
@@ -2125,7 +2235,7 @@ _OVERLAY_JS = r"""
         const d = document.createElement('div');
         d.className = 'sys';
         d.innerHTML = '<span class="sys-dot"></span>' + esc(ev.message || '');
-        feed.appendChild(d); scrollDown(); return;
+        feedAppend(d); scrollDown(); return;
       }
 
       if (t === 'validation') {
@@ -2150,7 +2260,7 @@ _OVERLAY_JS = r"""
           det.innerHTML = md(ev.detail);
           d.appendChild(det);
         }
-        feed.appendChild(d); scrollDown(); return;
+        feedAppend(d); scrollDown(); return;
       }
 
       if (t === 'validation_update') {
@@ -2179,7 +2289,7 @@ _OVERLAY_JS = r"""
         const messages = ev.messages || [];
         const d = document.createElement('div');
         d.className = 'boot';
-        feed.appendChild(d);
+        feedAppend(d);
         let idx = 0;
         function showNext() {
           if (idx >= messages.length) { clearInterval(window.__bootInterval); window.__bootInterval = null; return; }
@@ -2225,7 +2335,7 @@ _OVERLAY_JS = r"""
           + '</div>'
           + '<div class="plan-progress-track"><div class="plan-progress-fill"></div></div>'
           + '</div></div>';
-        feed.appendChild(d); scrollDown();
+        feedAppend(d); scrollDown();
         // Asymptotic progress: progress = cap * (1 - e^(-k*t))
         // cap=90, k tuned so it feels fast early then slows
         const fill = d.querySelector('.plan-progress-fill');
@@ -2287,7 +2397,7 @@ _OVERLAY_JS = r"""
             + '</div></div></div>';
           d.innerHTML = html;
           d.querySelector('.plan-header').addEventListener('click', () => d.classList.toggle('open'));
-          feed.appendChild(d); scrollDown();
+          feedAppend(d); scrollDown();
         };
         setTimeout(showPlan, loader ? 400 : 0);
         return;
@@ -2403,6 +2513,7 @@ class DemoOverlay:
         max_steps: int = 0,
         *,
         label: str = "",
+        timeout_budget: str = "",
     ) -> None:
         await self.push({
             "type": "tool_call",
@@ -2410,6 +2521,7 @@ class DemoOverlay:
             "step": step,
             "max_steps": max_steps,
             "label": label,
+            "timeout_budget": timeout_budget,
         })
 
     async def push_tool_result(
@@ -2613,16 +2725,24 @@ class DemoOverlay:
             "error": error,
         })
 
-    async def push_script_running(self) -> None:
-        await self.push({"type": "script_running"})
+    async def push_script_running(
+        self, *, timeout_budget: str = "",
+    ) -> None:
+        await self.push({
+            "type": "script_running",
+            "timeout_budget": timeout_budget,
+        })
 
     async def push_script_output(
         self, output: str, returncode: int,
+        *, duration_s: str = "", timeout_s: str = "",
     ) -> None:
         await self.push({
             "type": "script_output",
             "output": output,
             "returncode": returncode,
+            "duration_s": duration_s,
+            "timeout_s": timeout_s,
         })
 
     async def push_approved(self) -> None:

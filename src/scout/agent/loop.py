@@ -759,9 +759,12 @@ class AgentLoop:
                             # browser (page stays alive for debugging).
                             console.print_running_script()
                             if self._overlay:
-                                await self._overlay.push_script_running()
+                                await self._overlay.push_script_running(
+                                    timeout_budget=f"{self._script_timeout:.0f}",
+                                )
                             run_number = script_attempts + 1
                             run_dir = checkpoint_base_dir / f"run_{run_number}"
+                            _script_t0 = time.time()
                             script_run = (
                                 await _run_script_in_process(
                                     script,
@@ -773,6 +776,7 @@ class AgentLoop:
                                     inputs=self._inputs,
                                 )
                             )
+                            _script_elapsed = time.time() - _script_t0
                             # Track for cleanup (finally block).
                             active_script_result = script_run
                             stdout = script_run.stdout
@@ -795,6 +799,8 @@ class AgentLoop:
                             if self._overlay:
                                 await self._overlay.push_script_output(
                                     combined_output, returncode,
+                                    duration_s=f"{_script_elapsed:.1f}",
+                                    timeout_s=f"{self._script_timeout:.0f}",
                                 )
                             console.print_checkpoints_summary(checkpoints)
                             tracer.log_system_event(
@@ -870,7 +876,7 @@ class AgentLoop:
                                 if self._compiled_schema is not None:
                                     if self._overlay:
                                         await self._overlay.push_validation(
-                                            "schema", "Validating against schema\u2026",
+                                            "schema", "Validating schema\u2026",
                                         )
                                     if return_value_json is not None:
                                         try:
@@ -898,7 +904,7 @@ class AgentLoop:
                                         await self._overlay.push_validation_update(
                                             "schema",
                                             status="ok" if valid else "err",
-                                            label="Schema " + ("passed" if valid else "failed"),
+                                            label="Schema " + ("validated" if valid else "failed"),
                                             detail=schema_feedback if not valid else "",
                                         )
                                     if not valid:
@@ -912,7 +918,7 @@ class AgentLoop:
                                 elif self._approval_mode == "auto":
                                     if self._overlay:
                                         await self._overlay.push_validation(
-                                            "llm", "Validating output\u2026",
+                                            "llm", "Running validator\u2026",
                                         )
                                     approved, feedback = (
                                         await validate_output(
@@ -947,7 +953,7 @@ class AgentLoop:
                                         if self._overlay:
                                             await self._overlay.push_validation_update(
                                                 "llm", status="ok",
-                                                label="Output validated",
+                                                label="Validator approved",
                                             )
                                     else:
                                         console.print_validator_rejected(
@@ -956,7 +962,7 @@ class AgentLoop:
                                         if self._overlay:
                                             await self._overlay.push_validation_update(
                                                 "llm", status="err",
-                                                label="Validation failed",
+                                                label="Validator rejected",
                                                 detail=feedback[:200] if feedback else "",
                                             )
                                 else:
@@ -1307,10 +1313,24 @@ class AgentLoop:
                                 "Interaction highlight failed",
                                 exc_info=True,
                             )
+                        # Pre-compute timeout budget so we can
+                        # show it in the overlay while running.
+                        _timeout_budget = ""
+                        if block.name == "python":
+                            from .timeout_predict import predict_timeout as _pt
+                            from .tools import MIN_TIMEOUT, MAX_TIMEOUT
+                            _pred = _pt(code, runtime.repl.function_sources)
+                            _agent_t = block.input.get("timeout")
+                            if _agent_t is not None:
+                                _agent_t = max(MIN_TIMEOUT, min(float(_agent_t), MAX_TIMEOUT))
+                                _timeout_budget = f"{max(_agent_t, _pred):.0f}"
+                            else:
+                                _timeout_budget = f"{_pred:.0f}"
                         await self._overlay.push_tool_call(
                             code,
                             step=step_count,
                             max_steps=self._max_steps,
+                            timeout_budget=_timeout_budget,
                         )
                     tracer.log_tool_call(block.name, block.input, block.id)
 
@@ -1395,17 +1415,30 @@ class AgentLoop:
                         timeout_info=tool_result.timeout_info,
                     )
                     if self._overlay and block.name == "python":
-                        # Extract output/error from tool result content.
+                        # Extract full output/error from tool result
+                        # content — no truncation so the user can
+                        # expand and see everything.
                         _out = ""
                         _err = ""
                         if "Output:\n" in tool_result.content:
                             _oi = tool_result.content.find("Output:\n") + 8
-                            _oe = tool_result.content.find("\n\n", _oi)
-                            _out = tool_result.content[_oi:_oe if _oe != -1 else _oi + 500].strip()
+                            # Find the next section boundary (Error:,
+                            # Info:, or --- heading) instead of "\n\n"
+                            # which cuts multi-paragraph output.
+                            _oe = len(tool_result.content)
+                            for _marker in ("\nError:\n", "\nInfo:", "\n---"):
+                                _mi = tool_result.content.find(_marker, _oi)
+                                if _mi != -1 and _mi < _oe:
+                                    _oe = _mi
+                            _out = tool_result.content[_oi:_oe].strip()
                         if "Error:\n" in tool_result.content:
                             _ei = tool_result.content.find("Error:\n") + 7
-                            _ee = tool_result.content.find("\n\n", _ei)
-                            _err = tool_result.content[_ei:_ee if _ee != -1 else _ei + 500].strip()
+                            _ee = len(tool_result.content)
+                            for _marker in ("\nInfo:", "\n---"):
+                                _mi = tool_result.content.find(_marker, _ei)
+                                if _mi != -1 and _mi < _ee:
+                                    _ee = _mi
+                            _err = tool_result.content[_ei:_ee].strip()
                         await self._overlay.push_tool_result(
                             is_error=tool_result.is_error,
                             duration_s=f"{tool_duration_ms / 1000:.1f}",
