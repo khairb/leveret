@@ -521,54 +521,61 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
     padding: 0; margin: 0;
     animation: bootIn 0.3s ease;
   }
+
+  /* Sticky header block — contains title, tabs, and search */
   .results-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 16px 8px;
     position: sticky; top: -6px; z-index: 5;
     background: rgba(22,22,24,0.97);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid rgba(255,255,255,0.04);
+    padding: 12px 16px 10px;
+    display: flex; flex-direction: column; gap: 8px;
   }
-  .results-header-left {
-    display: flex; align-items: center; gap: 8px;
+
+  /* Row 1: title + copy icon */
+  .results-header-row1 {
+    display: flex; align-items: center; justify-content: space-between;
   }
   .results-title {
     font-size: 12px; font-weight: 600;
     color: rgba(255,255,255,0.85);
     letter-spacing: 0.02em; text-transform: uppercase;
   }
-  .results-count {
-    font-size: 10px; font-weight: 500;
-    padding: 2px 7px; border-radius: 4px;
-    background: rgba(255,255,255,0.06);
-    color: #8e8e93;
+  .results-title-count {
+    font-weight: 500;
+    color: rgba(255,255,255,0.3);
+    text-transform: none;
+    letter-spacing: 0;
   }
-  .results-copy-all {
-    font-size: 11px; font-weight: 500;
-    padding: 4px 10px; border-radius: 6px;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.06);
-    color: #8e8e93; cursor: pointer;
-    transition: all 0.15s ease;
+  .results-copy-btn {
+    background: none; border: none; cursor: pointer;
+    color: rgba(255,255,255,0.25);
+    font-size: 15px; padding: 2px;
+    line-height: 1;
+    transition: color 0.15s ease;
+    flex-shrink: 0;
   }
-  .results-copy-all:hover {
-    background: rgba(255,255,255,0.08);
-    color: #d1d1d6;
+  .results-copy-btn:hover { color: rgba(255,255,255,0.6); }
+  .results-copy-btn.copied { color: #30d158; }
+
+  /* Row 2: view tabs (only when table is available) */
+  .results-header-row2 {
+    display: flex; align-items: center; gap: 6px;
   }
-  .results-copy-all.copied {
-    background: rgba(48,209,88,0.08);
-    border-color: rgba(48,209,88,0.15);
-    color: #30d158;
+
+  /* Row 3: search + breadcrumb */
+  .results-header-row3 {
+    display: flex; flex-direction: column; gap: 4px;
   }
 
   /* Breadcrumb */
   .jt-breadcrumb {
     display: flex; align-items: center; gap: 0;
-    padding: 4px 16px 8px;
     font-size: 11px; color: #636366;
     overflow-x: auto; white-space: nowrap;
     scrollbar-width: none;
+    padding: 0;
   }
   .jt-breadcrumb::-webkit-scrollbar { display: none; }
   .jt-breadcrumb-seg {
@@ -585,16 +592,16 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
     padding: 0 3px; user-select: none;
   }
 
-  /* Search */
-  .results-search {
-    padding: 0 16px 8px;
+  /* Search input (shared by both views) */
+  .results-search-wrap {
+    position: relative;
   }
   .results-search-input {
-    width: 100%; padding: 7px 10px 7px 30px;
+    width: 100%; padding: 6px 10px 6px 28px;
     background: rgba(255,255,255,0.04);
     border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 8px; color: #e5e5e7;
-    font-size: 12px; font-family: inherit;
+    border-radius: 7px; color: #e5e5e7;
+    font-size: 11.5px; font-family: inherit;
     outline: none;
     transition: border-color 0.15s ease;
   }
@@ -602,12 +609,9 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   .results-search-input:focus {
     border-color: rgba(94,92,230,0.4);
   }
-  .results-search-wrap {
-    position: relative;
-  }
   .results-search-icon {
-    position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
-    font-size: 12px; color: rgba(255,255,255,0.2);
+    position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+    font-size: 11px; color: rgba(255,255,255,0.2);
     pointer-events: none;
   }
 
@@ -756,6 +760,137 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   }
   .jt-show-more-btn:hover {
     background: rgba(94,92,230,0.14);
+  }
+
+  /* ═══════════ View toggle tabs ═══════════ */
+  .results-tabs {
+    display: flex; gap: 2px;
+    padding: 2px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 7px;
+    margin-left: 8px;
+  }
+  .results-tab {
+    padding: 3px 10px; border-radius: 5px;
+    font-size: 11px; font-weight: 500;
+    color: rgba(255,255,255,0.4);
+    cursor: pointer; border: none;
+    background: transparent;
+    font-family: inherit;
+    transition: all 0.15s ease;
+    line-height: 1.4;
+  }
+  .results-tab:hover {
+    color: rgba(255,255,255,0.6);
+  }
+  .results-tab.active {
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.85);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+
+  /* ═══════════ Table view ═══════════ */
+  .results-table-wrap {
+    overflow-x: auto; overflow-y: visible;
+    padding: 0 0 8px;
+    display: none;
+  }
+  .results-table-wrap.active { display: block; }
+  .results-table-wrap::-webkit-scrollbar { height: 5px; }
+  .results-table-wrap::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.08); border-radius: 4px;
+  }
+  .results-table-wrap::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.14);
+  }
+
+  .rt {
+    width: 100%; border-collapse: separate;
+    border-spacing: 0;
+    font-size: 12px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  /* Header */
+  .rt thead { position: sticky; top: 0; z-index: 3; }
+  .rt th {
+    padding: 8px 14px;
+    text-align: left; white-space: nowrap;
+    font-weight: 600; font-size: 11px;
+    color: rgba(255,255,255,0.55);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: rgba(22,22,24,0.97);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    position: relative;
+    user-select: none;
+  }
+  .rt th:first-child { padding-left: 16px; }
+  .rt th .rt-row-num {
+    color: rgba(255,255,255,0.2);
+    font-weight: 500; font-size: 10px;
+    text-transform: none; letter-spacing: 0;
+  }
+
+  /* Rows */
+  .rt td {
+    padding: 6px 14px;
+    color: #e5e5e7;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    max-width: 320px;
+    overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: top;
+    transition: background 0.08s ease;
+  }
+  .rt td:first-child { padding-left: 16px; }
+  .rt tr:hover td {
+    background: rgba(255,255,255,0.025);
+  }
+  .rt tbody tr:nth-child(even) td {
+    background: rgba(255,255,255,0.012);
+  }
+  .rt tbody tr:nth-child(even):hover td {
+    background: rgba(255,255,255,0.035);
+  }
+
+  /* Row number column */
+  .rt .rt-num {
+    color: rgba(255,255,255,0.15);
+    font-size: 10px;
+    text-align: right;
+    padding-right: 10px;
+    width: 36px; min-width: 36px;
+    user-select: none;
+  }
+
+  /* Typed cell values */
+  .rt .rt-string { color: #CE9178; }
+  .rt .rt-number { color: #B5CEA8; }
+  .rt .rt-boolean { color: #569CD6; }
+  .rt .rt-null { color: rgba(255,255,255,0.2); font-style: italic; }
+  .rt .rt-array {
+    color: #8e8e93; font-size: 11px;
+  }
+  .rt .rt-object {
+    color: #8e8e93; font-size: 11px;
+  }
+
+  /* Cell tooltip on hover for truncated values */
+  .rt td[title] { cursor: default; }
+
+  /* Show more row */
+  .rt .rt-show-more td {
+    text-align: center;
+    border-bottom: none;
+    padding: 10px 14px;
+  }
+
+  /* Empty state */
+  .rt-empty {
+    padding: 24px 16px; text-align: center;
+    color: rgba(255,255,255,0.25); font-size: 12px;
   }
 
   /* Footer with buttons */
@@ -1216,6 +1351,173 @@ _OVERLAY_JS = r"""
     });
   }
 
+  /* ═══════════ Table view renderer ═══════════ */
+  const TABLE_INITIAL = 20;
+  const TABLE_BATCH = 50;
+
+  function canShowTable(data) {
+    if (!Array.isArray(data) || data.length === 0) return false;
+    // At least 80% of items must be objects (not arrays, not primitives)
+    let objCount = 0;
+    const sample = data.slice(0, Math.min(50, data.length));
+    for (const item of sample) {
+      if (item && typeof item === 'object' && !Array.isArray(item)) objCount++;
+    }
+    return objCount / sample.length >= 0.8;
+  }
+
+  function collectColumns(data) {
+    // Gather all unique keys, preserving first-seen order
+    const seen = new Map();
+    const sample = data.slice(0, Math.min(100, data.length));
+    for (const item of sample) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+      for (const key of Object.keys(item)) {
+        if (!seen.has(key)) seen.set(key, 0);
+        seen.set(key, seen.get(key) + 1);
+      }
+    }
+    // Return keys that appear in at least 20% of sampled rows
+    const threshold = sample.length * 0.2;
+    return [...seen.entries()]
+      .filter(([, count]) => count >= threshold)
+      .map(([key]) => key);
+  }
+
+  function formatCell(value) {
+    if (value === null || value === undefined)
+      return { text: 'null', cls: 'rt-null', raw: 'null' };
+    if (typeof value === 'boolean')
+      return { text: String(value), cls: 'rt-boolean', raw: String(value) };
+    if (typeof value === 'number')
+      return { text: String(value), cls: 'rt-number', raw: String(value) };
+    if (typeof value === 'string')
+      return { text: value, cls: 'rt-string', raw: value };
+    if (Array.isArray(value)) {
+      // Array of primitives → comma-separated
+      if (value.length === 0) return { text: '[]', cls: 'rt-array', raw: '[]' };
+      const allPrimitive = value.every(v => v === null || typeof v !== 'object');
+      if (allPrimitive) {
+        const joined = value.map(v => v === null ? 'null' : typeof v === 'string' ? v : String(v)).join(', ');
+        return { text: joined, cls: 'rt-array', raw: joined };
+      }
+      return { text: '[' + value.length + ' items]', cls: 'rt-array', raw: JSON.stringify(value) };
+    }
+    if (typeof value === 'object') {
+      const keys = Object.keys(value);
+      if (keys.length <= 3) {
+        const preview = keys.map(k => k + ': ' + (typeof value[k] === 'string' ? value[k] : JSON.stringify(value[k]))).join(', ');
+        if (preview.length <= 80) return { text: preview, cls: 'rt-object', raw: preview };
+      }
+      return { text: '{' + keys.length + ' keys}', cls: 'rt-object', raw: JSON.stringify(value) };
+    }
+    return { text: String(value), cls: '', raw: String(value) };
+  }
+
+  function buildTable(data, container) {
+    const cols = collectColumns(data);
+    if (cols.length === 0) {
+      container.innerHTML = '<div class="rt-empty">No columns detected</div>';
+      return;
+    }
+
+    const table = document.createElement('table');
+    table.className = 'rt';
+
+    // Header
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    const thNum = document.createElement('th');
+    thNum.innerHTML = '<span class="rt-row-num">#</span>';
+    thNum.className = 'rt-num';
+    headerRow.appendChild(thNum);
+    for (const col of cols) {
+      const th = document.createElement('th');
+      th.textContent = col;
+      headerRow.appendChild(th);
+    }
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Body
+    const tbody = document.createElement('tbody');
+    let rendered = 0;
+
+    function renderRows(start, count) {
+      const end = Math.min(start + count, data.length);
+      for (let i = start; i < end; i++) {
+        const item = data[i];
+        const tr = document.createElement('tr');
+        tr._rtIndex = i;
+
+        // Row number
+        const tdNum = document.createElement('td');
+        tdNum.className = 'rt-num';
+        tdNum.textContent = String(i + 1);
+        tr.appendChild(tdNum);
+
+        for (const col of cols) {
+          const td = document.createElement('td');
+          const val = item && typeof item === 'object' ? item[col] : undefined;
+          const formatted = formatCell(val);
+          td.textContent = formatted.text;
+          if (formatted.cls) td.classList.add(formatted.cls);
+          // Tooltip for truncated values
+          if (formatted.raw.length > 40) td.title = formatted.raw;
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+      rendered = end;
+
+      // Remove old "show more" if present
+      const oldMore = tbody.querySelector('.rt-show-more');
+      if (oldMore) oldMore.remove();
+
+      // Show more row
+      if (end < data.length) {
+        const moreRow = document.createElement('tr');
+        moreRow.className = 'rt-show-more';
+        const moreTd = document.createElement('td');
+        moreTd.colSpan = cols.length + 1;
+        const btn = document.createElement('button');
+        btn.className = 'jt-show-more-btn';
+        const remaining = data.length - end;
+        btn.textContent = 'Show ' + Math.min(TABLE_BATCH, remaining) + ' more of ' + remaining + ' remaining';
+        btn.addEventListener('click', () => {
+          moreRow.remove();
+          renderRows(end, TABLE_BATCH);
+        });
+        moreTd.appendChild(btn);
+        moreRow.appendChild(moreTd);
+        tbody.appendChild(moreRow);
+      }
+    }
+
+    renderRows(0, TABLE_INITIAL);
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    // Return refs for search filtering
+    return { table, tbody, cols };
+  }
+
+  function filterTable(tbody, cols, query) {
+    if (!tbody) return;
+    const q = query.toLowerCase();
+    const rows = tbody.querySelectorAll('tr:not(.rt-show-more)');
+    rows.forEach(tr => {
+      if (!q) { tr.style.display = ''; return; }
+      const tds = tr.querySelectorAll('td:not(.rt-num)');
+      let match = false;
+      tds.forEach(td => {
+        const text = (td.title || td.textContent || '').toLowerCase();
+        if (text.includes(q)) match = true;
+      });
+      tr.style.display = match ? '' : 'none';
+    });
+  }
+
   function buildResultsViewer(jsonStr) {
     let data;
     try {
@@ -1248,70 +1550,139 @@ _OVERLAY_JS = r"""
     }
 
     window.__scout_json_data = data;
+    const tableAvailable = canShowTable(data);
+    let activeView = 'json';
+    let tableRefs = null;
 
     const section = document.createElement('div');
     section.className = 'results-section';
 
-    // Header
+    // ═══════ Sticky header block ═══════
     const header = document.createElement('div');
     header.className = 'results-header';
-    const headerLeft = document.createElement('div');
-    headerLeft.className = 'results-header-left';
-    const title = document.createElement('span');
-    title.className = 'results-title';
-    title.textContent = 'Results';
-    headerLeft.appendChild(title);
-    const count = jtCount(data);
-    if (count) {
-      const countEl = document.createElement('span');
-      countEl.className = 'results-count';
-      countEl.textContent = count;
-      headerLeft.appendChild(countEl);
-    }
-    header.appendChild(headerLeft);
-    const copyAll = document.createElement('button');
-    copyAll.className = 'results-copy-all';
-    copyAll.textContent = 'Copy JSON';
-    copyAll.addEventListener('click', () => {
-      copyToClipboard(JSON.stringify(data, null, 2), copyAll);
-    });
-    header.appendChild(copyAll);
-    section.appendChild(header);
 
-    // Breadcrumb
+    // Row 1: title (with inline count) + copy icon
+    const row1 = document.createElement('div');
+    row1.className = 'results-header-row1';
+    const titleEl = document.createElement('span');
+    titleEl.className = 'results-title';
+    const count = jtCount(data);
+    titleEl.innerHTML = 'Results' + (count
+      ? ' <span class="results-title-count">(' + esc(count) + ')</span>'
+      : '');
+    row1.appendChild(titleEl);
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'results-copy-btn';
+    copyBtn.innerHTML = '\uD83D\uDCCB';
+    copyBtn.title = 'Copy JSON';
+    copyBtn.addEventListener('click', () => {
+      if (activeView === 'table') {
+        const cols = tableRefs ? tableRefs.cols : [];
+        let csv = cols.join(',') + '\n';
+        for (const item of data) {
+          if (!item || typeof item !== 'object') continue;
+          csv += cols.map(c => {
+            const v = item[c];
+            if (v === null || v === undefined) return '';
+            if (typeof v === 'string') return '"' + v.replace(/"/g, '""') + '"';
+            if (typeof v === 'object') return '"' + JSON.stringify(v).replace(/"/g, '""') + '"';
+            return String(v);
+          }).join(',') + '\n';
+        }
+        copyToClipboard(csv, copyBtn);
+      } else {
+        copyToClipboard(JSON.stringify(data, null, 2), copyBtn);
+      }
+    });
+    row1.appendChild(copyBtn);
+    header.appendChild(row1);
+
+    // Row 2: view toggle tabs (only when table is available)
+    let tabJson, tabTable;
+    if (tableAvailable) {
+      const row2 = document.createElement('div');
+      row2.className = 'results-header-row2';
+      const tabs = document.createElement('div');
+      tabs.className = 'results-tabs';
+      tabJson = document.createElement('button');
+      tabJson.className = 'results-tab active';
+      tabJson.textContent = 'JSON';
+      tabTable = document.createElement('button');
+      tabTable.className = 'results-tab';
+      tabTable.textContent = 'Table';
+      tabs.appendChild(tabJson);
+      tabs.appendChild(tabTable);
+      row2.appendChild(tabs);
+      header.appendChild(row2);
+    }
+
+    // Row 3: breadcrumb + search
+    const row3 = document.createElement('div');
+    row3.className = 'results-header-row3';
     const bc = document.createElement('div');
     bc.className = 'jt-breadcrumb';
-    section.appendChild(bc);
     updateBreadcrumb(bc, ['root']);
-
-    // Search
+    row3.appendChild(bc);
     const searchWrap = document.createElement('div');
-    searchWrap.className = 'results-search';
-    searchWrap.innerHTML = '<div class="results-search-wrap">'
-      + '<span class="results-search-icon">\uD83D\uDD0D</span>'
-      + '<input class="results-search-input" placeholder="Search keys and values\u2026" type="text">'
-      + '</div>';
-    section.appendChild(searchWrap);
+    searchWrap.className = 'results-search-wrap';
+    const searchIcon = document.createElement('span');
+    searchIcon.className = 'results-search-icon';
+    searchIcon.textContent = '\u2315';
+    const searchInput = document.createElement('input');
+    searchInput.className = 'results-search-input';
+    searchInput.type = 'text';
+    searchInput.placeholder = 'Search keys and values\u2026';
+    searchWrap.appendChild(searchIcon);
+    searchWrap.appendChild(searchInput);
+    row3.appendChild(searchWrap);
+    header.appendChild(row3);
 
-    // Tree
-    const tree = document.createElement('div');
-    tree.className = 'results-tree';
-    section.appendChild(tree);
+    section.appendChild(header);
 
-    // Render root node
-    renderNode(data, tree, null, 0, ['root'], false, 0, bc, true);
+    // ═══════ JSON tree view ═══════
+    const jsonWrap = document.createElement('div');
+    jsonWrap.className = 'results-tree';
+    section.appendChild(jsonWrap);
+    renderNode(data, jsonWrap, null, 0, ['root'], false, 0, bc, true);
+
+    // ═══════ Table view (hidden, lazy-built) ═══════
+    const tableWrap = document.createElement('div');
+    tableWrap.className = 'results-table-wrap';
+    section.appendChild(tableWrap);
 
     feed.appendChild(section);
 
-    // Wire up search
+    // ── View switching ──
+    function switchView(view) {
+      activeView = view;
+      if (tabJson) tabJson.classList.toggle('active', view === 'json');
+      if (tabTable) tabTable.classList.toggle('active', view === 'table');
+      jsonWrap.style.display = view === 'json' ? '' : 'none';
+      tableWrap.classList.toggle('active', view === 'table');
+      bc.style.display = view === 'json' ? '' : 'none';
+      searchInput.placeholder = view === 'json'
+        ? 'Search keys and values\u2026' : 'Filter rows\u2026';
+      searchInput.value = '';
+      copyBtn.title = view === 'table' ? 'Copy CSV' : 'Copy JSON';
+      if (view === 'table' && !tableRefs) {
+        tableRefs = buildTable(data, tableWrap);
+      }
+    }
+    if (tabJson) tabJson.addEventListener('click', () => switchView('json'));
+    if (tabTable) tabTable.addEventListener('click', () => switchView('table'));
+
+    // ── Unified search ──
     let searchTimer;
-    const searchInput = searchWrap.querySelector('.results-search-input');
     searchInput.addEventListener('input', () => {
       clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => filterTree(tree, searchInput.value.trim()), 200);
+      searchTimer = setTimeout(() => {
+        const q = searchInput.value.trim();
+        if (activeView === 'json') filterTree(jsonWrap, q);
+        else if (tableRefs) filterTable(tableRefs.tbody, tableRefs.cols, q);
+      }, 200);
     });
 
-    // Footer (appended to root, outside feed, so it stays sticky at bottom)
+    // ── Footer ──
     const footer = document.createElement('div');
     footer.className = 'results-footer';
     footer.id = 'results-footer';
