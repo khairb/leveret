@@ -176,50 +176,18 @@ appear explicitly in the checklist. Do not write "extract all the \
 fields" as a single item — that lets the exploring agent skip fields \
 it finds difficult. Spell out every field name in the final item.
 
-## Your Thinking Process
+## Your Process
 
-Work through these four steps before producing the checklist:
-
-**Step 1 — What did the user actually say, and what is their intention?**
-Restate the task in your own words. What is the user trying to get? Why \
-might they want this data? Stay grounded in their words — do not add \
-goals they did not state.
-
-**Step 2 — What are the distinct things to figure out?**
-Break the task into the separate questions that need answers. Look for: \
-constraints the user mentioned (specific subset, time range, category, \
-location), scope indicators (how many items, how deep), and structural \
-questions (does the data come from one place or might it be spread \
-across multiple views). These are about access, scope, and structure — \
-not about individual fields.
-
-**Step 3 — What fields need to be extracted?**
-Go through every field from the schema. You will list them all in the \
-final checklist item. Here, just note if any field might require \
-special access (e.g., data that might live on a separate page).
-
-**Step 4 — Produce the checklist.**
-Write the checklist inside a fenced block with the language tag \
-``checklist``. The checklist has two parts:
-
-First: items from step 2 — each about access, scope, or structure. \
-Do NOT create per-field items here. Each item starts with \
-``[ ] Figure out how to`` followed by the investigation task.
-
-Last: one item that lists every schema field. This is always the \
-final item and looks like this:
-
-[ ] Figure out how to extract each of these fields:
-    - field_one
-    - field_two
-    - field_three
-
-Do not omit any field from this list.
+Before writing the checklist, briefly: (1) restate what the user is \
+asking for in your own words to make sure you understand the task, \
+then (2) identify the distinct things that need to be figured out — \
+constraints, scope, structure, and access questions. Keep this analysis \
+short — a few sentences, not a wall of text. Then produce the checklist.
 
 ## Output Format
 
-After your thinking in steps 1-3, output the final checklist in step 4 \
-inside a fenced code block with the language tag ``checklist``:
+After your brief analysis, output the checklist inside a fenced code \
+block with the language tag ``checklist``:
 
 ```checklist
 [ ] Figure out how to ...
@@ -228,7 +196,12 @@ inside a fenced code block with the language tag ``checklist``:
     - field_one
     - field_two
     - field_three
-```\
+```
+
+The checklist has two parts:
+- First: items about access, scope, or structure (NOT per-field items).
+- Last: one item listing every schema field that must be extracted. \
+Do not omit any field from this list.\
 """
 
 
