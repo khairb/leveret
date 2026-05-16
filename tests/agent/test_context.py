@@ -85,33 +85,33 @@ def _get_tool_result_content(msg: dict) -> str:
 class TestPageViewStubCollapse:
     """Turn-based page view stub collapse."""
 
-    def test_page_view_stubbed_after_3_turns(self):
-        """A page view created at turn 1 should be stubbed at turn 4."""
+    def test_page_view_stubbed_after_5_turns(self):
+        """A page view created at turn 1 should be stubbed at turn 6."""
         messages = [
             _make_page_view_result(1, turn=1, sections=[
                 ("nav-main", "navigation", "Home | About"),
                 ("div-content", "content", "<a href='/'>Link</a>"),
             ]),
         ]
-        # Turn 3: still within window.
-        _stub_old_page_views_inplace(messages, current_turn=3)
+        # Turn 5: still within window.
+        _stub_old_page_views_inplace(messages, current_turn=5)
         assert "[stub]" not in _get_tool_result_content(messages[0])
 
-        # Turn 4: now old enough.
-        _stub_old_page_views_inplace(messages, current_turn=4)
+        # Turn 6: now old enough.
+        _stub_old_page_views_inplace(messages, current_turn=6)
         content = _get_tool_result_content(messages[0])
         assert "[stub]" in content
         assert "Page State #1" in content
         assert "example.com" in content
 
-    def test_page_view_preserved_within_3_turns(self):
-        """Page views within the 3-turn window should stay intact."""
+    def test_page_view_preserved_within_5_turns(self):
+        """Page views within the 5-turn window should stay intact."""
         messages = [
             _make_page_view_result(5, turn=10, sections=[
                 ("s1", "content", "Some text"),
             ]),
         ]
-        _stub_old_page_views_inplace(messages, current_turn=12)
+        _stub_old_page_views_inplace(messages, current_turn=14)
         content = _get_tool_result_content(messages[0])
         assert "[stub]" not in content
         assert "Some text" in content
@@ -182,7 +182,7 @@ class TestPageViewStubCollapse:
         assert "122 sections" in content
 
     def test_multiple_page_views_only_old_ones_stubbed(self):
-        """Only page views older than 3 turns should be stubbed."""
+        """Only page views older than 5 turns should be stubbed."""
         messages = [
             _make_page_view_result(1, turn=1, sections=[
                 ("s1", "content", "Old page"),
@@ -192,10 +192,10 @@ class TestPageViewStubCollapse:
                 ("s2", "content", "Recent page"),
             ]),
         ]
-        _stub_old_page_views_inplace(messages, current_turn=7)
-        # Turn 1 page: age = 7-1 = 6 >= 3 → stubbed.
+        _stub_old_page_views_inplace(messages, current_turn=9)
+        # Turn 1 page: age = 9-1 = 8 >= 5 → stubbed.
         assert "[stub]" in _get_tool_result_content(messages[0])
-        # Turn 5 page: age = 7-5 = 2 < 3 → kept.
+        # Turn 5 page: age = 9-5 = 4 < 5 → kept.
         assert "[stub]" not in _get_tool_result_content(messages[2])
         assert "Recent page" in _get_tool_result_content(messages[2])
 
@@ -208,25 +208,25 @@ class TestPageViewStubCollapse:
 class TestZoomStubCollapse:
     """Turn-based zoom result stub collapse."""
 
-    def test_zoom_stubbed_after_3_turns(self):
-        """A zoom created at turn 2 should be stubbed at turn 5."""
+    def test_zoom_stubbed_after_5_turns(self):
+        """A zoom created at turn 2 should be stubbed at turn 7."""
         messages = [
             _make_zoom_result("div-search", turn=2, html="<div>big html</div>"),
         ]
-        _stub_old_zoom_results_inplace(messages, current_turn=4)
+        _stub_old_zoom_results_inplace(messages, current_turn=6)
         assert "Zoom stub" not in _get_tool_result_content(messages[0])
 
-        _stub_old_zoom_results_inplace(messages, current_turn=5)
+        _stub_old_zoom_results_inplace(messages, current_turn=7)
         content = _get_tool_result_content(messages[0])
         assert "Zoom stub" in content
         assert "div-search" in content
 
-    def test_zoom_preserved_within_3_turns(self):
+    def test_zoom_preserved_within_5_turns(self):
         """Zoom within window should keep HTML content."""
         messages = [
             _make_zoom_result("s1", turn=10, html="<div>data</div>"),
         ]
-        _stub_old_zoom_results_inplace(messages, current_turn=12)
+        _stub_old_zoom_results_inplace(messages, current_turn=14)
         content = _get_tool_result_content(messages[0])
         assert "<div>data</div>" in content
 
@@ -284,10 +284,10 @@ class TestConversationManagerStubIntegration:
         )
         # Add assistant response.
         cm.add_assistant_message([{"type": "text", "text": "OK"}])
-        # Add new tool results at turn 5 — should trigger stub of turn 1 page.
+        # Add new tool results at turn 7 — should trigger stub of turn 1 page.
         cm.add_tool_results(
             [{"type": "tool_result", "tool_use_id": "t2", "content": "done"}],
-            turn=5,
+            turn=7,
         )
         # The old page view (message 0) should be stubbed.
         content = _get_tool_result_content(cm.messages[0])
@@ -300,10 +300,10 @@ class TestConversationManagerStubIntegration:
             turn=3,
         )
         cm.add_assistant_message([{"type": "text", "text": "OK"}])
-        # Turn 5: age = 5-3 = 2 < 3 → should NOT stub.
+        # Turn 7: age = 7-3 = 4 < 5 → should NOT stub.
         cm.add_tool_results(
             [{"type": "tool_result", "tool_use_id": "t2", "content": "done"}],
-            turn=5,
+            turn=7,
         )
         content = _get_tool_result_content(cm.messages[0])
         assert "[stub]" not in content
@@ -366,7 +366,7 @@ class TestTurnTagPreservation:
         assert "Filtered content" in content
 
     def test_filtered_page_not_stubbed_within_window(self):
-        """A filtered page view should NOT be stubbed if within 3 turns."""
+        """A filtered page view should NOT be stubbed if within 5 turns."""
         cm = ConversationManager()
         # Add page view at turn 5.
         cm.messages.append({
@@ -390,17 +390,17 @@ class TestTurnTagPreservation:
             "--- [s1] content (0 interactive) ---\n"
             "Filtered"
         )
-        # Add new tool results at turn 7 (age = 2, within window).
+        # Add new tool results at turn 9 (age = 4, within window).
         cm.add_tool_results(
             [{"type": "tool_result", "tool_use_id": "t2", "content": "ok"}],
-            turn=7,
+            turn=9,
         )
         content = cm.messages[0]["content"][0]["content"]
         assert "[stub]" not in content
         assert "Filtered" in content
 
     def test_filtered_page_stubbed_after_window(self):
-        """A filtered page view SHOULD be stubbed after 3 turns."""
+        """A filtered page view SHOULD be stubbed after 5 turns."""
         cm = ConversationManager()
         cm.messages.append({
             "role": "user",
@@ -422,10 +422,10 @@ class TestTurnTagPreservation:
             "--- [s1] content (0 interactive) ---\n"
             "Filtered"
         )
-        # Turn 8: age = 8 - 5 = 3, should now stub.
+        # Turn 10: age = 10 - 5 = 5, should now stub.
         cm.add_tool_results(
             [{"type": "tool_result", "tool_use_id": "t2", "content": "ok"}],
-            turn=8,
+            turn=10,
         )
         content = cm.messages[0]["content"][0]["content"]
         assert "[stub]" in content

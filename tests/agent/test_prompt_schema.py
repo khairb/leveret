@@ -301,7 +301,7 @@ class TestShowPageAnalysisPromptA:
 
     def test_starts_with_page_analysis_header(self):
         result = build_show_page_analysis_prompt_a()
-        assert result.startswith("── Page Analysis ──")
+        assert result.startswith("── Think & Capture ──")
 
     def test_ends_with_closing_rule(self):
         result = build_show_page_analysis_prompt_a()
@@ -315,9 +315,9 @@ class TestShowPageAnalysisPromptA:
         result = build_show_page_analysis_prompt_a()
         assert "interactive element" in result.lower() or "full tags" in result.lower()
 
-    def test_mentions_context_clearing(self):
+    def test_mentions_compaction(self):
         result = build_show_page_analysis_prompt_a()
-        assert "cleared from context" in result
+        assert "compacted" in result
 
 
 class TestShowPageAnalysisPromptB:
@@ -335,14 +335,14 @@ class TestShowPageAnalysisPromptB:
         result = build_show_page_analysis_prompt_b()
         assert result.rstrip().endswith("──")
 
-    def test_mentions_relevant_content(self):
+    def test_mentions_what_changed(self):
         result = build_show_page_analysis_prompt_b()
-        assert "relevant" in result.lower()
+        assert "changed" in result.lower()
 
     def test_mentions_changes(self):
         result = build_show_page_analysis_prompt_b()
         assert "changed" in result.lower()
 
-    def test_mentions_context_clearing(self):
+    def test_mentions_compaction(self):
         result = build_show_page_analysis_prompt_b()
-        assert "cleared from context" in result
+        assert "compacted" in result

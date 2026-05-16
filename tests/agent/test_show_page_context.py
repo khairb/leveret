@@ -136,23 +136,23 @@ class TestShowPageState:
         # Simulate several Variant B turns with incremental drift.
         # Each step changes 5 words from the ORIGINAL baseline.
         # Since we never call mark_analyzed, the baseline stays constant.
-        for step in range(1, 4):
+        for step in range(1, 3):
             drifted = words[:]
             for i in range(step * 5):
                 drifted[i] = f"drift{i}"
             text = " ".join(drifted)
-            # Even at step=3 (15 words changed), similarity is 85/100 = 0.85 > 0.7
+            # At step=2 (10 words changed), similarity is 90/100 = 0.90 > 0.8
             result = state.should_force_full_analysis(text)
             assert result is False, f"Step {step}: expected Variant B"
 
-        # Now drift enough to cross the threshold (>30 words changed)
+        # Now drift enough to cross the threshold (>20 words changed)
         big_drift = words[:]
-        for i in range(40):
+        for i in range(25):
             big_drift[i] = f"drift{i}"
         assert state.should_force_full_analysis(" ".join(big_drift)) is True
 
     def test_threshold_constant(self):
-        assert SIMILARITY_THRESHOLD == 0.7
+        assert SIMILARITY_THRESHOLD == 0.8
 
 
 # ---------------------------------------------------------------------------

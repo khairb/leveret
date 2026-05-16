@@ -225,7 +225,7 @@ class TestCachedExecution:
 
     def test_cached_script_validates_return_value(self, script_path):
         """Schema validation is applied to cached script output."""
-        s = _make_scraper(script=str(script_path))
+        s = _make_scraper(script=str(script_path), disable_validator=False)
 
         # Return data that doesn't match schema (price is string)
         mock_result = _mock_execute_result(
@@ -475,50 +475,50 @@ class TestGeneration:
 class TestReturnValueValidation:
 
     def test_valid_data_passes(self):
-        s = _make_scraper()
+        s = _make_scraper(disable_validator=False)
         data = s._validate_return_value(
             json.dumps([{"name": "W", "price": 1.0}])
         )
         assert data == [{"name": "W", "price": 1.0}]
 
     def test_none_json_fails(self):
-        s = _make_scraper()
+        s = _make_scraper(disable_validator=False)
         with pytest.raises(ScoutValidationError):
             s._validate_return_value(None)
 
     def test_null_json_fails(self):
-        s = _make_scraper()
+        s = _make_scraper(disable_validator=False)
         with pytest.raises(ScoutValidationError):
             s._validate_return_value("null")
 
     def test_wrong_type_fails(self):
-        s = _make_scraper()
+        s = _make_scraper(disable_validator=False)
         with pytest.raises(ScoutValidationError, match="does not match"):
             s._validate_return_value(json.dumps("not a list"))
 
     def test_wrong_field_type_fails(self):
-        s = _make_scraper()
+        s = _make_scraper(disable_validator=False)
         with pytest.raises(ScoutValidationError):
             s._validate_return_value(json.dumps([{"name": 42, "price": 1.0}]))
 
     def test_missing_field_fails(self):
-        s = _make_scraper()
+        s = _make_scraper(disable_validator=False)
         with pytest.raises(ScoutValidationError):
             s._validate_return_value(json.dumps([{"name": "W"}]))
 
     def test_malformed_json_fails(self):
-        s = _make_scraper()
+        s = _make_scraper(disable_validator=False)
         with pytest.raises(ScoutValidationError):
             s._validate_return_value("{{{not json")
 
     def test_error_message_suggests_regenerate(self):
-        s = _make_scraper()
+        s = _make_scraper(disable_validator=False)
         with pytest.raises(ScoutValidationError, match="scraper.regenerate"):
             s._validate_return_value(json.dumps("wrong"))
 
     def test_complex_schema_validation(self):
         from scout.schema.types import Field, List
-        s = _make_scraper(schema=List({
+        s = _make_scraper(disable_validator=False, schema=List({
             "title": Field(str, min_length=1),
             "price": Field(float, min=0),
         }, min=2))
@@ -531,7 +531,7 @@ class TestReturnValueValidation:
 
     def test_complex_schema_too_few_items(self):
         from scout.schema.types import Field, List
-        s = _make_scraper(schema=List({"title": str}, min=10))
+        s = _make_scraper(disable_validator=False, schema=List({"title": str}, min=10))
         with pytest.raises(ScoutValidationError):
             s._validate_return_value(json.dumps([{"title": "Only one"}]))
 
@@ -791,7 +791,7 @@ class TestEdgeCases:
         """Function that returns nothing (None) fails validation."""
         path = tmp_path / "scraper.py"
         _write_valid_script(path)
-        s = _make_scraper(script=str(path))
+        s = _make_scraper(script=str(path), disable_validator=False)
 
         mock_result = _mock_execute_result(
             return_value_json="null",  # explicit None return
@@ -805,7 +805,7 @@ class TestEdgeCases:
         """Function that crashes (no markers) fails validation."""
         path = tmp_path / "scraper.py"
         _write_valid_script(path)
-        s = _make_scraper(script=str(path))
+        s = _make_scraper(script=str(path), disable_validator=False)
 
         # returncode=0 but no return value — function didn't return properly
         mock_result = _mock_execute_result(

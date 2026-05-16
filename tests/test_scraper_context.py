@@ -309,7 +309,8 @@ class TestInProcessExecution:
 
             rv_json = await s._run_in_process("https://example.com")
 
-            MockBM.assert_called_once_with(headless=True)
+            MockBM.assert_called_once()
+            assert MockBM.call_args.kwargs["headless"] is True
             mock_mgr.start.assert_awaited_once()
             mock_mgr.new_page.assert_awaited_once()
             mock_page.goto.assert_awaited_once()
@@ -442,7 +443,8 @@ class TestInProcessExecution:
             s._cached_fn = fn
 
             await s._run_in_process("https://example.com")
-            MockBM.assert_called_once_with(headless=False)
+            MockBM.assert_called_once()
+            assert MockBM.call_args.kwargs["headless"] is False
 
 
 # ── Context-managed run (integration) ────────────────────────────
@@ -897,7 +899,7 @@ class TestEdgeCases:
 
     @pytest.mark.asyncio
     async def test_regenerate_inside_context_manager(self, tmp_path):
-        """regenerate=True inside context manager triggers generation path."""
+        """async_regenerate() inside context manager triggers generation path."""
         s = _make_scraper(tmp_path)
         _write_valid_script(s._script_path)
 
@@ -917,7 +919,7 @@ class TestEdgeCases:
              patch.object(s, "_check_api_key"), \
              patch.object(s, "_check_playwright"):
             async with s:
-                result = await s.async_run(regenerate=True)
+                result = await s.async_regenerate()
                 assert result.cached is False
 
     @pytest.mark.asyncio
@@ -927,6 +929,7 @@ class TestEdgeCases:
             "https://example.com", "test",
             schema=[{"title": str, "price": float}],
             script=str(tmp_path / "scraper.py"),
+            disable_validator=False,
         )
         # Write a script that returns data missing the 'price' field
         _write_valid_script(
