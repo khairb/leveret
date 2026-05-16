@@ -99,34 +99,37 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
   @keyframes spin  { to{transform:rotate(360deg)} }
 
-  /* ── Thinking indicator (mirrors .sys) ── */
-  .thinking-indicator {
-    padding: 3px 16px;
-    display: flex; align-items: center; gap: 8px;
+  /* ── Agent status indicator (reasoning / generating plan) ── */
+  .agent-status {
+    padding: 3px 16px 3px 24px;
+    display: flex; align-items: center; gap: 0;
     font-size: 11px; color: #636366;
     opacity: 0;
     animation: fade-in 0.3s ease 0.8s forwards;
   }
   @keyframes fade-in { to { opacity: 1; } }
-  .thinking-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: #48484a; flex-shrink: 0;
-    animation: pulse 2s ease-in-out infinite;
+  .agent-status-text span {
+    display: inline-block;
+    animation: char-wave 2.4s ease-in-out infinite;
   }
-  .thinking-dots span {
+  .agent-status-dots {
+    display: inline;
+  }
+  .agent-status-dots span {
     animation: dot-appear 1.4s ease-in-out infinite;
     opacity: 0;
   }
-  .thinking-dots span:nth-child(1) { animation-delay: 0s; }
-  .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
-  .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+  .agent-status-dots span:nth-child(1) { animation-delay: 0s; }
+  .agent-status-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .agent-status-dots span:nth-child(3) { animation-delay: 0.4s; }
   @keyframes dot-appear {
     0%, 80%, 100% { opacity: 0; }
     40%           { opacity: 1; }
   }
-  .thinking-elapsed {
+  .agent-status-meta {
     font-size: 11px; color: #48484a;
     font-variant-numeric: tabular-nums;
+    margin-left: auto;
   }
 
   /* ── Scroll area ── */
@@ -337,7 +340,7 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
     );
   }
   .action-out-wrap.expanded .action-out {
-    max-height: 600px; overflow-y: auto;
+    max-height: none; overflow-y: auto;
   }
   .action-out::-webkit-scrollbar { width: 3px; height: 3px; }
   .action-out::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 3px; }
@@ -357,11 +360,12 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   }
   /* Toggle button — always a sibling below .action-out-wrap */
   .action-out-toggle {
-    display: block; width: 100%; margin-top: 2px; padding: 3px 0;
+    display: block; width: 100%; margin-top: 2px;
+    padding: 4px 12px;
     background: none; border: none; cursor: pointer;
     font-size: 10.5px; color: rgba(255,255,255,0.2);
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    font-weight: 500; text-align: center;
+    font-weight: 500; text-align: left;
     transition: color 0.15s;
   }
   .action-out-toggle:hover { color: rgba(255,255,255,0.5); }
@@ -426,7 +430,7 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   /* ═══════════ Terminal state ═══════════ */
   .terminal { padding: 12px 16px; }
   .terminal-card {
-    padding: 24px 20px; border-radius: 14px;
+    padding: 14px 14px; border-radius: 10px;
   }
   .terminal-card.success {
     background: rgba(48,209,88,0.04);
@@ -436,10 +440,13 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
     background: rgba(255,69,58,0.04);
     border: 1px solid rgba(255,69,58,0.1);
   }
+  .terminal-row {
+    display: flex; align-items: center; gap: 10px;
+  }
   .terminal-icon {
-    width: 28px; height: 28px; border-radius: 50%;
+    width: 22px; height: 22px; border-radius: 50%;
     display: inline-grid; place-items: center;
-    font-size: 14px; font-weight: 600; margin-bottom: 8px;
+    font-size: 11px; font-weight: 600; flex-shrink: 0;
   }
   .terminal-card.success .terminal-icon {
     background: rgba(48,209,88,0.08); color: #30d158;
@@ -469,7 +476,7 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   }
 
   /* ═══════════ Plan card ═══════════ */
-  .plan { padding: 4px 16px; }
+  .plan { padding: 3px 16px; }
   .plan-card {
     background: rgba(255,255,255,0.02);
     border: 1px solid rgba(255,255,255,0.05);
@@ -477,15 +484,20 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   }
   .plan-header {
     display: flex; align-items: center; gap: 8px;
-    padding: 10px 12px; cursor: pointer;
+    padding: 9px 8px; cursor: pointer;
     user-select: none; -webkit-user-select: none;
     transition: background 0.15s;
   }
   .plan-header:hover { background: rgba(255,255,255,0.025); }
-  .plan-icon { font-size: 13px; flex-shrink: 0; }
+  .plan-icon {
+    width: 16px; height: 16px; flex-shrink: 0;
+    display: grid; place-items: center;
+    color: #8e8e93;
+  }
+  .plan-icon svg { width: 14px; height: 14px; color: #64d2ff; }
   .plan-title {
-    flex: 1; font-size: 11px; font-weight: 600;
-    color: #8e8e93; letter-spacing: 0.04em; text-transform: uppercase;
+    flex: 1; font-size: 12.5px; font-weight: 500;
+    color: #98989d;
   }
   .plan-chevron {
     font-size: 14px; color: rgba(255,255,255,0.12);
@@ -500,7 +512,7 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   }
   .plan.open .plan-body { max-height: 600px; opacity: 1; overflow-y: auto; }
   .plan-body .plan-content {
-    padding: 4px 12px 10px; font-size: 12px; color: #8e8e93; line-height: 1.5;
+    padding: 4px 8px 10px; font-size: 12px; color: #8e8e93; line-height: 1.5;
   }
   .plan-body .plan-content ul, .plan-body .plan-content ol { margin: 4px 0; padding-left: 18px; list-style: none; }
   .plan-body .plan-content ul > li { position: relative; margin-bottom: 3px; }
@@ -525,32 +537,9 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   .plan-body .plan-content hr {
     border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 8px 0;
   }
-  .plan-progress {
-    padding: 10px 12px;
-  }
-  .plan-progress-label {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 6px;
-  }
-  .plan-progress-text {
-    font-size: 11.5px; color: #8e8e93; font-weight: 500;
-  }
-  .plan-progress-pct {
-    font-size: 10px; color: rgba(255,255,255,0.2);
-    font-variant-numeric: tabular-nums;
-  }
-  .plan-progress-track {
-    width: 100%; height: 3px; border-radius: 2px;
-    background: rgba(255,255,255,0.06); overflow: hidden;
-  }
-  .plan-progress-fill {
-    height: 100%; border-radius: 2px; width: 0%;
-    background: linear-gradient(90deg, #5e5ce6, #bf5af2);
-    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .plan-progress-fill.complete {
-    background: linear-gradient(90deg, #30d158, #34c759);
-    transition: width 0.3s cubic-bezier(0.0, 0, 0.2, 1);
+  @keyframes char-wave {
+    0%, 100% { opacity: 0.4; }
+    50%      { opacity: 1; }
   }
 
   /* ═══════════ Validation card ═══════════ */
@@ -1029,15 +1018,19 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
     display: flex; align-items: center;
   }
   .jt-show-more-btn {
-    font-size: 11px; font-weight: 500;
-    color: #5e5ce6; cursor: pointer;
-    padding: 3px 10px; border-radius: 5px;
-    background: rgba(94,92,230,0.08);
+    font-size: 11px; font-weight: 400;
+    color: rgba(255,255,255,0.3); cursor: pointer;
+    padding: 2px 0; border-radius: 0;
+    background: none;
     border: none; font-family: inherit;
-    transition: background 0.12s ease;
+    transition: color 0.15s;
+  }
+  .jt-show-more-btn::before {
+    content: '\203A\00a0';
+    font-size: 13px; font-weight: 300;
   }
   .jt-show-more-btn:hover {
-    background: rgba(94,92,230,0.14);
+    color: rgba(255,255,255,0.55);
   }
 
   /* ═══════════ View toggle tabs ═══════════ */
@@ -1161,9 +1154,10 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
 
   /* Show more row */
   .rt .rt-show-more td {
-    text-align: center;
+    text-align: left;
     border-bottom: none;
     padding: 10px 14px;
+    cursor: pointer;
   }
 
   /* Empty state */
@@ -1557,10 +1551,10 @@ _OVERLAY_JS = r"""
               const btn = document.createElement('button');
               btn.className = 'jt-show-more-btn';
               btn.textContent = 'Show ' + Math.min(BATCH_SIZE, total - end) + ' more of ' + (total - end) + ' remaining';
-              btn.addEventListener('click', () => {
-                more.remove();
-                renderBatch(end, BATCH_SIZE);
-              });
+              function loadMoreJson() { more.remove(); renderBatch(end, BATCH_SIZE); }
+              btn.addEventListener('click', loadMoreJson);
+              more.style.cursor = 'pointer';
+              more.addEventListener('click', loadMoreJson);
               more.appendChild(btn);
               children.appendChild(more);
             }
@@ -1846,10 +1840,9 @@ _OVERLAY_JS = r"""
         btn.className = 'jt-show-more-btn';
         const remaining = data.length - end;
         btn.textContent = 'Show ' + Math.min(TABLE_BATCH, remaining) + ' more of ' + remaining + ' remaining';
-        btn.addEventListener('click', () => {
-          moreRow.remove();
-          renderRows(end, TABLE_BATCH);
-        });
+        function loadMore() { moreRow.remove(); renderRows(end, TABLE_BATCH); }
+        btn.addEventListener('click', loadMore);
+        moreTd.addEventListener('click', loadMore);
         moreTd.appendChild(btn);
         moreRow.appendChild(moreTd);
         tbody.appendChild(moreRow);
@@ -2305,7 +2298,7 @@ _OVERLAY_JS = r"""
   function startActionTimer(metaEl, budget) {
     stopActionTimer();
     const t0 = Date.now();
-    const suffix = budget ? ' / ' + budget + 's timeout' : '';
+    const suffix = budget ? ' / ' + budget + 's' : '';
     const spinnerEl = document.createElement('span');
     spinnerEl.className = 'action-meta-spinner';
     const timerText = document.createTextNode('');
@@ -2329,34 +2322,47 @@ _OVERLAY_JS = r"""
     if (dot) { dot.style.animation = 'none'; dot.style.background = color; }
   }
 
-  /* ── Thinking indicator ── */
-  let _thinkingEl = null;
-  let _thinkingTimer = null;
-  function showThinking() {
-    removeThinking();
+  /* ── Agent status indicator (shared by reasoning + plan gen) ── */
+  function buildStatusEl(label) {
     const el = document.createElement('div');
-    el.className = 'thinking-indicator';
-    const dot = document.createElement('span');
-    dot.className = 'thinking-dot';
-    el.appendChild(dot);
-    el.appendChild(document.createTextNode('Reasoning'));
+    el.className = 'agent-status';
+    /* Label text */
+    const textSpan = document.createElement('span');
+    textSpan.className = 'agent-status-text';
+    for (let i = 0; i < label.length; i++) {
+      const ch = document.createElement('span');
+      ch.textContent = label[i] === ' ' ? '\u00a0' : label[i];
+      ch.style.animationDelay = (i * 0.06) + 's';
+      textSpan.appendChild(ch);
+    }
+    el.appendChild(textSpan);
+    /* Animated dots */
     const dots = document.createElement('span');
-    dots.className = 'thinking-dots';
+    dots.className = 'agent-status-dots';
     for (let i = 0; i < 3; i++) {
       const d = document.createElement('span');
       d.textContent = '.';
       dots.appendChild(d);
     }
     el.appendChild(dots);
-    const elapsed = document.createElement('span');
-    elapsed.className = 'thinking-elapsed';
-    el.appendChild(elapsed);
+    /* Meta slot (elapsed or percentage) */
+    const meta = document.createElement('span');
+    meta.className = 'agent-status-meta';
+    el.appendChild(meta);
+    return { el, meta };
+  }
+
+  let _thinkingEl = null;
+  let _thinkingTimer = null;
+  function showThinking() {
+    removeThinking();
+    const { el, meta } = buildStatusEl('Reasoning');
     feedAppend(el);
     scrollDown();
     _thinkingEl = el;
     const t0 = Date.now();
     function tick() {
-      elapsed.textContent = ((Date.now() - t0) / 1000).toFixed(1) + 's';
+      meta.textContent = ((Date.now() - t0) / 1000).toFixed(1) + 's';
     }
     tick();
     _thinkingTimer = setInterval(tick, 100);
@@ -2461,7 +2467,7 @@ _OVERLAY_JS = r"""
             metaHtml += ev.duration_s + 's';
             if (ev.timeout_info) {
               const m = ev.timeout_info.match(/^(\d+)s/);
-              if (m) metaHtml += ' / ' + m[1] + 's timeout';
+              if (m) metaHtml += ' / ' + m[1] + 's';
             }
           }
           meta.innerHTML = metaHtml;
@@ -2622,7 +2628,7 @@ _OVERLAY_JS = r"""
           let metaHtml = '<span class="' + cls + '">' + sym + '</span> ';
           if (ev.duration_s) {
             metaHtml += ev.duration_s + 's';
-            if (ev.timeout_s) metaHtml += ' / ' + ev.timeout_s + 's timeout';
+            if (ev.timeout_s) metaHtml += ' / ' + ev.timeout_s + 's';
           }
           meta.innerHTML = metaHtml;
           const detail = target.querySelector('.action-detail');
@@ -2649,8 +2655,8 @@ _OVERLAY_JS = r"""
         const d = document.createElement('div');
         d.className = 'terminal';
         d.innerHTML = '<div class="terminal-card success">'
-          + '<div class="terminal-icon">\u2713</div>'
-          + '<div class="terminal-title">Script generated successfully</div></div>';
+          + '<div class="terminal-row"><div class="terminal-icon">\u2713</div>'
+          + '<div class="terminal-title">Script generated successfully</div></div></div>';
         feedAppend(d); setStatus('Complete', '#30d158'); scrollDown();
         return;
       }
@@ -2659,8 +2665,8 @@ _OVERLAY_JS = r"""
         const d = document.createElement('div');
         d.className = 'terminal';
         d.innerHTML = '<div class="terminal-card fail">'
-          + '<div class="terminal-icon">\u2717</div>'
-          + '<div class="terminal-title">Needs revision</div>'
+          + '<div class="terminal-row"><div class="terminal-icon">\u2717</div>'
+          + '<div class="terminal-title">Needs revision</div></div>'
           + (ev.feedback ? '<div class="terminal-sub">' + md(ev.feedback) + '</div>' : '')
           + '</div>';
         feedAppend(d); scrollDown(); return;
@@ -2784,45 +2790,30 @@ _OVERLAY_JS = r"""
         if (prev) prev.remove();
         if (window.__planProgressTimer) { clearInterval(window.__planProgressTimer); window.__planProgressTimer = null; }
         const d = document.createElement('div');
-        d.className = 'plan-loading plan';
-        d.innerHTML = '<div class="plan-card"><div class="plan-progress">'
-          + '<div class="plan-progress-label">'
-          + '<span class="plan-progress-text">' + esc(ev.message || 'Planning exploration\u2026') + '</span>'
-          + '<span class="plan-progress-pct">0%</span>'
-          + '</div>'
-          + '<div class="plan-progress-track"><div class="plan-progress-fill"></div></div>'
-          + '</div></div>';
+        d.className = 'plan-loading';
+        const { el: gen, meta: pct } = buildStatusEl('Generating plan');
+        pct.textContent = '0%';
+        d.appendChild(gen);
         feedAppend(d); scrollDown();
-        // Asymptotic progress: progress = cap * (1 - e^(-k*t))
-        // cap=90, k tuned so it feels fast early then slows
-        const fill = d.querySelector('.plan-progress-fill');
-        const pctLabel = d.querySelector('.plan-progress-pct');
         const startTime = Date.now();
         const cap = 90;
-        const k = 0.12; // controls speed — higher = faster start
+        const k = 0.12;
         window.__planProgressTimer = setInterval(() => {
           const elapsed = (Date.now() - startTime) / 1000;
           const progress = Math.min(cap, cap * (1 - Math.exp(-k * elapsed)));
-          const rounded = Math.round(progress);
-          fill.style.width = rounded + '%';
-          pctLabel.textContent = rounded + '%';
+          pct.textContent = Math.round(progress) + '%';
         }, 200);
         return;
       }
 
       if (t === 'plan') {
-        // Completion sprint — snap progress to 100% then swap in the plan card
         if (window.__planProgressTimer) { clearInterval(window.__planProgressTimer); window.__planProgressTimer = null; }
         const loader = feed.querySelector('.plan-loading');
         if (loader) {
-          const fill = loader.querySelector('.plan-progress-fill');
-          const pctLabel = loader.querySelector('.plan-progress-pct');
-          if (fill) { fill.classList.add('complete'); fill.style.width = '100%'; }
+          const pctLabel = loader.querySelector('.agent-status-meta');
           if (pctLabel) pctLabel.textContent = '100%';
         }
-        // Brief pause at 100% so user registers completion, then swap
         const showPlan = () => {
-          if (loader) loader.remove();
           const items = ev.items || [];
           const d = document.createElement('div');
           d.className = 'plan open';
@@ -2846,15 +2837,20 @@ _OVERLAY_JS = r"""
           if (inSub) listHtml += '</ul>';
           listHtml += '</ul>';
           let html = '<div class="plan-card"><div class="plan-header">'
-            + '<span class="plan-icon">\uD83D\uDCCB</span>'
-            + '<span class="plan-title">Exploration Plan</span>'
+            + '<span class="plan-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>'
+            + '<span class="plan-title">Exploration plan</span>'
             + '<span class="plan-chevron">\u203A</span>'
             + '</div><div class="plan-body"><div class="plan-content">'
             + listHtml
             + '</div></div></div>';
           d.innerHTML = html;
           d.querySelector('.plan-header').addEventListener('click', () => d.classList.toggle('open'));
-          feedAppend(d); scrollDown();
+          if (loader) {
+            loader.replaceWith(d);
+          } else {
+            feedAppend(d);
+          }
+          scrollDown();
         };
         setTimeout(showPlan, loader ? 400 : 0);
         return;
@@ -3848,7 +3844,7 @@ class DemoOverlay:
 
     # ── Interaction highlighting (main page) ──────────────────────
 
-    _MAX_QSA_HIGHLIGHTS = 6
+    _MAX_QSA_HIGHLIGHTS = None  # unlimited
 
     async def _resolve_css_path(
         self, selector: str,
@@ -3995,7 +3991,7 @@ class DemoOverlay:
                                 "status": "not_found",
                             })
                             continue
-                        for el in elements[:self._MAX_QSA_HIGHLIGHTS]:
+                        for el in elements:
                             try:
                                 box = await el.bounding_box()
                             except Exception:
@@ -4429,8 +4425,8 @@ _INTERACTION_HIGHLIGHT_JS = r"""(items) => {
                     + 'scout-interact-in 0.35s ease ' + delay + 'ms forwards';
             }
 
-            /* Label — only on first 2 elements */
-            if (item.index < 2) {
+            /* Label */
+            {
                 const labelText = LABELS[item.action] || 'Interacting\u2026';
                 const lbl = document.createElement('span');
                 lbl.className = 'hl-interact-label';
