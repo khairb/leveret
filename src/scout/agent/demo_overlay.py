@@ -3085,7 +3085,7 @@ class DemoOverlay:
 
                     const style = document.createElement('style');
                     style.textContent = `
-                        /* Marching-ants border — same pattern as zoom overlays */
+                        /* Marching-ants border — teal, matching passive interaction markers */
                         @keyframes scout-page-march {
                             0%   { background-position: 0 0, 0 0, 100% 0, 0 100%; }
                             100% { background-position: 0 -24px, 24px 0, 100% 24px, -24px 100%; }
@@ -3095,15 +3095,15 @@ class DemoOverlay:
                             0%, 100% { background: rgba(15, 23, 42, 0.18); }
                             50%      { background: rgba(15, 23, 42, 0.08); }
                         }
-                        /* Pill entrance */
-                        @keyframes scout-page-pill-in {
-                            from { opacity: 0; transform: translateY(8px) scale(0.96); }
-                            to   { opacity: 1; transform: translateY(0) scale(1); }
+                        /* Label entrance */
+                        @keyframes scout-page-label-in {
+                            from { opacity: 0; transform: translate(-50%, -50%) scale(0.96); }
+                            to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
                         }
-                        /* Dot breathing */
-                        @keyframes scout-page-dot-breathe {
-                            0%, 100% { opacity: 1; transform: scale(1); }
-                            50%      { opacity: 0.5; transform: scale(0.8); }
+                        /* Typewriter cursor blink */
+                        @keyframes scout-page-cursor {
+                            from { border-right-color: rgba(255,255,255,0.8); }
+                            to   { border-right-color: transparent; }
                         }
 
                         .hl-page-overlay {
@@ -3122,7 +3122,7 @@ class DemoOverlay:
                             animation: scout-page-bg-pulse 2.8s ease-in-out infinite;
                         }
 
-                        /* Marching-ants border around the entire viewport */
+                        /* Marching-ants border — teal to match passive markers */
                         .hl-page-border {
                             position: absolute;
                             inset: 0;
@@ -3130,46 +3130,33 @@ class DemoOverlay:
                             pointer-events: none;
                             background-color: transparent;
                             background-image:
-                                linear-gradient(0deg,   rgba(59,130,246,0.55) 50%, transparent 50%),
-                                linear-gradient(90deg,  rgba(59,130,246,0.55) 50%, transparent 50%),
-                                linear-gradient(0deg,   rgba(59,130,246,0.55) 50%, transparent 50%),
-                                linear-gradient(90deg,  rgba(59,130,246,0.55) 50%, transparent 50%);
+                                linear-gradient(0deg,   rgba(20,184,166,0.50) 50%, transparent 50%),
+                                linear-gradient(90deg,  rgba(20,184,166,0.50) 50%, transparent 50%),
+                                linear-gradient(0deg,   rgba(20,184,166,0.50) 50%, transparent 50%),
+                                linear-gradient(90deg,  rgba(20,184,166,0.50) 50%, transparent 50%);
                             background-size: 2px 12px, 12px 2px, 2px 12px, 12px 2px;
                             background-repeat: repeat-y, repeat-x, repeat-y, repeat-x;
                             background-position: 0 0, 0 0, 100% 0, 0 100%;
-                            animation: scout-page-march 0.5s linear infinite;
+                            animation: scout-page-march 0.4s linear infinite;
                         }
 
-                        /* Solid pill label — not transparent */
-                        .hl-page-pill {
+                        /* Label tab — styled like interaction marker labels */
+                        .hl-page-label {
                             position: absolute;
                             top: 50%; left: 50%;
                             transform: translate(-50%, -50%);
-                            display: inline-flex;
-                            align-items: center;
-                            gap: 10px;
-                            padding: 10px 24px;
-                            border-radius: 28px;
-                            background: rgba(15, 23, 42, 0.88);
-                            backdrop-filter: blur(12px);
-                            -webkit-backdrop-filter: blur(12px);
-                            border: 1px solid rgba(59, 130, 246, 0.35);
-                            box-shadow: 0 4px 24px rgba(0,0,0,0.4),
-                                        0 0 0 1px rgba(59,130,246,0.15);
-                            animation: scout-page-pill-in 0.35s ease-out;
-                        }
-                        .hl-page-dot {
-                            width: 8px; height: 8px;
-                            border-radius: 50%;
-                            background: rgb(59, 130, 246);
-                            animation: scout-page-dot-breathe 2.8s ease-in-out infinite;
-                        }
-                        .hl-page-label {
-                            font: 500 14px/1 -apple-system, BlinkMacSystemFont,
+                            padding: 5px 14px;
+                            border-radius: 4px;
+                            background: rgba(13,148,136,0.75);
+                            font: 500 11px/1.2 -apple-system, BlinkMacSystemFont,
                                   "Segoe UI", Roboto, sans-serif;
                             color: rgba(255, 255, 255, 0.92);
-                            letter-spacing: 0.01em;
+                            letter-spacing: 0.3px;
                             white-space: nowrap;
+                            overflow: hidden;
+                            border-right: 2px solid rgba(255,255,255,0.8);
+                            animation: scout-page-label-in 0.35s ease-out,
+                                       scout-page-cursor 0.55s step-end infinite;
                         }
                     `;
                     zone.appendChild(style);
@@ -3187,20 +3174,18 @@ class DemoOverlay:
                     border.className = 'hl-page-border';
                     overlay.appendChild(border);
 
-                    /* Solid pill with label */
-                    const pill = document.createElement('div');
-                    pill.className = 'hl-page-pill';
-
-                    const dot = document.createElement('div');
-                    dot.className = 'hl-page-dot';
-
-                    const label = document.createElement('div');
+                    /* Label tab — typewriter effect like interaction markers */
+                    const label = document.createElement('span');
                     label.className = 'hl-page-label';
-                    label.textContent = msg;
-
-                    pill.appendChild(dot);
-                    pill.appendChild(label);
-                    overlay.appendChild(pill);
+                    let ci = 0;
+                    const typeChar = () => {
+                        if (ci < msg.length) {
+                            label.textContent += msg[ci++];
+                            setTimeout(typeChar, 30 + Math.random() * 20);
+                        }
+                    };
+                    typeChar();
+                    overlay.appendChild(label);
                     zone.appendChild(overlay);
                 }""",
                 message,
