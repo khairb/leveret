@@ -522,7 +522,7 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
     animation: bootIn 0.3s ease;
   }
 
-  /* Sticky header block — contains title, tabs, and search */
+  /* Sticky header block — contains title row and search row */
   .results-header {
     position: sticky; top: -6px; z-index: 5;
     background: rgba(22,22,24,0.97);
@@ -533,14 +533,15 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
     display: flex; flex-direction: column; gap: 8px;
   }
 
-  /* Row 1: title + copy icon */
+  /* Row 1: title + toggle + copy — all in one line */
   .results-header-row1 {
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: center; gap: 12px;
   }
   .results-title {
     font-size: 12px; font-weight: 600;
     color: rgba(255,255,255,0.85);
     letter-spacing: 0.02em; text-transform: uppercase;
+    white-space: nowrap;
   }
   .results-title-count {
     font-weight: 500;
@@ -551,21 +552,18 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   .results-copy-btn {
     background: none; border: none; cursor: pointer;
     color: rgba(255,255,255,0.25);
-    font-size: 15px; padding: 2px;
-    line-height: 1;
+    padding: 3px; margin-left: auto;
+    line-height: 0;
     transition: color 0.15s ease;
     flex-shrink: 0;
+    display: flex; align-items: center;
   }
   .results-copy-btn:hover { color: rgba(255,255,255,0.6); }
   .results-copy-btn.copied { color: #30d158; }
+  .results-copy-btn svg { width: 14px; height: 14px; }
 
-  /* Row 2: view tabs (only when table is available) */
+  /* Row 2: search + breadcrumb */
   .results-header-row2 {
-    display: flex; align-items: center; gap: 6px;
-  }
-
-  /* Row 3: search + breadcrumb */
-  .results-header-row3 {
     display: flex; flex-direction: column; gap: 4px;
   }
 
@@ -764,29 +762,30 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
 
   /* ═══════════ View toggle tabs ═══════════ */
   .results-tabs {
-    display: flex; gap: 2px;
+    display: flex; gap: 1px;
     padding: 2px;
     background: rgba(255,255,255,0.04);
-    border-radius: 7px;
-    margin-left: 8px;
+    border-radius: 5px;
+    flex-shrink: 0;
   }
   .results-tab {
-    padding: 3px 10px; border-radius: 5px;
-    font-size: 11px; font-weight: 500;
-    color: rgba(255,255,255,0.4);
+    padding: 2px 7px; border-radius: 4px;
+    font-size: 10px; font-weight: 500;
+    color: rgba(255,255,255,0.35);
     cursor: pointer; border: none;
     background: transparent;
     font-family: inherit;
     transition: all 0.15s ease;
-    line-height: 1.4;
+    line-height: 1.3;
+    letter-spacing: 0.02em;
   }
   .results-tab:hover {
-    color: rgba(255,255,255,0.6);
+    color: rgba(255,255,255,0.55);
   }
   .results-tab.active {
     background: rgba(255,255,255,0.08);
     color: rgba(255,255,255,0.85);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
   }
 
   /* ═══════════ Table view ═══════════ */
@@ -993,9 +992,15 @@ _OVERLAY_JS = r"""
       document.execCommand('copy'); ta.remove();
     });
     if (el) {
-      const prev = el.textContent;
-      el.textContent = '\u2713'; el.classList.add('copied');
-      setTimeout(() => { el.textContent = prev; el.classList.remove('copied'); }, 1200);
+      const prev = el.innerHTML;
+      el.classList.add('copied');
+      // For SVG icon buttons, swap to checkmark SVG; for text, swap text
+      if (el.querySelector('svg')) {
+        el.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="20 6 9 17 4 12"/></svg>';
+      } else {
+        el.textContent = '\u2713';
+      }
+      setTimeout(() => { el.innerHTML = prev; el.classList.remove('copied'); }, 1200);
     }
   }
 
@@ -1033,6 +1038,7 @@ _OVERLAY_JS = r"""
 
   function updateBreadcrumb(bcEl, path) {
     _jtBreadcrumbPath = path;
+    if (!bcEl) return;
     bcEl.innerHTML = '';
     path.forEach((seg, i) => {
       if (i > 0) {
@@ -1571,9 +1577,30 @@ _OVERLAY_JS = r"""
       ? ' <span class="results-title-count">(' + esc(count) + ')</span>'
       : '');
     row1.appendChild(titleEl);
+
+    // View toggle tabs (inline, only when table is available)
+    let tabJson, tabTable;
+    if (tableAvailable) {
+      const tabs = document.createElement('div');
+      tabs.className = 'results-tabs';
+      tabJson = document.createElement('button');
+      tabJson.className = 'results-tab active';
+      tabJson.textContent = 'JSON';
+      tabTable = document.createElement('button');
+      tabTable.className = 'results-tab';
+      tabTable.textContent = 'Table';
+      tabs.appendChild(tabJson);
+      tabs.appendChild(tabTable);
+      row1.appendChild(tabs);
+    }
+
+    // Copy icon (SVG clipboard)
     const copyBtn = document.createElement('button');
     copyBtn.className = 'results-copy-btn';
-    copyBtn.innerHTML = '\uD83D\uDCCB';
+    copyBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+      + '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>'
+      + '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'
+      + '</svg>';
     copyBtn.title = 'Copy JSON';
     copyBtn.addEventListener('click', () => {
       if (activeView === 'table') {
@@ -1597,32 +1624,9 @@ _OVERLAY_JS = r"""
     row1.appendChild(copyBtn);
     header.appendChild(row1);
 
-    // Row 2: view toggle tabs (only when table is available)
-    let tabJson, tabTable;
-    if (tableAvailable) {
-      const row2 = document.createElement('div');
-      row2.className = 'results-header-row2';
-      const tabs = document.createElement('div');
-      tabs.className = 'results-tabs';
-      tabJson = document.createElement('button');
-      tabJson.className = 'results-tab active';
-      tabJson.textContent = 'JSON';
-      tabTable = document.createElement('button');
-      tabTable.className = 'results-tab';
-      tabTable.textContent = 'Table';
-      tabs.appendChild(tabJson);
-      tabs.appendChild(tabTable);
-      row2.appendChild(tabs);
-      header.appendChild(row2);
-    }
-
-    // Row 3: breadcrumb + search
-    const row3 = document.createElement('div');
-    row3.className = 'results-header-row3';
-    const bc = document.createElement('div');
-    bc.className = 'jt-breadcrumb';
-    updateBreadcrumb(bc, ['root']);
-    row3.appendChild(bc);
+    // Row 2: search
+    const row2 = document.createElement('div');
+    row2.className = 'results-header-row2';
     const searchWrap = document.createElement('div');
     searchWrap.className = 'results-search-wrap';
     const searchIcon = document.createElement('span');
@@ -1634,8 +1638,8 @@ _OVERLAY_JS = r"""
     searchInput.placeholder = 'Search keys and values\u2026';
     searchWrap.appendChild(searchIcon);
     searchWrap.appendChild(searchInput);
-    row3.appendChild(searchWrap);
-    header.appendChild(row3);
+    row2.appendChild(searchWrap);
+    header.appendChild(row2);
 
     section.appendChild(header);
 
@@ -1643,7 +1647,7 @@ _OVERLAY_JS = r"""
     const jsonWrap = document.createElement('div');
     jsonWrap.className = 'results-tree';
     section.appendChild(jsonWrap);
-    renderNode(data, jsonWrap, null, 0, ['root'], false, 0, bc, true);
+    renderNode(data, jsonWrap, null, 0, ['root'], false, 0, null, true);
 
     // ═══════ Table view (hidden, lazy-built) ═══════
     const tableWrap = document.createElement('div');
@@ -1659,7 +1663,6 @@ _OVERLAY_JS = r"""
       if (tabTable) tabTable.classList.toggle('active', view === 'table');
       jsonWrap.style.display = view === 'json' ? '' : 'none';
       tableWrap.classList.toggle('active', view === 'table');
-      bc.style.display = view === 'json' ? '' : 'none';
       searchInput.placeholder = view === 'json'
         ? 'Search keys and values\u2026' : 'Filter rows\u2026';
       searchInput.value = '';
