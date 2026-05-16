@@ -86,14 +86,6 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
     letter-spacing: -0.01em;
   }
   .header-right { display: flex; align-items: center; gap: 6px; }
-  .status-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: #0a84ff;
-    animation: pulse 2s ease-in-out infinite;
-  }
-  .status-text {
-    font-size: 11px; color: rgba(255,255,255,0.35); font-weight: 500;
-  }
 
   /* ── Animations ── */
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
@@ -644,15 +636,21 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
     padding: 6px 8px; cursor: pointer; user-select: none;
     -webkit-user-select: none;
   }
-  .pagemap-section-dot {
-    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  .pagemap-section-icon {
+    width: 12px; height: 12px; flex-shrink: 0;
+    display: grid; place-items: center;
   }
-  .pagemap-section-dot.role-navigation { background: #64d2ff; }
-  .pagemap-section-dot.role-content    { background: #30d158; }
-  .pagemap-section-dot.role-form       { background: #ff9f0a; }
-  .pagemap-section-dot.role-header     { background: #bf5af2; }
-  .pagemap-section-dot.role-footer     { background: #8e8e93; }
-  .pagemap-section-dot.role-other      { background: #636366; }
+  .pagemap-section-icon svg {
+    width: 10px; height: 10px;
+    stroke: currentColor; fill: none;
+    stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+  }
+  .pagemap-section-icon.role-navigation { color: #64d2ff; }
+  .pagemap-section-icon.role-content    { color: #30d158; }
+  .pagemap-section-icon.role-form       { color: #ff9f0a; }
+  .pagemap-section-icon.role-header     { color: #bf5af2; }
+  .pagemap-section-icon.role-footer     { color: #8e8e93; }
+  .pagemap-section-icon.role-other      { color: #636366; }
   .pagemap-section-id {
     font-size: 11px; font-weight: 600; color: #d1d1d6;
     font-family: "SF Mono", Menlo, Consolas, monospace;
@@ -1020,7 +1018,7 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
   .jt-show-more-btn {
     font-size: 11px; font-weight: 400;
     color: rgba(255,255,255,0.3); cursor: pointer;
-    padding: 2px 0; border-radius: 0;
+    padding: 2px 0 2px 8px; border-radius: 0;
     background: none;
     border: none; font-family: inherit;
     transition: color 0.15s;
@@ -1223,10 +1221,7 @@ _OVERLAY_HTML = r"""<!DOCTYPE html>
       <div class="logo">S</div>
       <span class="header-title">Scout</span>
     </div>
-    <div class="header-right">
-      <div class="status-dot" id="dot"></div>
-      <span class="status-text" id="status-text">Running</span>
-    </div>
+    <div class="header-right"></div>
   </div>
   <div class="feed" id="feed"></div>
 </div>
@@ -2282,6 +2277,14 @@ _OVERLAY_JS = r"""
     return out.join('');
   }
 
+  const ROLE_ICONS = {
+    'role-navigation': '<svg viewBox="0 0 16 16"><polyline points="6 3 11 8 6 13"/></svg>',
+    'role-content':    '<svg viewBox="0 0 16 16"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="11" y2="8"/><line x1="2" y1="12" x2="13" y2="12"/></svg>',
+    'role-form':       '<svg viewBox="0 0 16 16"><rect x="2" y="4" width="12" height="8" rx="1.5"/><line x1="5" y1="6.5" x2="5" y2="9.5"/></svg>',
+    'role-header':     '<svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1.5"/><line x1="2" y1="6" x2="14" y2="6"/></svg>',
+    'role-footer':     '<svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1.5"/><line x1="2" y1="10" x2="14" y2="10"/></svg>',
+    'role-other':      '<svg viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>',
+  };
   function roleClass(role) {
     const r = (role || '').toLowerCase();
     if (r.includes('nav')) return 'role-navigation';
@@ -2315,12 +2318,7 @@ _OVERLAY_JS = r"""
     if (_actionTimer) { clearInterval(_actionTimer); _actionTimer = null; }
   }
 
-  function setStatus(text, color) {
-    const st = document.getElementById('status-text');
-    const dot = document.getElementById('dot');
-    if (st) st.textContent = text;
-    if (dot) { dot.style.animation = 'none'; dot.style.background = color; }
-  }
+  function setStatus() {}
 
   /* ── Agent status indicator (shared by reasoning + plan gen) ── */
   function buildStatusEl(label) {
@@ -2519,7 +2517,7 @@ _OVERLAY_JS = r"""
           const sRow = document.createElement('div');
           sRow.className = 'pagemap-section-row';
           const rc = roleClass(s.role);
-          sRow.innerHTML = '<span class="pagemap-section-dot ' + rc + '"></span>'
+          sRow.innerHTML = '<span class="pagemap-section-icon ' + rc + '">' + (ROLE_ICONS[rc] || '') + '</span>'
             + '<span class="pagemap-section-id" title="' + esc(s.id) + '">' + esc(s.id) + '</span>'
             + '<span style="flex:1"></span>'
             + (s.interactive ? '<span class="pagemap-section-badge">'
@@ -2657,7 +2655,7 @@ _OVERLAY_JS = r"""
         d.innerHTML = '<div class="terminal-card success">'
           + '<div class="terminal-row"><div class="terminal-icon">\u2713</div>'
           + '<div class="terminal-title">Scraping complete</div></div></div>';
-        feedAppend(d); setStatus('Complete', '#30d158'); scrollDown();
+        feedAppend(d); scrollDown();
         return;
       }
 
@@ -2685,7 +2683,6 @@ _OVERLAY_JS = r"""
           + (ev.error ? '<div class="terminal-sub">' + md(ev.error) + '</div>' : '')
           + '</div>';
         feedAppend(d);
-        setStatus('Failed', '#ff453a');
         scrollDown(); return;
       }
 
@@ -4310,7 +4307,7 @@ _INTERACTION_HIGHLIGHT_JS = r"""(items) => {
         query_selector: 'Finding element\u2026', query_selector_all: 'Finding elements\u2026',
         inner_text: 'Extracting text\u2026', text_content: 'Extracting text\u2026',
         inner_html: 'Reading HTML\u2026', get_attribute: 'Checking attribute\u2026',
-        evaluate: 'Running script\u2026', wait_for_selector: 'Waiting for element\u2026',
+        evaluate: 'Inspecting\u2026', wait_for_selector: 'Waiting for element\u2026',
         input_value: 'Reading input\u2026',
     };
 
