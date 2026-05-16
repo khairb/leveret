@@ -99,6 +99,37 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+async def _kill_subprocess_tree(pid: int) -> None:
+    """Kill a subprocess and all its children via process group.
+
+    Uses SIGTERM first for graceful shutdown, then SIGKILL as fallback.
+    Requires the subprocess to have been started with ``start_new_session=True``.
+    """
+    import signal as _signal
+
+    try:
+        pgid = os.getpgid(pid)
+    except (ProcessLookupError, PermissionError, OSError):
+        return
+
+    try:
+        os.killpg(pgid, _signal.SIGTERM)
+    except (ProcessLookupError, PermissionError, OSError):
+        return
+
+    for _ in range(15):  # 15 x 0.2s = 3s max
+        try:
+            os.killpg(pgid, 0)
+            await asyncio.sleep(0.2)
+        except (ProcessLookupError, OSError):
+            return
+
+    try:
+        os.killpg(pgid, _signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+
 # ═══════════════════════════════════════════════════════════════
 #  Constants
 # ═══════════════════════════════════════════════════════════════
@@ -1888,14 +1919,18 @@ async def _run_script_subprocess(
             sys.executable, str(script_path),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,  # Own process group for clean kill
         )
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 proc.communicate(), timeout=timeout,
             )
         except asyncio.TimeoutError:
-            proc.kill()
-            await proc.communicate()
+            await _kill_subprocess_tree(proc.pid)
+            try:
+                await asyncio.wait_for(proc.communicate(), timeout=5.0)
+            except asyncio.TimeoutError:
+                pass
             return "", None, f"Function timed out after {timeout} seconds", -1
 
         raw_stdout = stdout_bytes.decode(errors="replace")
@@ -1941,16 +1976,24 @@ class InProcessScriptResult:
         self.profile_dir: str = ""     # Temp profile — for cleanup
 
     async def cleanup(self) -> None:
-        """Close the script browser and free resources."""
+        """Close the script browser and free resources.
+
+        Uses timeouts to prevent hanging if Chrome crashed or the
+        Playwright driver is stuck.
+        """
         if self.context:
             try:
-                await self.context.close()
+                await asyncio.wait_for(self.context.close(), timeout=10.0)
+            except asyncio.TimeoutError:
+                logger.warning("Script browser context close timed out (10s)")
             except Exception:
                 pass
             self.context = None
         if self.pw:
             try:
-                await self.pw.stop()
+                await asyncio.wait_for(self.pw.stop(), timeout=10.0)
+            except asyncio.TimeoutError:
+                logger.warning("Script Playwright stop timed out (10s)")
             except Exception:
                 pass
             self.pw = None

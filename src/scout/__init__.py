@@ -14,7 +14,7 @@ from .errors import (
     ValidationError,
 )
 from .autofix.types import AutoFixMode
-from .browser import LaunchOptions
+from .browser import Browser, LaunchOptions
 from .schema.types import Field, Items
 from .scraper import Scraper, ScraperResult
 
@@ -36,6 +36,7 @@ from .schema.types import List as List, SchemaType as SchemaType
 
 __all__ = [
     # Core
+    "Browser",
     "Scraper",
     "ScraperResult",
     "Field",

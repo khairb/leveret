@@ -654,9 +654,6 @@ class BrowserManager:
     async def start(self) -> Page:
         self._pw = await async_playwright().start()
 
-        # Create a temporary profile directory for persistent context.
-        self._profile_dir = tempfile.mkdtemp(prefix="scraping_agent_profile_")
-
         launcher = getattr(self._pw, self._config["browser_type"])
 
         # Strip the _demo sentinel before passing to Playwright.
@@ -665,13 +662,23 @@ class BrowserManager:
         )
 
         if self._launch_options is not None:
-            # New path: use pre-resolved launch options from Scraper.
-            # The dict is ready to unpack — just add user_data_dir.
             opts = {k: v for k, v in self._launch_options.items() if k != "_demo"}
-            opts["user_data_dir"] = self._profile_dir
+
+            if "user_data_dir" in opts:
+                # User-provided profile — don't create temp, don't clean.
+                self._profile_dir = None
+                self._user_owns_profile = True
+            else:
+                # Scout-managed temp profile.
+                self._profile_dir = tempfile.mkdtemp(prefix="scraping_agent_profile_")
+                self._user_owns_profile = False
+                opts["user_data_dir"] = self._profile_dir
+
             self._context = await launcher.launch_persistent_context(**opts)
         else:
             # Legacy path: construct from individual config params.
+            self._profile_dir = tempfile.mkdtemp(prefix="scraping_agent_profile_")
+            self._user_owns_profile = False
             args = list(self._STEALTH_ARGS) + self._config["launch_args"]
             self._context = await launcher.launch_persistent_context(
                 user_data_dir=self._profile_dir,
@@ -794,13 +801,29 @@ class BrowserManager:
             except Exception:
                 pass
             self._overlay_page = None
+
+        # Close browser context with timeout — can hang if Chrome crashed.
         if self._context:
-            await self._context.close()
+            try:
+                await asyncio.wait_for(self._context.close(), timeout=10.0)
+            except asyncio.TimeoutError:
+                logger.warning("Browser context close timed out (10s)")
+            except Exception:
+                pass
+
+        # Stop Playwright with timeout — can hang if driver process is stuck.
         if self._pw:
-            await self._pw.stop()
-        # Clean up temporary profile directory.
-        if self._profile_dir:
+            try:
+                await asyncio.wait_for(self._pw.stop(), timeout=10.0)
+            except asyncio.TimeoutError:
+                logger.warning("Playwright stop timed out (10s)")
+            except Exception:
+                pass
+
+        # Clean up profile directory only if Scout created it.
+        if self._profile_dir and not getattr(self, "_user_owns_profile", False):
             shutil.rmtree(self._profile_dir, ignore_errors=True)
+
         self._pw = None
         self._browser = None
         self._context = None

@@ -40,9 +40,46 @@ from ._logging import logger
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from .browser import Browser
     from .schema.compiler import CompiledSchema
 
 from .autofix.types import AutoFixMode
+
+import signal
+
+
+async def _kill_process_tree(pid: int) -> None:
+    """Kill a process and all its children via process group.
+
+    Uses SIGTERM first (graceful shutdown — Chrome closes cleanly and
+    releases profile files), then SIGKILL as fallback if SIGTERM is
+    ignored.  Requires the process to have been started with
+    ``start_new_session=True``.
+    """
+    try:
+        pgid = os.getpgid(pid)
+    except (ProcessLookupError, PermissionError, OSError):
+        return  # Already dead
+
+    # SIGTERM first — gives Chrome time to flush and release files
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError, OSError):
+        return
+
+    # Wait briefly for graceful shutdown (non-blocking)
+    for _ in range(15):  # 15 x 0.2s = 3s max
+        try:
+            os.killpg(pgid, 0)  # Check if still alive
+            await asyncio.sleep(0.2)
+        except (ProcessLookupError, OSError):
+            return  # Dead — success
+
+    # Still alive after 3s — force kill
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -519,14 +556,15 @@ class Scraper:
         tolerance: str | Tolerance = "balanced",
         script: str | Path | None = None,
         model: ModelName = "claude-haiku-4-5",
-        headless: bool = True,
+        headless: bool | None = None,
+        browser: "Browser | None" = None,
+        launch_options: dict | None = None,
         api_key: str | None = None,
         timeout: int = 600,
         max_attempts: int = 6,
         auto_fix: bool | str = False,
         sandbox: bool = True,
         protect_script: bool = False,
-        launch_options: dict | None = None,
         demo: bool = False,
         stop_on_captcha: bool = True,
         disable_validator: bool = False,
@@ -625,6 +663,24 @@ class Scraper:
                 )
                 auto_fix_mode = None
 
+        # -- browser (shared browser validation) --
+        if browser is not None:
+            if headless is not None:
+                raise ConfigError(
+                    "Cannot set headless= when using a shared browser.\n\n"
+                    "  Set it on the Browser instead:\n"
+                    "    Browser(headless=False)"
+                )
+            if launch_options is not None:
+                raise ConfigError(
+                    "Cannot set launch_options= when using a shared browser.\n\n"
+                    "  Set them on the Browser instead:\n"
+                    "    Browser(launch_options={...})"
+                )
+
+        # -- headless (resolve None to default) --
+        resolved_headless = headless if headless is not None else True
+
         # -- Store validated state --
         self._url = url
         self._task = task
@@ -632,7 +688,7 @@ class Scraper:
         self._tolerance = resolved_tolerance
         self._script_path = script_path
         self._model = model
-        self._headless = headless
+        self._headless = resolved_headless
         self._api_key = api_key
         self._timeout = timeout
         self._max_attempts = max_attempts
@@ -643,6 +699,9 @@ class Scraper:
         self._demo = demo
         self._stop_on_captcha = stop_on_captcha
         self._disable_validator = disable_validator
+
+        # -- Shared browser --
+        self._shared_browser = browser
 
         # -- Runtime state --
         self._cached_fn: Any = None
@@ -877,7 +936,10 @@ class Scraper:
         self._context_managed = False
 
     def __del__(self) -> None:
-        if getattr(self, "_browser_mgr", None) is not None:
+        if (
+            getattr(self, "_browser_mgr", None) is not None
+            and getattr(self, "_shared_browser", None) is None
+        ):
             warnings.warn(
                 "Scraper was garbage-collected with an open browser. "
                 "Use 'with scraper:' or call 'scraper.close()' "
@@ -1007,6 +1069,14 @@ class Scraper:
             future = asyncio.run_coroutine_threadsafe(
                 self.async_run(url=url, auto_fix=auto_fix),
                 self._bg_loop,
+            )
+            return future.result()
+
+        # Shared browser (sync path): dispatch to the Browser's loop.
+        if self._shared_browser is not None and self._shared_browser._bg_loop is not None:
+            future = asyncio.run_coroutine_threadsafe(
+                self.async_run(url=url, auto_fix=auto_fix),
+                self._shared_browser._bg_loop,
             )
             return future.result()
 
@@ -1293,7 +1363,14 @@ class Scraper:
     # -- Internal: browser lifecycle --
 
     async def _close_browser(self) -> None:
-        """Close the shared browser. Idempotent."""
+        """Close the scraper's own browser. Idempotent.
+
+        Does NOT close a shared browser — that's owned by the Browser
+        object and closed when the user exits ``with Browser():``.
+        """
+        if self._shared_browser is not None:
+            # Shared browser — not our responsibility to close
+            return
         if self._browser_mgr is not None:
             elapsed = time.monotonic() - self._cm_start_time
             count = self._cm_page_count
@@ -1361,9 +1438,9 @@ class Scraper:
         if auto_fix_mode is not None:
             return await self._run_cached_with_autofix(effective_url, auto_fix_mode)
 
-        # Branch: in-process (context-managed) vs subprocess
-        if self._context_managed:
-            if self._browser_mgr is None:
+        # Branch: in-process (context-managed or shared browser) vs subprocess
+        if self._context_managed or self._shared_browser is not None:
+            if self._browser_mgr is None and self._shared_browser is None:
                 logger.info(
                     "Running cached script → %s", self._script_path
                 )
@@ -1591,18 +1668,21 @@ class Scraper:
         """
         from .runtime.environment import BrowserManager
 
-        # Launch browser on first in-process call
-        if self._browser_mgr is None:
-            self._browser_mgr = BrowserManager(
+        # Use shared browser if available, otherwise own browser
+        if self._shared_browser is not None:
+            page = await self._shared_browser.new_page()
+        else:
+            # Launch own browser on first in-process call
+            if self._browser_mgr is None:
+                self._browser_mgr = BrowserManager(
                     headless=self._headless,
                     launch_options=self._get_resolved_launch_options(),
                 )
-            await self._browser_mgr.start()
-            logger.info(
-                "Launching browser (will reuse for subsequent runs)"
-            )
-
-        page = await self._browser_mgr.new_page()
+                await self._browser_mgr.start()
+                logger.info(
+                    "Launching browser (will reuse for subsequent runs)"
+                )
+            page = await self._browser_mgr.new_page()
         try:
             await page.goto(effective_url, wait_until="domcontentloaded")
 
@@ -1686,30 +1766,42 @@ class Scraper:
             parse_return_value,
         )
 
-        cp_dir = tempfile.mkdtemp(prefix="scrape_cp_")
-        wrapper_code = generate_subprocess_wrapper(
-            function_source, url, cp_dir,
-            sandbox=self._sandbox,
-            launch_options=self._get_resolved_launch_options(),
-        )
+        resolved_opts = self._get_resolved_launch_options()
+        user_owns_profile = "user_data_dir" in resolved_opts
+        if user_owns_profile:
+            profile_dir = None
+        else:
+            profile_dir = tempfile.mkdtemp(prefix="scraper_profile_")
 
+        cp_dir = tempfile.mkdtemp(prefix="scrape_cp_")
         script_dir = Path(tempfile.mkdtemp(prefix="scrape_run_"))
-        script_path = script_dir / "script.py"
         try:
+            wrapper_code = generate_subprocess_wrapper(
+                function_source, url, cp_dir,
+                sandbox=self._sandbox,
+                launch_options=resolved_opts,
+                profile_dir=profile_dir,
+            )
+            script_path = script_dir / "script.py"
             script_path.write_text(wrapper_code, encoding="utf-8")
 
             proc = await asyncio.create_subprocess_exec(
                 sys.executable, str(script_path),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,  # Own process group for clean kill
             )
             try:
                 stdout_bytes, stderr_bytes = await asyncio.wait_for(
                     proc.communicate(), timeout=self._timeout,
                 )
             except asyncio.TimeoutError:
-                proc.kill()
-                await proc.communicate()
+                # Kill the entire process group (Python + Chrome children)
+                await _kill_process_tree(proc.pid)
+                try:
+                    await asyncio.wait_for(proc.communicate(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    pass
                 return (
                     "",
                     None,
@@ -1730,6 +1822,8 @@ class Scraper:
         finally:
             shutil.rmtree(script_dir, ignore_errors=True)
             shutil.rmtree(cp_dir, ignore_errors=True)
+            if profile_dir is not None:
+                shutil.rmtree(profile_dir, ignore_errors=True)
 
     def _validate_return_value(
         self, return_value_json: str | None,
@@ -1793,33 +1887,43 @@ class Scraper:
             )
 
             function_source = self._get_function_source()
-            cp_dir = tempfile.mkdtemp(prefix="scrape_cp_")
-            wrapper_code = generate_subprocess_wrapper(
-                function_source, effective_url, cp_dir,
-                collect_page_signals=True,
-                launch_options=self._get_resolved_launch_options(),
-            )
+            resolved_opts = self._get_resolved_launch_options()
+            user_owns_profile = "user_data_dir" in resolved_opts
+            if user_owns_profile:
+                profile_dir = None
+            else:
+                profile_dir = tempfile.mkdtemp(prefix="scraper_profile_")
 
+            cp_dir = tempfile.mkdtemp(prefix="scrape_cp_")
             script_dir = Path(tempfile.mkdtemp(prefix="scrape_run_"))
-            script_path = script_dir / "script.py"
             try:
+                wrapper_code = generate_subprocess_wrapper(
+                    function_source, effective_url, cp_dir,
+                    collect_page_signals=True,
+                    launch_options=resolved_opts,
+                    profile_dir=profile_dir,
+                )
+                script_path = script_dir / "script.py"
                 script_path.write_text(wrapper_code, encoding="utf-8")
 
                 proc = await asyncio.create_subprocess_exec(
                     sys.executable, str(script_path),
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
+                    start_new_session=True,
                 )
                 try:
                     stdout_bytes, stderr_bytes = await asyncio.wait_for(
                         proc.communicate(), timeout=self._timeout,
                     )
                 except asyncio.TimeoutError:
+                    await _kill_process_tree(proc.pid)
                     try:
-                        proc.kill()
-                    except ProcessLookupError:
-                        pass  # Process already exited
-                    await proc.communicate()
+                        await asyncio.wait_for(
+                            proc.communicate(), timeout=5.0,
+                        )
+                    except asyncio.TimeoutError:
+                        pass
                     return AttemptResult(
                         success=False,
                         error=(
@@ -1885,6 +1989,8 @@ class Scraper:
             finally:
                 shutil.rmtree(script_dir, ignore_errors=True)
                 shutil.rmtree(cp_dir, ignore_errors=True)
+                if profile_dir is not None:
+                    shutil.rmtree(profile_dir, ignore_errors=True)
 
         return execute
 

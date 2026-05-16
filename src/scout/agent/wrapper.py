@@ -113,7 +113,9 @@ _ENGINE_RUNNER = """\
 async def _run():
     start_url = {url!r}
     _launch_opts = {launch_options!r}
-    profile_dir = tempfile.mkdtemp(prefix="scraper_profile_")
+    _user_profile = _launch_opts.pop("user_data_dir", None)
+    profile_dir = {profile_dir!r} or _user_profile or tempfile.mkdtemp(prefix="scraper_profile_")
+    _owns_profile = ({profile_dir!r} is None and _user_profile is None)
     try:
         async with async_playwright() as p:
             context = await p.chromium.launch_persistent_context(
@@ -129,7 +131,8 @@ async def _run():
 
             await context.close()
     finally:
-        shutil.rmtree(profile_dir, ignore_errors=True)
+        if _owns_profile:
+            shutil.rmtree(profile_dir, ignore_errors=True)
 """
 
 
@@ -145,6 +148,7 @@ def generate_subprocess_wrapper(
     collect_page_signals: bool = False,
     sandbox: bool = False,
     launch_options: dict | None = None,
+    profile_dir: str | None = None,
 ) -> str:
     """Generate the subprocess wrapper script.
 
@@ -177,6 +181,10 @@ def generate_subprocess_wrapper(
     launch_options = {k: v for k, v in launch_options.items() if not k.startswith("_")}
     checkpoint_code = _CHECKPOINT_TEMPLATE.format(checkpoint_dir=checkpoint_dir)
 
+    # When profile_dir is None, the subprocess creates its own at runtime
+    # (via the `or tempfile.mkdtemp(...)` in the template).
+    # When the parent provides one, it owns cleanup — no orphan risk.
+
     if collect_page_signals:
         call_section = _build_call_section_with_signals()
     else:
@@ -185,6 +193,7 @@ def generate_subprocess_wrapper(
     runner = _ENGINE_RUNNER.format(
         url=url,
         launch_options=launch_options,
+        profile_dir=profile_dir,
         call_section=call_section,
     )
 

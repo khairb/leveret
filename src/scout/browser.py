@@ -25,7 +25,12 @@ Usage::
 
 from __future__ import annotations
 
+import asyncio
+import os
 import re
+import threading
+import time
+import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Sequence, Union
 
@@ -135,8 +140,38 @@ STEALTH_ARGS: list[str] = [
     "--disable-background-networking",
 ]
 
+def _detect_browser_channel() -> str:
+    """Detect which browser channel is available.
+
+    Priority:
+    1. ``SCOUT_BROWSER_CHANNEL`` env var (explicit override)
+    2. ``chrome`` if Google Chrome is installed at the standard path
+    3. ``chromium`` as fallback
+    """
+    env_channel = os.environ.get("SCOUT_BROWSER_CHANNEL")
+    if env_channel:
+        return env_channel
+
+    # Check standard Google Chrome install locations
+    chrome_paths = [
+        Path("/opt/google/chrome/chrome"),           # Linux
+        Path("/usr/bin/google-chrome"),               # Linux (symlink)
+        Path("/usr/bin/google-chrome-stable"),        # Linux (alt)
+    ]
+
+    # Also check macOS
+    mac_chrome = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+    if mac_chrome.exists():
+        return "chrome"
+
+    for p in chrome_paths:
+        if p.exists():
+            return "chrome"
+
+    return "chromium"
+
+
 SCOUT_DEFAULTS: LaunchOptions = {
-    "channel": "chrome",
     "no_viewport": True,
     "bypass_csp": True,
     "locale": "en-US",
@@ -154,6 +189,7 @@ def resolve_launch_options(
 
     Merge rules:
     - User options override Scout defaults.
+    - ``channel`` is auto-detected if not set by user (chrome → chromium fallback).
     - ``args`` are *extended* (stealth args + user args), not replaced.
     - ``headless`` comes from Scraper, not from launch_options.
     - ``user_data_dir`` is always set by Scout (temp dir) — cannot be
@@ -166,7 +202,11 @@ def resolve_launch_options(
     Returns a dict ready to be unpacked into
     ``launch_persistent_context(**result)``.
     """
-    merged: dict[str, Any] = {**SCOUT_DEFAULTS, "headless": headless}
+    merged: dict[str, Any] = {
+        **SCOUT_DEFAULTS,
+        "channel": _detect_browser_channel(),
+        "headless": headless,
+    }
 
     if demo:
         merged["_demo"] = True
@@ -210,3 +250,177 @@ def compute_demo_layout(
         "panel_x": page_width,
         "height": screen_height,
     }
+
+
+# ── Shared Browser ──────────────────────────────────────────────
+
+class Browser:
+    """Shared browser for running multiple scrapers efficiently.
+
+    Instead of each :class:`Scraper` launching its own Chrome instance,
+    pass a shared ``Browser`` and all scrapers open tabs in the same
+    browser process.
+
+    Usage::
+
+        from scout import Scraper, Browser
+
+        # One browser, multiple scrapers
+        with Browser(headless=True) as browser:
+            s1 = Scraper(url1, task1, schema=..., script="s1.py", browser=browser)
+            s2 = Scraper(url2, task2, schema=..., script="s2.py", browser=browser)
+            r1 = s1.run()
+            r2 = s2.run()
+
+        # Async
+        async with Browser(headless=True) as browser:
+            r1, r2 = await asyncio.gather(
+                s1.async_run(),
+                s2.async_run(),
+            )
+
+        # Without browser= everything works as before (backward compatible)
+        scraper = Scraper(url, task, schema=..., script="s.py")
+        scraper.run()
+    """
+
+    def __init__(
+        self,
+        *,
+        headless: bool = True,
+        launch_options: LaunchOptions | None = None,
+    ) -> None:
+        self._headless = headless
+        self._user_launch_options = launch_options
+        self._browser_mgr: Any = None
+        self._bg_loop: Any = None
+        self._bg_thread: threading.Thread | None = None
+        self._started = False
+        self._start_time: float = 0.0
+
+    @property
+    def is_running(self) -> bool:
+        """Whether the browser is currently running."""
+        return self._started
+
+    def _get_resolved_options(self) -> dict[str, Any]:
+        """Resolve launch options with defaults."""
+        return resolve_launch_options(
+            self._user_launch_options,
+            headless=self._headless,
+        )
+
+    # ── Async interface ──────────────────────────────────────
+
+    async def _start(self) -> None:
+        """Launch the browser (async)."""
+        if self._started:
+            return
+        from .runtime.environment import BrowserManager
+
+        self._browser_mgr = BrowserManager(
+            headless=self._headless,
+            launch_options=self._get_resolved_options(),
+        )
+        await self._browser_mgr.start()
+        self._started = True
+        self._start_time = time.monotonic()
+
+    async def _stop(self) -> None:
+        """Close the browser (async). Idempotent."""
+        if self._browser_mgr is not None:
+            try:
+                await self._browser_mgr.stop()
+            except Exception:
+                pass
+            self._browser_mgr = None
+        self._started = False
+
+    async def new_page(self) -> Any:
+        """Create a new page (tab) in the shared browser.
+
+        Returns a Playwright Page object.
+
+        Raises:
+            RuntimeError: If the browser is not running.
+        """
+        if not self._started or self._browser_mgr is None:
+            raise RuntimeError(
+                "Browser is not running. "
+                "Use 'with Browser() as browser:' or call 'await browser.start()'."
+            )
+        return await self._browser_mgr.new_page()
+
+    async def __aenter__(self) -> Browser:
+        await self._start()
+        return self
+
+    async def __aexit__(self, *exc: Any) -> bool:
+        await self._stop()
+        return False
+
+    # ── Sync interface ───────────────────────────────────────
+
+    def __enter__(self) -> Browser:
+        self._bg_loop = asyncio.new_event_loop()
+        self._bg_thread = threading.Thread(
+            target=self._bg_loop.run_forever,
+            daemon=True,
+            name="scout-shared-browser",
+        )
+        self._bg_thread.start()
+
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                self._start(), self._bg_loop,
+            )
+            future.result(timeout=60)
+        except Exception:
+            # Browser failed to start — clean up the thread
+            self._bg_loop.call_soon_threadsafe(self._bg_loop.stop)
+            self._bg_thread.join(timeout=5)
+            self._bg_loop.close()
+            self._bg_loop = None
+            self._bg_thread = None
+            raise
+        return self
+
+    def __exit__(self, *exc: Any) -> bool:
+        if self._bg_loop is not None:
+            future = asyncio.run_coroutine_threadsafe(
+                self._stop(), self._bg_loop,
+            )
+            try:
+                future.result(timeout=15)
+            except Exception:
+                pass
+            self._bg_loop.call_soon_threadsafe(self._bg_loop.stop)
+            if self._bg_thread is not None:
+                self._bg_thread.join(timeout=10)
+            self._bg_loop.close()
+            self._bg_loop = None
+            self._bg_thread = None
+        return False
+
+    def close(self) -> None:
+        """Close the browser and release resources. Idempotent.
+
+        From sync context: runs cleanup directly.
+        From async context: use ``await browser._stop()`` or the
+        ``async with`` pattern instead.
+        """
+        if self._bg_loop is not None:
+            # Sync path — running in background thread
+            self.__exit__(None, None, None)
+        elif self._started:
+            asyncio.run(self._stop())
+
+    def __del__(self) -> None:
+        if getattr(self, "_started", False):
+            warnings.warn(
+                "Browser was garbage-collected while still running. "
+                "Use 'with Browser():' or call 'browser.close()' "
+                "to avoid resource leaks.",
+                ResourceWarning,
+                stacklevel=2,
+            )

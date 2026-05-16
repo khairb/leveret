@@ -9,7 +9,6 @@ keywords = ["scraping", "web-scraping", "ai", "browser", "playwright", "automati
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -38,6 +37,9 @@ all = [
     "pydantic-ai-slim[cohere]>=1.84.0",
     "pydantic-ai-slim[bedrock]>=1.84.0",
 ]
+
+[tool.setuptools.package-data]
+scout = ["agent/*.md", "agent/*.json"]
 
 [dependency-groups]
 dev = [
