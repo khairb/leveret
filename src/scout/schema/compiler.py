@@ -11,11 +11,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from .formatter import format_errors
-from .nodes import Node
+from .nodes import ListNode, Node
 from .parse import parse_schema
 from .prompt import render_schema_prompt
 from .tolerance import Tolerance, apply_tolerance
-from .validate import validate
+from .validate import RawError, validate
 
 
 @dataclass(slots=True)
@@ -48,6 +48,25 @@ class CompiledSchema:
             message is fully formatted and ready to be included in the
             rejection feedback to the agent.
         """
+        # Reject empty root lists by default — unless the user opted in
+        # via Items(..., allow_empty=True) or already set an explicit min >= 1
+        # (which the normal validator handles).
+        if (
+            isinstance(self.root, ListNode)
+            and not self.root.allow_empty
+            and isinstance(data, list)
+            and len(data) == 0
+            and (self.root.min is None or self.root.min == 0)
+        ):
+            errors = [RawError(
+                "",
+                "list is empty — the scraper must return at least one result",
+                None,
+                "structure",
+            )]
+            total_items = 0
+            return False, format_errors(errors, total_items, node_tree=self.root)
+
         errors = validate(data, self.root)
         if not errors:
             return True, ""

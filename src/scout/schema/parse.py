@@ -45,6 +45,7 @@ def parse_schema(schema: Any) -> Node:
             item=parse_schema(schema.item),
             min=schema.min,
             max=schema.max,
+            allow_empty=schema.allow_empty,
         )
 
     if isinstance(schema, Field):

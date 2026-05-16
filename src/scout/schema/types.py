@@ -85,7 +85,7 @@ class Items:
         Items(str, min=5, max=50)               # bounded list
     """
 
-    __slots__ = ("item", "min", "max")
+    __slots__ = ("item", "min", "max", "allow_empty")
 
     def __init__(
         self,
@@ -93,10 +93,12 @@ class Items:
         *,
         min: int | None = None,
         max: int | None = None,
+        allow_empty: bool = False,
     ) -> None:
         self.item = item
         self.min = min
         self.max = max
+        self.allow_empty = allow_empty
 
     def __repr__(self) -> str:
         parts = [repr(self.item)]
@@ -104,6 +106,8 @@ class Items:
             parts.append(f"min={self.min!r}")
         if self.max is not None:
             parts.append(f"max={self.max!r}")
+        if self.allow_empty:
+            parts.append("allow_empty=True")
         return f"Items({', '.join(parts)})"
 
 

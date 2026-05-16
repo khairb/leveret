@@ -13,7 +13,7 @@ import pytest
 from scout.schema.compiler import compile_schema
 from scout.schema.formatter import format_errors
 from scout.schema.parse import parse_schema
-from scout.schema.types import Field, List
+from scout.schema.types import Field, Items, List
 from scout.schema.validate import RawError, _check_type, validate
 
 
@@ -444,3 +444,60 @@ class TestEndToEndValidation:
 
         # Agent should see: price constraint
         assert ">= 0" in msg or "between" in msg
+
+
+# ---------------------------------------------------------------------------
+# Empty root list rejection
+# ---------------------------------------------------------------------------
+
+class TestEmptyRootList:
+    """Empty root lists are rejected by default (allow_empty=False)."""
+
+    def test_bare_list_rejects_empty_by_default(self):
+        """[{"x": str}] with [] → failure."""
+        cs = compile_schema([{"x": str}])
+        valid, msg = cs.validate([])
+        assert not valid
+        assert "empty" in msg
+        assert "at least one result" in msg
+
+    def test_items_rejects_empty_by_default(self):
+        """Items({"x": str}) with [] → failure."""
+        cs = compile_schema(Items({"x": str}))
+        valid, msg = cs.validate([])
+        assert not valid
+        assert "at least one result" in msg
+
+    def test_items_allow_empty_true_passes(self):
+        """Items({"x": str}, allow_empty=True) with [] → success."""
+        cs = compile_schema(Items({"x": str}, allow_empty=True))
+        valid, msg = cs.validate([])
+        assert valid
+        assert msg == ""
+
+    def test_no_double_error_with_explicit_min(self):
+        """Items(str, min=5) with [] → uses existing min error, not the new one."""
+        cs = compile_schema(Items(str, min=5))
+        valid, msg = cs.validate([])
+        assert not valid
+        assert "minimum is 5" in msg
+        # Should NOT contain the generic "at least one result" message
+        assert "at least one result" not in msg
+
+    def test_non_list_root_unaffected(self):
+        """Object root schema works as before."""
+        cs = compile_schema({"x": str})
+        valid, msg = cs.validate({"x": "hello"})
+        assert valid
+
+    def test_nested_empty_list_still_passes(self):
+        """Empty nested list is unaffected by the root-level check."""
+        cs = compile_schema({"items": [str]})
+        valid, msg = cs.validate({"items": []})
+        assert valid
+
+    def test_non_empty_list_passes(self):
+        """Sanity: non-empty list still passes."""
+        cs = compile_schema([{"x": str}])
+        valid, msg = cs.validate([{"x": "hello"}])
+        assert valid

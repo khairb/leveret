@@ -47,6 +47,7 @@ class ListNode:
     item: Node
     min: int | None = None
     max: int | None = None
+    allow_empty: bool = False
 
 
 @dataclass(frozen=True, slots=True)
