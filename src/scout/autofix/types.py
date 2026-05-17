@@ -210,29 +210,33 @@ class PageSignals:
 # ── Auto-fix mode and action ─────────────────────────────────
 
 
-class AutoFixMode(enum.Enum):
-    """Controls how aggressively auto-fix regenerates broken scripts.
+class RegenerateMode(enum.Enum):
+    """Controls how eagerly auto-regeneration replaces broken scripts.
 
-    When a cached script fails at runtime, auto-fix diagnoses the
-    error and decides whether to regenerate the script or raise the
+    When a cached script fails at runtime, auto-regeneration diagnoses
+    the error and decides whether to regenerate the script or raise the
     error. This enum controls the risk threshold for that decision.
 
     Members:
-        CONSERVATIVE: Only regenerate on high-confidence failures
+        CAUTIOUS: Only regenerate on high-confidence failures
             (script crashed or schema mismatch). Safest option.
         BALANCED: Regenerate on high-confidence failures plus
             ambiguous cases when the page is verified to be real.
-            This is what ``auto_fix=True`` uses.
-        AGGRESSIVE: Lower thresholds — tolerates noisier error
+            This is what ``auto_regenerate=True`` uses.
+        EAGER: Lower thresholds — tolerates noisier error
             signals and regenerates more liberally.
         ALWAYS: Skip the cache entirely and force a fresh AI
             generation on every ``run()`` call.
     """
 
-    CONSERVATIVE = "conservative"
+    CAUTIOUS = "cautious"
     BALANCED = "balanced"
-    AGGRESSIVE = "aggressive"
+    EAGER = "eager"
     ALWAYS = "always"
+
+
+# Backward compatibility alias.
+AutoFixMode = RegenerateMode
 
 
 class AutoFixAction(enum.Enum):

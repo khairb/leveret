@@ -345,7 +345,7 @@ class TestInProcessExecution:
 
     @pytest.mark.asyncio
     async def test_timeout_raises_script_timeout_error(self, tmp_path):
-        s = _make_scraper(tmp_path, timeout=1)
+        s = _make_scraper(tmp_path, run_timeout=1)
 
         mock_mgr, mock_page = _mock_browser_manager()
         s._browser_mgr = mock_mgr
@@ -471,7 +471,7 @@ class TestContextManagedRun:
             result = await s._run_cached("https://example.com")
 
             assert result.data == [{"title": "Hello"}]
-            assert result.generated is False
+            assert result.script_generated is False
             mock_mgr.new_page.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -490,7 +490,7 @@ class TestContextManagedRun:
             ),
         ):
             result = await s._run_cached("https://example.com")
-            assert result.generated is False
+            assert result.script_generated is False
             s._execute_function.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -558,7 +558,7 @@ class TestSyncRunInContextManager:
                 result = s.run()
 
             assert result.data == [{"title": "Test"}]
-            assert result.generated is False
+            assert result.script_generated is False
 
     def test_multiple_runs_reuse_browser(self, tmp_path):
         s = _make_scraper(tmp_path)
@@ -920,7 +920,7 @@ class TestEdgeCases:
              patch.object(s, "_check_playwright"):
             async with s:
                 result = await s.async_regenerate()
-                assert result.generated is True
+                assert result.script_generated is True
 
     @pytest.mark.asyncio
     async def test_validation_error_in_context_managed_run(self, tmp_path):
@@ -929,7 +929,7 @@ class TestEdgeCases:
             "https://example.com", "test",
             schema=[{"title": str, "price": float}],
             script=str(tmp_path / "scraper.py"),
-            validator_agent=True,
+            ai_review=True,
         )
         # Write a script that returns data missing the 'price' field
         _write_valid_script(

@@ -10,7 +10,7 @@ import pytest
 from scout.autofix.decision import decide
 from scout.autofix.types import (
     AutoFixAction,
-    AutoFixMode,
+    RegenerateMode,
     ErrorCategory,
     PageVerificationResult,
     StabilityLevel,
@@ -28,9 +28,9 @@ STABLE = StabilityLevel.STABLE
 CONSISTENT = StabilityLevel.CONSISTENT
 MIXED = StabilityLevel.MIXED
 CHAOTIC = StabilityLevel.CHAOTIC
-CONS = AutoFixMode.CONSERVATIVE
-BAL = AutoFixMode.BALANCED
-AGG = AutoFixMode.AGGRESSIVE
+CONS = RegenerateMode.CAUTIOUS
+BAL = RegenerateMode.BALANCED
+AGG = RegenerateMode.EAGER
 
 
 # ── Immediate decisions (no stability/page needed) ───────────
@@ -41,42 +41,42 @@ class TestImmediateDecisions:
 
     def test_category_a_regenerate_all_modes(self):
         """§9: Category A → REGENERATE immediately in all modes."""
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             action, reason = decide(ErrorCategory.A, None, [], mode)
             assert action == REGEN
             assert "Parse error" in reason
 
     def test_category_c_raise_all_modes(self):
         """§9: Category C → RAISE (Tier 3) in all modes."""
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             action, reason = decide(ErrorCategory.C, STABLE, [REAL]*3, mode)
             assert action == RAISE
             assert "Network" in reason or "server" in reason
 
     def test_category_f1_raise_all_modes(self):
         """§9: Category F1 → RAISE (Tier 3) in all modes."""
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             action, reason = decide(ErrorCategory.F1, STABLE, [REAL]*3, mode)
             assert action == RAISE
             assert "crash" in reason.lower() or "Browser" in reason
 
     def test_category_f2_raise_all_modes(self):
         """§9: Category F2 → RAISE (Tier 3), no retries."""
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             action, reason = decide(ErrorCategory.F2, None, [], mode)
             assert action == RAISE
             assert "timeout" in reason.lower() or "Subprocess" in reason
 
     def test_category_f3_raise_all_modes(self):
         """§9: Category F3 → RAISE (Tier 3), no retries."""
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             action, reason = decide(ErrorCategory.F3, None, [], mode)
             assert action == RAISE
             assert "Infrastructure" in reason
 
     def test_category_e_ineligible_raise_all_modes(self):
         """§9: E context/frame destruction → RAISE in all modes."""
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             action, reason = decide(
                 ErrorCategory.E, STABLE, [REAL]*3, mode, e_eligible=False,
             )
@@ -93,7 +93,7 @@ class TestStabilityGate:
     @pytest.mark.parametrize("category", [
         ErrorCategory.B, ErrorCategory.D, ErrorCategory.E, ErrorCategory.G,
     ])
-    @pytest.mark.parametrize("mode", list(AutoFixMode))
+    @pytest.mark.parametrize("mode", list(RegenerateMode))
     def test_mixed_always_raise(self, category, mode):
         """MIXED stability → RAISE for all categories and modes."""
         action, reason = decide(category, MIXED, [REAL]*3, mode)
@@ -103,7 +103,7 @@ class TestStabilityGate:
     @pytest.mark.parametrize("category", [
         ErrorCategory.B, ErrorCategory.D, ErrorCategory.E, ErrorCategory.G,
     ])
-    @pytest.mark.parametrize("mode", list(AutoFixMode))
+    @pytest.mark.parametrize("mode", list(RegenerateMode))
     def test_chaotic_always_raise(self, category, mode):
         """CHAOTIC stability → RAISE for all categories and modes."""
         action, reason = decide(category, CHAOTIC, [REAL]*3, mode)
@@ -117,7 +117,7 @@ class TestStabilityGate:
 class TestPageGate:
     """Page verification must pass before tier-specific logic runs."""
 
-    @pytest.mark.parametrize("mode", list(AutoFixMode))
+    @pytest.mark.parametrize("mode", list(RegenerateMode))
     def test_antibot_blocks_all_modes(self, mode):
         """§6: Any ANTI_BOT blocks regeneration in all modes."""
         action, _ = decide(
@@ -125,8 +125,8 @@ class TestPageGate:
         )
         assert action == RAISE
 
-    def test_antibot_blocks_aggressive_even_with_2_real(self):
-        """§6: ANTI_BOT blocks even aggressive mode (exception to 2/3 rule)."""
+    def test_antibot_blocks_eager_even_with_2_real(self):
+        """§6: ANTI_BOT blocks even eager mode (exception to 2/3 rule)."""
         action, _ = decide(
             ErrorCategory.B, STABLE, [REAL, REAL, ANTI], AGG,
         )
@@ -143,8 +143,8 @@ class TestPageGate:
         assert action == RAISE
 
     def test_1_real_out_of_3_blocks_all(self):
-        """1/3 REAL_PAGE → blocks in all modes (even aggressive needs 2/3)."""
-        for mode in AutoFixMode:
+        """1/3 REAL_PAGE → blocks in all modes (even eager needs 2/3)."""
+        for mode in RegenerateMode:
             action, _ = decide(
                 ErrorCategory.B, STABLE, [REAL, SERV, NORESP], mode,
             )
@@ -152,7 +152,7 @@ class TestPageGate:
 
     def test_0_real_blocks(self):
         """0/3 REAL_PAGE → blocks in all modes."""
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             action, _ = decide(
                 ErrorCategory.B, STABLE, [SERV, REDIR, NORESP], mode,
             )
@@ -166,13 +166,13 @@ class TestTier1CategoryB:
     """§9: Complete decision matrix for Category B."""
 
     # STABLE + 3/3 REAL_PAGE → Regen (all modes)
-    @pytest.mark.parametrize("mode", list(AutoFixMode))
+    @pytest.mark.parametrize("mode", list(RegenerateMode))
     def test_stable_3_real_regen_all(self, mode):
         action, _ = decide(ErrorCategory.B, STABLE, [REAL]*3, mode)
         assert action == REGEN
 
-    # STABLE + 2/3 REAL_PAGE → Raise (conservative), Regen (balanced/aggressive)
-    def test_stable_2_real_conservative_raise(self):
+    # STABLE + 2/3 REAL_PAGE → Raise (cautious), Regen (balanced/eager)
+    def test_stable_2_real_cautious_raise(self):
         action, _ = decide(
             ErrorCategory.B, STABLE, [REAL, REAL, SERV], CONS,
         )
@@ -184,20 +184,20 @@ class TestTier1CategoryB:
         )
         assert action == REGEN
 
-    def test_stable_2_real_aggressive_regen(self):
+    def test_stable_2_real_eager_regen(self):
         action, _ = decide(
             ErrorCategory.B, STABLE, [REAL, REAL, SERV], AGG,
         )
         assert action == REGEN
 
     # CONSISTENT + 3/3 REAL_PAGE → Regen (all modes)
-    @pytest.mark.parametrize("mode", list(AutoFixMode))
+    @pytest.mark.parametrize("mode", list(RegenerateMode))
     def test_consistent_3_real_regen_all(self, mode):
         action, _ = decide(ErrorCategory.B, CONSISTENT, [REAL]*3, mode)
         assert action == REGEN
 
-    # CONSISTENT + 2/3 REAL_PAGE → Raise (conservative/balanced), Regen (aggressive)
-    def test_consistent_2_real_conservative_raise(self):
+    # CONSISTENT + 2/3 REAL_PAGE → Raise (cautious/balanced), Regen (eager)
+    def test_consistent_2_real_cautious_raise(self):
         action, _ = decide(
             ErrorCategory.B, CONSISTENT, [REAL, REAL, REDIR], CONS,
         )
@@ -209,7 +209,7 @@ class TestTier1CategoryB:
         )
         assert action == RAISE
 
-    def test_consistent_2_real_aggressive_regen(self):
+    def test_consistent_2_real_eager_regen(self):
         action, _ = decide(
             ErrorCategory.B, CONSISTENT, [REAL, REAL, REDIR], AGG,
         )
@@ -222,12 +222,12 @@ class TestTier1CategoryB:
 class TestTier1CategoryG:
     """§9: Category G uses the same table as Category B."""
 
-    @pytest.mark.parametrize("mode", list(AutoFixMode))
+    @pytest.mark.parametrize("mode", list(RegenerateMode))
     def test_stable_3_real_regen_all(self, mode):
         action, _ = decide(ErrorCategory.G, STABLE, [REAL]*3, mode)
         assert action == REGEN
 
-    def test_stable_2_real_conservative_raise(self):
+    def test_stable_2_real_cautious_raise(self):
         action, _ = decide(
             ErrorCategory.G, STABLE, [REAL, REAL, SERV], CONS,
         )
@@ -239,18 +239,18 @@ class TestTier1CategoryG:
         )
         assert action == REGEN
 
-    def test_stable_2_real_aggressive_regen(self):
+    def test_stable_2_real_eager_regen(self):
         action, _ = decide(
             ErrorCategory.G, STABLE, [REAL, REAL, SERV], AGG,
         )
         assert action == REGEN
 
-    @pytest.mark.parametrize("mode", list(AutoFixMode))
+    @pytest.mark.parametrize("mode", list(RegenerateMode))
     def test_consistent_3_real_regen_all(self, mode):
         action, _ = decide(ErrorCategory.G, CONSISTENT, [REAL]*3, mode)
         assert action == REGEN
 
-    def test_consistent_2_real_conservative_raise(self):
+    def test_consistent_2_real_cautious_raise(self):
         action, _ = decide(
             ErrorCategory.G, CONSISTENT, [REAL, REAL, NORESP], CONS,
         )
@@ -262,7 +262,7 @@ class TestTier1CategoryG:
         )
         assert action == RAISE
 
-    def test_consistent_2_real_aggressive_regen(self):
+    def test_consistent_2_real_eager_regen(self):
         action, _ = decide(
             ErrorCategory.G, CONSISTENT, [REAL, REAL, NORESP], AGG,
         )
@@ -275,22 +275,22 @@ class TestTier1CategoryG:
 class TestTier2CategoryD:
     """§9: Complete decision matrix for Category D."""
 
-    # STABLE + 3/3 REAL_PAGE → Raise (conservative), Regen (balanced/aggressive)
-    def test_stable_3_real_conservative_raise(self):
+    # STABLE + 3/3 REAL_PAGE → Raise (cautious), Regen (balanced/eager)
+    def test_stable_3_real_cautious_raise(self):
         action, reason = decide(ErrorCategory.D, STABLE, [REAL]*3, CONS)
         assert action == RAISE
-        assert "conservative" in reason.lower()
+        assert "cautious" in reason.lower()
 
     def test_stable_3_real_balanced_regen(self):
         action, _ = decide(ErrorCategory.D, STABLE, [REAL]*3, BAL)
         assert action == REGEN
 
-    def test_stable_3_real_aggressive_regen(self):
+    def test_stable_3_real_eager_regen(self):
         action, _ = decide(ErrorCategory.D, STABLE, [REAL]*3, AGG)
         assert action == REGEN
 
-    # STABLE + 2/3 REAL_PAGE → Raise (conservative/balanced), Regen (aggressive)
-    def test_stable_2_real_conservative_raise(self):
+    # STABLE + 2/3 REAL_PAGE → Raise (cautious/balanced), Regen (eager)
+    def test_stable_2_real_cautious_raise(self):
         action, _ = decide(
             ErrorCategory.D, STABLE, [REAL, REAL, SERV], CONS,
         )
@@ -302,14 +302,14 @@ class TestTier2CategoryD:
         )
         assert action == RAISE
 
-    def test_stable_2_real_aggressive_regen(self):
+    def test_stable_2_real_eager_regen(self):
         action, _ = decide(
             ErrorCategory.D, STABLE, [REAL, REAL, SERV], AGG,
         )
         assert action == REGEN
 
-    # CONSISTENT + 3/3 REAL_PAGE → Raise (conservative/balanced), Regen (aggressive)
-    def test_consistent_3_real_conservative_raise(self):
+    # CONSISTENT + 3/3 REAL_PAGE → Raise (cautious/balanced), Regen (eager)
+    def test_consistent_3_real_cautious_raise(self):
         action, _ = decide(ErrorCategory.D, CONSISTENT, [REAL]*3, CONS)
         assert action == RAISE
 
@@ -317,12 +317,12 @@ class TestTier2CategoryD:
         action, _ = decide(ErrorCategory.D, CONSISTENT, [REAL]*3, BAL)
         assert action == RAISE
 
-    def test_consistent_3_real_aggressive_regen(self):
+    def test_consistent_3_real_eager_regen(self):
         action, _ = decide(ErrorCategory.D, CONSISTENT, [REAL]*3, AGG)
         assert action == REGEN
 
     # CONSISTENT + 2/3 REAL_PAGE → Raise (all modes)
-    @pytest.mark.parametrize("mode", list(AutoFixMode))
+    @pytest.mark.parametrize("mode", list(RegenerateMode))
     def test_consistent_2_real_raise_all(self, mode):
         action, _ = decide(
             ErrorCategory.D, CONSISTENT, [REAL, REAL, REDIR], mode,
@@ -336,7 +336,7 @@ class TestTier2CategoryD:
 class TestTier2CategoryE:
     """§9: Category E (eligible sub-types) uses same table as D."""
 
-    def test_stable_3_real_conservative_raise(self):
+    def test_stable_3_real_cautious_raise(self):
         action, _ = decide(ErrorCategory.E, STABLE, [REAL]*3, CONS)
         assert action == RAISE
 
@@ -344,11 +344,11 @@ class TestTier2CategoryE:
         action, _ = decide(ErrorCategory.E, STABLE, [REAL]*3, BAL)
         assert action == REGEN
 
-    def test_stable_3_real_aggressive_regen(self):
+    def test_stable_3_real_eager_regen(self):
         action, _ = decide(ErrorCategory.E, STABLE, [REAL]*3, AGG)
         assert action == REGEN
 
-    def test_stable_2_real_conservative_raise(self):
+    def test_stable_2_real_cautious_raise(self):
         action, _ = decide(
             ErrorCategory.E, STABLE, [REAL, REAL, SERV], CONS,
         )
@@ -360,13 +360,13 @@ class TestTier2CategoryE:
         )
         assert action == RAISE
 
-    def test_stable_2_real_aggressive_regen(self):
+    def test_stable_2_real_eager_regen(self):
         action, _ = decide(
             ErrorCategory.E, STABLE, [REAL, REAL, SERV], AGG,
         )
         assert action == REGEN
 
-    def test_consistent_3_real_conservative_raise(self):
+    def test_consistent_3_real_cautious_raise(self):
         action, _ = decide(ErrorCategory.E, CONSISTENT, [REAL]*3, CONS)
         assert action == RAISE
 
@@ -374,11 +374,11 @@ class TestTier2CategoryE:
         action, _ = decide(ErrorCategory.E, CONSISTENT, [REAL]*3, BAL)
         assert action == RAISE
 
-    def test_consistent_3_real_aggressive_regen(self):
+    def test_consistent_3_real_eager_regen(self):
         action, _ = decide(ErrorCategory.E, CONSISTENT, [REAL]*3, AGG)
         assert action == REGEN
 
-    @pytest.mark.parametrize("mode", list(AutoFixMode))
+    @pytest.mark.parametrize("mode", list(RegenerateMode))
     def test_consistent_2_real_raise_all(self, mode):
         action, _ = decide(
             ErrorCategory.E, CONSISTENT, [REAL, REAL, REDIR], mode,
@@ -390,10 +390,10 @@ class TestTier2CategoryE:
 
 
 class TestModeOrdering:
-    """Verify that conservative ≤ balanced ≤ aggressive in regeneration tendency."""
+    """Verify that cautious ≤ balanced ≤ eager in regeneration tendency."""
 
     def test_tier1_stable_2_real(self):
-        """B/G, STABLE, 2/3 REAL: cons=RAISE, bal=REGEN, agg=REGEN."""
+        """B/G, STABLE, 2/3 REAL: caut=RAISE, bal=REGEN, eager=REGEN."""
         pages = [REAL, REAL, SERV]
         for cat in (ErrorCategory.B, ErrorCategory.G):
             assert decide(cat, STABLE, pages, CONS)[0] == RAISE
@@ -401,7 +401,7 @@ class TestModeOrdering:
             assert decide(cat, STABLE, pages, AGG)[0] == REGEN
 
     def test_tier1_consistent_2_real(self):
-        """B/G, CONSISTENT, 2/3 REAL: cons=RAISE, bal=RAISE, agg=REGEN."""
+        """B/G, CONSISTENT, 2/3 REAL: caut=RAISE, bal=RAISE, eager=REGEN."""
         pages = [REAL, REAL, SERV]
         for cat in (ErrorCategory.B, ErrorCategory.G):
             assert decide(cat, CONSISTENT, pages, CONS)[0] == RAISE
@@ -409,7 +409,7 @@ class TestModeOrdering:
             assert decide(cat, CONSISTENT, pages, AGG)[0] == REGEN
 
     def test_tier2_stable_3_real(self):
-        """D/E, STABLE, 3/3 REAL: cons=RAISE, bal=REGEN, agg=REGEN."""
+        """D/E, STABLE, 3/3 REAL: caut=RAISE, bal=REGEN, eager=REGEN."""
         pages = [REAL]*3
         for cat in (ErrorCategory.D, ErrorCategory.E):
             assert decide(cat, STABLE, pages, CONS)[0] == RAISE
@@ -417,7 +417,7 @@ class TestModeOrdering:
             assert decide(cat, STABLE, pages, AGG)[0] == REGEN
 
     def test_tier2_stable_2_real(self):
-        """D/E, STABLE, 2/3 REAL: cons=RAISE, bal=RAISE, agg=REGEN."""
+        """D/E, STABLE, 2/3 REAL: caut=RAISE, bal=RAISE, eager=REGEN."""
         pages = [REAL, REAL, SERV]
         for cat in (ErrorCategory.D, ErrorCategory.E):
             assert decide(cat, STABLE, pages, CONS)[0] == RAISE
@@ -425,7 +425,7 @@ class TestModeOrdering:
             assert decide(cat, STABLE, pages, AGG)[0] == REGEN
 
     def test_tier2_consistent_3_real(self):
-        """D/E, CONSISTENT, 3/3 REAL: cons=RAISE, bal=RAISE, agg=REGEN."""
+        """D/E, CONSISTENT, 3/3 REAL: caut=RAISE, bal=RAISE, eager=REGEN."""
         pages = [REAL]*3
         for cat in (ErrorCategory.D, ErrorCategory.E):
             assert decide(cat, CONSISTENT, pages, CONS)[0] == RAISE
@@ -440,23 +440,23 @@ class TestTaintVariants:
     """Different taint types: SERVER_ERROR, REDIRECTED, NO_RESPONSE."""
 
     @pytest.mark.parametrize("taint", [SERV, REDIR, NORESP])
-    def test_aggressive_tolerates_one_taint_not_antibot(self, taint):
-        """Aggressive tolerates 1 non-ANTI_BOT tainted attempt for Tier 1."""
+    def test_eager_tolerates_one_taint_not_antibot(self, taint):
+        """Eager tolerates 1 non-ANTI_BOT tainted attempt for Tier 1."""
         action, _ = decide(
             ErrorCategory.B, STABLE, [REAL, REAL, taint], AGG,
         )
         assert action == REGEN
 
     @pytest.mark.parametrize("taint", [SERV, REDIR, NORESP])
-    def test_conservative_rejects_any_taint(self, taint):
-        """Conservative requires ALL real for Tier 1."""
+    def test_cautious_rejects_any_taint(self, taint):
+        """Cautious requires ALL real for Tier 1."""
         action, _ = decide(
             ErrorCategory.B, STABLE, [REAL, REAL, taint], CONS,
         )
         assert action == RAISE
 
-    def test_2_taints_blocks_aggressive(self):
-        """2/3 tainted → 1/3 REAL → blocks even aggressive."""
+    def test_2_taints_blocks_eager(self):
+        """2/3 tainted → 1/3 REAL → blocks even eager."""
         action, _ = decide(
             ErrorCategory.B, STABLE, [REAL, SERV, REDIR], AGG,
         )
@@ -479,7 +479,7 @@ class TestReasonStrings:
 
     def test_raise_reason_mentions_mode(self):
         _, reason = decide(ErrorCategory.D, STABLE, [REAL]*3, CONS)
-        assert "conservative" in reason.lower()
+        assert "cautious" in reason.lower()
 
     def test_tier3_reason_explains_category(self):
         _, reason = decide(ErrorCategory.C, STABLE, [REAL]*3, BAL)

@@ -219,13 +219,13 @@ class TestCachedExecution:
 
         assert isinstance(result, ScraperResult)
         assert result.data == [{"name": "Widget", "price": 9.99}]
-        assert result.generated is False
+        assert result.script_generated is False
         assert result.url == "https://example.com/products"
         assert result.script_path == script_path
 
     def test_cached_script_validates_return_value(self, script_path):
         """Schema validation is applied to cached script output."""
-        s = _make_scraper(script=str(script_path), validator_agent=True)
+        s = _make_scraper(script=str(script_path), ai_review=True)
 
         # Return data that doesn't match schema (price is string)
         mock_result = _mock_execute_result(
@@ -262,7 +262,7 @@ class TestCachedExecution:
             with pytest.raises(ScoutScriptRuntimeError, match="crashed during execution"):
                 asyncio.run(s.async_run())
 
-    def test_runtime_error_suggests_auto_fix(self, script_path):
+    def test_runtime_error_suggests_auto_regenerate(self, script_path):
         """Runtime error message suggests scraper.regenerate()."""
         s = _make_scraper(script=str(script_path))
 
@@ -321,8 +321,8 @@ class TestCachedExecution:
             assert s._cached_fn is not None
             asyncio.run(s.async_run())
 
-    def test_auto_fix_always_clears_cache(self, script_path, monkeypatch):
-        """auto_fix="always" discards cached function and regenerates."""
+    def test_auto_regenerate_always_clears_cache(self, script_path, monkeypatch):
+        """auto_regenerate="always" discards cached function and regenerates."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
         s = _make_scraper(script=str(script_path))
 
@@ -334,20 +334,20 @@ class TestCachedExecution:
             asyncio.run(s.async_run())
         assert s._cached_fn is not None
 
-        # auto_fix="always" should go to generation path (which we mock)
+        # auto_regenerate="always" should go to generation path (which we mock)
         with patch.object(s, "_run_generate", new_callable=AsyncMock) as mock_gen:
             mock_gen.return_value = ScraperResult(
                 data=[{"name": "New", "price": 2.0}],
                 url="https://example.com/products",
                 timestamp="2024-01-01T00:00:00.000000Z",
-                generated=True,
+                script_generated=True,
                 script_path=script_path,
             )
             with patch.object(s, "_check_api_key"):
                 with patch.object(s, "_check_playwright"):
-                    result = asyncio.run(s.async_run(auto_fix="always"))
+                    result = asyncio.run(s.async_run(auto_regenerate="always"))
 
-        assert result.generated is True
+        assert result.script_generated is True
         assert s._cached_fn is None  # was cleared before generation
 
     def test_url_override_with_cached_script(self, script_path):
@@ -385,13 +385,13 @@ class TestGeneration:
                 data=[{"name": "W", "price": 1.0}],
                 url="https://example.com/products",
                 timestamp="2024-01-01T00:00:00.000000Z",
-                generated=True,
+                script_generated=True,
                 script_path=None,
             )
             with patch.object(s, "_check_playwright"):
                 result = asyncio.run(s.async_run())
 
-        assert result.generated is True
+        assert result.script_generated is True
         mock_gen.assert_awaited_once()
 
     def test_generation_checks_api_key_first(self, monkeypatch):
@@ -426,7 +426,7 @@ class TestGeneration:
             with patch.object(s, "_execute_function", new_callable=AsyncMock, return_value=mock_result):
                 result = asyncio.run(s.async_run())
 
-        assert result.generated is False
+        assert result.script_generated is False
 
     def test_generation_failure_raises_generation_error(self, monkeypatch):
         """AgentLoop failure maps to ScoutGenerationError."""
@@ -461,12 +461,12 @@ class TestGeneration:
                     data=[{"name": "Widget", "price": 9.99}],
                     url="https://example.com/products",
                     timestamp="2024-01-01T00:00:00.000000Z",
-                    generated=True,
+                    script_generated=True,
                     script_path=script_path,
                 )
                 result = asyncio.run(s.async_run())
 
-        assert result.generated is True
+        assert result.script_generated is True
         mock_gen.assert_awaited_once()
 
 
@@ -475,50 +475,50 @@ class TestGeneration:
 class TestReturnValueValidation:
 
     def test_valid_data_passes(self):
-        s = _make_scraper(validator_agent=True)
+        s = _make_scraper(ai_review=True)
         data = s._validate_return_value(
             json.dumps([{"name": "W", "price": 1.0}])
         )
         assert data == [{"name": "W", "price": 1.0}]
 
     def test_none_json_fails(self):
-        s = _make_scraper(validator_agent=True)
+        s = _make_scraper(ai_review=True)
         with pytest.raises(ScoutValidationError):
             s._validate_return_value(None)
 
     def test_null_json_fails(self):
-        s = _make_scraper(validator_agent=True)
+        s = _make_scraper(ai_review=True)
         with pytest.raises(ScoutValidationError):
             s._validate_return_value("null")
 
     def test_wrong_type_fails(self):
-        s = _make_scraper(validator_agent=True)
+        s = _make_scraper(ai_review=True)
         with pytest.raises(ScoutValidationError, match="does not match"):
             s._validate_return_value(json.dumps("not a list"))
 
     def test_wrong_field_type_fails(self):
-        s = _make_scraper(validator_agent=True)
+        s = _make_scraper(ai_review=True)
         with pytest.raises(ScoutValidationError):
             s._validate_return_value(json.dumps([{"name": 42, "price": 1.0}]))
 
     def test_missing_field_fails(self):
-        s = _make_scraper(validator_agent=True)
+        s = _make_scraper(ai_review=True)
         with pytest.raises(ScoutValidationError):
             s._validate_return_value(json.dumps([{"name": "W"}]))
 
     def test_malformed_json_fails(self):
-        s = _make_scraper(validator_agent=True)
+        s = _make_scraper(ai_review=True)
         with pytest.raises(ScoutValidationError):
             s._validate_return_value("{{{not json")
 
     def test_error_message_suggests_regenerate(self):
-        s = _make_scraper(validator_agent=True)
+        s = _make_scraper(ai_review=True)
         with pytest.raises(ScoutValidationError, match="scraper.regenerate"):
             s._validate_return_value(json.dumps("wrong"))
 
     def test_complex_schema_validation(self):
         from scout.schema.types import Field, List
-        s = _make_scraper(validator_agent=True, schema=List({
+        s = _make_scraper(ai_review=True, schema=List({
             "title": Field(str, min_length=1),
             "price": Field(float, min=0),
         }, min_items=2))
@@ -531,7 +531,7 @@ class TestReturnValueValidation:
 
     def test_complex_schema_too_few_items(self):
         from scout.schema.types import Field, List
-        s = _make_scraper(validator_agent=True, schema=List({"title": str}, min_items=10))
+        s = _make_scraper(ai_review=True, schema=List({"title": str}, min_items=10))
         with pytest.raises(ScoutValidationError):
             s._validate_return_value(json.dumps([{"title": "Only one"}]))
 
@@ -591,7 +591,7 @@ class TestConsoleOutput:
                         data=[{"name": "W", "price": 1.0}],
                         url="https://example.com/products",
                         timestamp="2024-01-01T00:00:00.000000Z",
-                        generated=True,
+                        script_generated=True,
                         script_path=Path("/tmp/nonexistent_scraper.py"),
                     )
                     asyncio.run(s.async_run())
@@ -633,10 +633,10 @@ class TestConsoleOutput:
                         data=[{"name": "W", "price": 1.0}],
                         url="https://example.com/products",
                         timestamp="2024-01-01T00:00:00.000000Z",
-                        generated=True,
+                        script_generated=True,
                         script_path=path,
                     )
-                    asyncio.run(s.async_run(auto_fix="always"))
+                    asyncio.run(s.async_run(auto_regenerate="always"))
 
         messages = [r.getMessage() for r in caplog.records]
         assert any("Regenerating" in m for m in messages)
@@ -654,7 +654,7 @@ class TestConsoleOutput:
                         data=[{"name": "W", "price": 1.0}],
                         url="https://example.com/products",
                         timestamp="2024-01-01T00:00:00.000000Z",
-                        generated=True,
+                        script_generated=True,
                         script_path=None,
                     )
                     asyncio.run(s.async_run())
@@ -683,7 +683,7 @@ class TestScraperResultFromRun:
         assert result.data == [{"name": "W", "price": 1.0}]
         assert result.url == "https://example.com/products"
         assert result.timestamp.endswith("Z")
-        assert result.generated is False
+        assert result.script_generated is False
         assert result.script_path == path
 
     def test_result_timestamp_is_iso8601(self, tmp_path):
@@ -723,10 +723,10 @@ class TestRunWrapper:
             result = s.run()
 
         assert isinstance(result, ScraperResult)
-        assert result.generated is False
+        assert result.script_generated is False
 
-    def test_run_passes_url_and_auto_fix(self, tmp_path, monkeypatch):
-        """run() passes url= and auto_fix= to async_run()."""
+    def test_run_passes_url_and_auto_regenerate(self, tmp_path, monkeypatch):
+        """run() passes url= and auto_regenerate= to async_run()."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
         path = tmp_path / "scraper.py"
         _write_valid_script(path)
@@ -737,13 +737,13 @@ class TestRunWrapper:
                 data=[{"name": "W", "price": 1.0}],
                 url="https://example.com/other",
                 timestamp="2024-01-01T00:00:00.000000Z",
-                generated=True,
+                script_generated=True,
                 script_path=path,
             )
-            s.run(url="https://example.com/other", auto_fix="always")
+            s.run(url="https://example.com/other", auto_regenerate="always")
 
         mock_async.assert_awaited_once_with(
-            url="https://example.com/other", auto_fix="always", inputs=None,
+            url="https://example.com/other", auto_regenerate="always", inputs=None,
         )
 
 
@@ -762,12 +762,12 @@ class TestEdgeCases:
                     data=[{"name": "W", "price": 1.0}],
                     url="https://example.com/products",
                     timestamp="2024-01-01T00:00:00.000000Z",
-                    generated=True,
+                    script_generated=True,
                     script_path=None,
                 )
                 result = asyncio.run(s.async_run())
 
-        assert result.generated is True
+        assert result.script_generated is True
 
     def test_script_path_not_existing_goes_to_generation(self, monkeypatch, tmp_path):
         """script= pointing to nonexistent file triggers generation."""
@@ -780,18 +780,18 @@ class TestEdgeCases:
                     data=[{"name": "W", "price": 1.0}],
                     url="https://example.com/products",
                     timestamp="2024-01-01T00:00:00.000000Z",
-                    generated=True,
+                    script_generated=True,
                     script_path=tmp_path / "does_not_exist.py",
                 )
                 result = asyncio.run(s.async_run())
 
-        assert result.generated is True
+        assert result.script_generated is True
 
     def test_empty_return_value_none_json(self, tmp_path):
         """Function that returns nothing (None) fails validation."""
         path = tmp_path / "scraper.py"
         _write_valid_script(path)
-        s = _make_scraper(script=str(path), validator_agent=True)
+        s = _make_scraper(script=str(path), ai_review=True)
 
         mock_result = _mock_execute_result(
             return_value_json="null",  # explicit None return
@@ -805,7 +805,7 @@ class TestEdgeCases:
         """Function that crashes (no markers) fails validation."""
         path = tmp_path / "scraper.py"
         _write_valid_script(path)
-        s = _make_scraper(script=str(path), validator_agent=True)
+        s = _make_scraper(script=str(path), ai_review=True)
 
         # returncode=0 but no return value — function didn't return properly
         mock_result = _mock_execute_result(

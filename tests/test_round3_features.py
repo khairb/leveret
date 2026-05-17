@@ -2,7 +2,7 @@
 
 Covers:
 - Schema change detection (schema_hash in metadata)
-- Script protection (protect_script + content_hash)
+- Script protection (protect_manual_edits + content_hash)
 - Field(str, min=10) improved error message
 - Generation failure model suggestion
 - _is_script_user_edited detection
@@ -175,41 +175,41 @@ class TestIsScriptUserEdited:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestScriptProtection:
-    """protect_script blocks automatic overwriting of user-edited scripts."""
+    """protect_manual_edits blocks automatic overwriting of user-edited scripts."""
 
     def test_check_protection_unedited_no_error(self, tmp_path):
-        """Unedited script + protect_script=True → no error."""
+        """Unedited script + protect_manual_edits=True → no error."""
         path = tmp_path / "test.py"
         _write_script(path, SCRAPE_FUNCTION)
-        s = _make(script=str(path), protect_script=True)
+        s = _make(script=str(path), protect_manual_edits=True)
         # Should not raise
         s._check_script_protection(force=False)
 
     def test_check_protection_edited_raises(self, tmp_path):
-        """Edited script + protect_script=True → ConfigError."""
+        """Edited script + protect_manual_edits=True → ConfigError."""
         path = tmp_path / "test.py"
         _write_script(path, SCRAPE_FUNCTION)
         # Simulate user edit
         content = path.read_text()
         path.write_text(content.replace("Test", "Edited"))
 
-        s = _make(script=str(path), protect_script=True)
+        s = _make(script=str(path), protect_manual_edits=True)
         with pytest.raises(ScoutConfigError, match="manually edited"):
             s._check_script_protection(force=False)
 
     def test_check_protection_edited_force_overrides(self, tmp_path):
-        """Edited script + protect_script=True + force=True → no error."""
+        """Edited script + protect_manual_edits=True + force=True → no error."""
         path = tmp_path / "test.py"
         _write_script(path, SCRAPE_FUNCTION)
         content = path.read_text()
         path.write_text(content.replace("Test", "Edited"))
 
-        s = _make(script=str(path), protect_script=True)
+        s = _make(script=str(path), protect_manual_edits=True)
         # Should not raise with force=True
         s._check_script_protection(force=True)
 
     def test_check_protection_no_protect_warns(self, tmp_path, caplog):
-        """Edited script + protect_script=False → warning only."""
+        """Edited script + protect_manual_edits=False → warning only."""
         import logging
 
         path = tmp_path / "test.py"
@@ -217,14 +217,14 @@ class TestScriptProtection:
         content = path.read_text()
         path.write_text(content.replace("Test", "Edited"))
 
-        s = _make(script=str(path), protect_script=False)
+        s = _make(script=str(path), protect_manual_edits=False)
         with caplog.at_level(logging.WARNING, logger="scout"):
             s._check_script_protection(force=False)
         assert any("manually edited" in r.message for r in caplog.records)
 
     def test_check_protection_no_script_no_error(self):
         """No script path → no error."""
-        s = _make(protect_script=True)
+        s = _make(protect_manual_edits=True)
         s._check_script_protection(force=False)
 
 

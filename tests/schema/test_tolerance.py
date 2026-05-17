@@ -149,18 +149,18 @@ class TestBalanced:
 
 
 # ---------------------------------------------------------------------------
-# Tolerant — 50% threshold
+# Lenient — 50% threshold
 # ---------------------------------------------------------------------------
 
-class TestTolerant:
-    """Tolerant tolerance: 50% of items must pass."""
+class TestLenient:
+    """Lenient tolerance: 50% of items must pass."""
 
     def test_55_percent_passes(self):
         data = _make_items(good=55, bad=45)
         valid, _ = _validate_with_tolerance(
             [{"name": str, "price": float}],
             data,
-            Tolerance.TOLERANT,
+            Tolerance.LENIENT,
         )
         assert valid
 
@@ -169,7 +169,7 @@ class TestTolerant:
         valid, msg = _validate_with_tolerance(
             [{"name": str, "price": float}],
             data,
-            Tolerance.TOLERANT,
+            Tolerance.LENIENT,
         )
         assert not valid
 
@@ -178,7 +178,7 @@ class TestTolerant:
         valid, _ = _validate_with_tolerance(
             [{"name": str, "price": float}],
             data,
-            Tolerance.TOLERANT,
+            Tolerance.LENIENT,
         )
         assert valid
 
@@ -190,13 +190,13 @@ class TestTolerant:
 class TestStructuralConstraints:
     """min/max on Items are never filtered by tolerance."""
 
-    def test_min_still_enforced_with_tolerant(self):
+    def test_min_still_enforced_with_lenient(self):
         # Only 5 items, min is 20 — should fail regardless of tolerance
         data = _make_items(good=5, bad=0)
         valid, msg = _validate_with_tolerance(
             Items({"name": str, "price": float}, min_items=20),
             data,
-            Tolerance.TOLERANT,
+            Tolerance.LENIENT,
         )
         assert not valid
         assert "5" in msg and "20" in msg
@@ -205,17 +205,17 @@ class TestStructuralConstraints:
         valid, msg = _validate_with_tolerance(
             Items({"name": str}, min_items=1),
             [],
-            Tolerance.TOLERANT,
+            Tolerance.LENIENT,
         )
         assert not valid
         assert "empty" in msg
 
-    def test_max_still_enforced_with_tolerant(self):
+    def test_max_still_enforced_with_lenient(self):
         data = _make_items(good=50, bad=0)
         valid, msg = _validate_with_tolerance(
             Items({"name": str, "price": float}, max_items=10),
             data,
-            Tolerance.TOLERANT,
+            Tolerance.LENIENT,
         )
         assert not valid
         assert "50" in msg
@@ -232,7 +232,7 @@ class TestNonListSchemas:
         valid, _ = _validate_with_tolerance(
             {"name": str, "age": int},
             {"name": "Alice", "age": "thirty"},
-            Tolerance.TOLERANT,
+            Tolerance.LENIENT,
         )
         assert not valid
 
@@ -240,7 +240,7 @@ class TestNonListSchemas:
         valid, _ = _validate_with_tolerance(
             Field(int, min=0),
             -1,
-            Tolerance.TOLERANT,
+            Tolerance.LENIENT,
         )
         assert not valid
 
@@ -252,12 +252,12 @@ class TestNonListSchemas:
 class TestEdgeCases:
     """Boundary conditions and special cases."""
 
-    def test_all_items_bad_fails_with_tolerant(self):
+    def test_all_items_bad_fails_with_lenient(self):
         data = _make_items(good=0, bad=10)
         valid, _ = _validate_with_tolerance(
             [{"name": str, "price": float}],
             data,
-            Tolerance.TOLERANT,
+            Tolerance.LENIENT,
         )
         assert not valid
 
@@ -278,12 +278,12 @@ class TestEdgeCases:
         )
         assert not valid
 
-    def test_single_bad_item_fails_tolerant(self):
+    def test_single_bad_item_fails_lenient(self):
         # 0% pass rate < 50%
         valid, _ = _validate_with_tolerance(
             [{"name": str}],
             [{"name": 42}],
-            Tolerance.TOLERANT,
+            Tolerance.LENIENT,
         )
         assert not valid
 

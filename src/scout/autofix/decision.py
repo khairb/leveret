@@ -10,7 +10,7 @@ Decision flow (spec §9):
   4. Tier-specific decision tables (§9 matrices are authoritative)
 
 Note on page verification gates:
-  The §6 "universal gate" (conservative/balanced = 3/3 REAL_PAGE) is a
+  The §6 "universal gate" (cautious/balanced = 3/3 REAL_PAGE) is a
   simplified description. The §9 decision matrices are the authoritative
   source — they show that balanced mode can regenerate at 2/3 REAL_PAGE
   for Tier 1 (B, G) when stability is STABLE. The decision engine
@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from scout.autofix.types import (
     AutoFixAction,
-    AutoFixMode,
+    RegenerateMode,
     ErrorCategory,
     PageVerificationResult,
     StabilityLevel,
@@ -38,7 +38,7 @@ def decide(
     category: ErrorCategory,
     stability: StabilityLevel | None,
     page_results: list[PageVerificationResult],
-    mode: AutoFixMode,
+    mode: RegenerateMode,
     e_eligible: bool = True,
 ) -> tuple[AutoFixAction, str]:
     """Decide whether to regenerate or raise based on all diagnostic signals.
@@ -136,15 +136,15 @@ def decide(
 def _decide_tier1(
     stability: StabilityLevel,
     page_results: list[PageVerificationResult],
-    mode: AutoFixMode,
+    mode: RegenerateMode,
 ) -> tuple[AutoFixAction, str]:
     """Decision table for Tier 1 categories (B, G).
 
     Spec §9 matrix:
       STABLE + 3/3 real → Regen (all modes)
-      STABLE + 2/3 real → Raise (conservative), Regen (balanced/aggressive)
+      STABLE + 2/3 real → Raise (cautious), Regen (balanced/eager)
       CONSISTENT + 3/3 real → Regen (all modes)
-      CONSISTENT + 2/3 real → Raise (conservative/balanced), Regen (aggressive)
+      CONSISTENT + 2/3 real → Raise (cautious/balanced), Regen (eager)
     """
     real_count = _count_real(page_results)
     total = len(page_results)
@@ -158,7 +158,7 @@ def _decide_tier1(
                 f"page verified real ({real_count}/{total})",
             )
         # STABLE + partial real (gate already passed, so ≥2/3)
-        if mode in (AutoFixMode.BALANCED, AutoFixMode.AGGRESSIVE):
+        if mode in (RegenerateMode.BALANCED, RegenerateMode.EAGER):
             return (
                 AutoFixAction.REGENERATE,
                 f"Script fault likely — stable failure pattern, "
@@ -168,7 +168,7 @@ def _decide_tier1(
         return (
             AutoFixAction.RAISE,
             f"Page not fully verified ({real_count}/{total}) — "
-            f"conservative mode requires all attempts verified real",
+            f"cautious mode requires all attempts verified real",
         )
 
     # CONSISTENT
@@ -180,11 +180,11 @@ def _decide_tier1(
             f"page verified real ({real_count}/{total})",
         )
     # CONSISTENT + partial real (gate already passed, so ≥2/3)
-    if mode == AutoFixMode.AGGRESSIVE:
+    if mode == RegenerateMode.EAGER:
         return (
             AutoFixAction.REGENERATE,
             f"Script fault possible — consistent failure pattern, "
-            f"page mostly verified ({real_count}/{total}, aggressive mode)",
+            f"page mostly verified ({real_count}/{total}, eager mode)",
         )
     # Conservative/balanced: CONSISTENT + partial real → not enough
     return (
@@ -200,14 +200,14 @@ def _decide_tier1(
 def _decide_tier2(
     stability: StabilityLevel,
     page_results: list[PageVerificationResult],
-    mode: AutoFixMode,
+    mode: RegenerateMode,
 ) -> tuple[AutoFixAction, str]:
     """Decision table for Tier 2 categories (D, E eligible).
 
     Spec §9 matrix:
-      STABLE + 3/3 real → Raise (conservative), Regen (balanced/aggressive)
-      STABLE + 2/3 real → Raise (conservative/balanced), Regen (aggressive)
-      CONSISTENT + 3/3 real → Raise (conservative/balanced), Regen (aggressive)
+      STABLE + 3/3 real → Raise (cautious), Regen (balanced/eager)
+      STABLE + 2/3 real → Raise (cautious/balanced), Regen (eager)
+      CONSISTENT + 3/3 real → Raise (cautious/balanced), Regen (eager)
       CONSISTENT + 2/3 real → Raise (all modes)
     """
     real_count = _count_real(page_results)
@@ -216,25 +216,25 @@ def _decide_tier2(
     if stability == StabilityLevel.STABLE:
         if real_count == total:
             # STABLE + all real
-            if mode == AutoFixMode.CONSERVATIVE:
+            if mode == RegenerateMode.CAUTIOUS:
                 return (
                     AutoFixAction.RAISE,
                     f"Timeout/state error with stable pattern and verified real page "
-                    f"({real_count}/{total}) — conservative mode does not regenerate "
+                    f"({real_count}/{total}) — cautious mode does not regenerate "
                     f"ambiguous categories",
                 )
-            # Balanced or aggressive
+            # Balanced or eager
             return (
                 AutoFixAction.REGENERATE,
                 f"Timeout/state error — stable failure on verified real page "
                 f"({real_count}/{total}, {mode.value} mode)",
             )
         # STABLE + partial real (gate already passed, so ≥2/3)
-        if mode == AutoFixMode.AGGRESSIVE:
+        if mode == RegenerateMode.EAGER:
             return (
                 AutoFixAction.REGENERATE,
                 f"Timeout/state error — stable failure, page mostly verified "
-                f"({real_count}/{total}, aggressive mode)",
+                f"({real_count}/{total}, eager mode)",
             )
         return (
             AutoFixAction.RAISE,
@@ -244,11 +244,11 @@ def _decide_tier2(
 
     # CONSISTENT
     if real_count == total:
-        if mode == AutoFixMode.AGGRESSIVE:
+        if mode == RegenerateMode.EAGER:
             return (
                 AutoFixAction.REGENERATE,
                 f"Timeout/state error — consistent failure on verified real page "
-                f"({real_count}/{total}, aggressive mode)",
+                f"({real_count}/{total}, eager mode)",
             )
         return (
             AutoFixAction.RAISE,
@@ -319,7 +319,7 @@ def _check_universal_page_rules(
         r == PageVerificationResult.ANTI_BOT for r in page_results
     )
 
-    # §9: ANTI_BOT blocks all modes, even aggressive
+    # §9: ANTI_BOT blocks all modes, even eager
     if has_antibot:
         antibot_count = sum(
             1 for r in page_results if r == PageVerificationResult.ANTI_BOT

@@ -357,7 +357,7 @@ class Browser:
             self._browser_mgr = None
         self._started = False
 
-    async def new_page(self) -> Any:
+    async def _new_page(self) -> Any:
         """Create a new page (tab) in the shared browser.
 
         Returns a Playwright Page object.
@@ -371,6 +371,12 @@ class Browser:
                 "Use 'with Browser() as browser:' or call 'await browser.start()'."
             )
         return await self._browser_mgr.new_page()
+
+    async def new_page(self) -> Any:
+        """Deprecated — use _new_page() internally."""
+        import warnings
+        warnings.warn("Browser.new_page() is deprecated", DeprecationWarning, stacklevel=2)
+        return await self._new_page()
 
     async def __aenter__(self) -> Browser:
         await self._start()

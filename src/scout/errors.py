@@ -89,10 +89,10 @@ class SandboxViolationError(Error):
     """
 
 
-class AutoFixError(Error):
-    """Auto-fix regenerated but the new script failed the same way.
+class AutoRegenerateError(Error):
+    """Auto-regeneration produced a script that failed the same way.
 
-    Raised when the auto-fix system regenerated a script, but the new
+    Raised when auto-regeneration replaced a broken script, but the new
     script failed with the same error pattern as the old one. This
     indicates the problem is not the script — it's something
     regeneration cannot fix (unknown anti-bot, page genuinely doesn't
@@ -100,6 +100,10 @@ class AutoFixError(Error):
 
     The user should check the URL manually or adjust the task/schema.
     """
+
+
+# Backward compatibility alias.
+AutoFixError = AutoRegenerateError
 
 
 class ScriptError(Error):
@@ -153,7 +157,8 @@ ScoutError = Error
 ScoutSchemaError = SchemaError
 ScoutConfigError = ConfigError
 ScoutGenerationError = GenerationError
-ScoutAutoFixError = AutoFixError
+ScoutAutoFixError = AutoRegenerateError
+ScoutAutoRegenerateError = AutoRegenerateError
 ScoutScriptError = ScriptError
 ScoutScriptLoadError = ScriptLoadError
 ScoutScriptRuntimeError = ScriptRuntimeError

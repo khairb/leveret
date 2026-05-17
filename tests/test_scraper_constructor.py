@@ -57,8 +57,8 @@ class TestConstructorHappyPath:
         assert s._model == "claude-haiku-4-5"
         assert s._headless is True
         assert s._api_key is None
-        assert s._timeout == 600
-        assert s._max_retries == 5
+        assert s._run_timeout == 600
+        assert s._generation_attempts == 6
         assert s._script_path is None
         assert s._cached_fn is None
         assert s._browser_mgr is None
@@ -74,8 +74,8 @@ class TestConstructorHappyPath:
             model="claude-sonnet-4-5-20250514",
             headless=False,
             api_key="sk-test-key",
-            timeout=300,
-            max_retries=2,
+            run_timeout=300,
+            generation_attempts=3,
         )
         assert s._url == "https://shop.example.com/products"
         assert s._task == "Extract all product listings"
@@ -83,8 +83,8 @@ class TestConstructorHappyPath:
         assert s._model == "claude-sonnet-4-5-20250514"
         assert s._headless is False
         assert s._api_key == "sk-test-key"
-        assert s._timeout == 300
-        assert s._max_retries == 2
+        assert s._run_timeout == 300
+        assert s._generation_attempts == 3
 
     def test_url_and_task_are_positional(self):
         """url and task can be passed positionally."""
@@ -298,51 +298,55 @@ class TestScriptPathValidation:
 # Timeout validation
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestTimeoutValidation:
+class TestRunTimeoutValidation:
 
     def test_zero(self):
-        with pytest.raises(ScoutError, match="timeout must be a positive integer"):
-            _make(timeout=0)
+        with pytest.raises(ScoutError, match="run_timeout must be a positive integer"):
+            _make(run_timeout=0)
 
     def test_negative(self):
-        with pytest.raises(ScoutError, match="timeout must be a positive integer"):
-            _make(timeout=-10)
+        with pytest.raises(ScoutError, match="run_timeout must be a positive integer"):
+            _make(run_timeout=-10)
 
     def test_float_rejected(self):
         """Float is not an int, even if whole."""
-        with pytest.raises(ScoutError, match="timeout must be a positive integer"):
-            _make(timeout=30.0)
+        with pytest.raises(ScoutError, match="run_timeout must be a positive integer"):
+            _make(run_timeout=30.0)
 
     def test_string_rejected(self):
-        with pytest.raises(ScoutError, match="timeout must be a positive integer"):
-            _make(timeout="60")
+        with pytest.raises(ScoutError, match="run_timeout must be a positive integer"):
+            _make(run_timeout="60")
 
     def test_valid_timeout(self):
-        s = _make(timeout=1)
-        assert s._timeout == 1
+        s = _make(run_timeout=1)
+        assert s._run_timeout == 1
 
     def test_large_timeout(self):
-        s = _make(timeout=3600)
-        assert s._timeout == 3600
+        s = _make(run_timeout=3600)
+        assert s._run_timeout == 3600
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# max_retries validation
+# generation_attempts validation
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestMaxRetriesValidation:
+class TestGenerationAttemptsValidation:
 
     def test_negative(self):
-        with pytest.raises(ScoutError, match="max_retries must be a non-negative integer"):
-            _make(max_retries=-1)
+        with pytest.raises(ScoutError, match="generation_attempts must be a positive integer"):
+            _make(generation_attempts=-1)
+
+    def test_zero_rejected(self):
+        with pytest.raises(ScoutError, match="generation_attempts must be a positive integer"):
+            _make(generation_attempts=0)
 
     def test_float_rejected(self):
-        with pytest.raises(ScoutError, match="max_retries must be a non-negative integer"):
-            _make(max_retries=3.0)
+        with pytest.raises(ScoutError, match="generation_attempts must be a positive integer"):
+            _make(generation_attempts=3.0)
 
-    def test_zero_is_minimum(self):
-        s = _make(max_retries=0)
-        assert s._max_retries == 0
+    def test_one_is_minimum(self):
+        s = _make(generation_attempts=1)
+        assert s._generation_attempts == 1
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -517,18 +521,18 @@ class TestScraperResultRepr:
             data=[{"a": 1}, {"a": 2}],
             url="https://example.com",
             timestamp="2024-01-01T00:00:00Z",
-            generated=False,
+            script_generated=False,
             script_path=Path("/path/to/script.py"),
         )
         assert "items=2" in repr(r)
-        assert "generated=False" in repr(r)
+        assert "script_generated=False" in repr(r)
 
     def test_dict_data(self):
         r = ScraperResult(
             data={"name": "test", "count": 42},
             url="https://x.com",
             timestamp="2024-01-01T00:00:00Z",
-            generated=True,
+            script_generated=True,
             script_path=None,
         )
         assert "keys=" in repr(r)
@@ -591,15 +595,15 @@ class TestEdgeCases:
         assert "price" in s._compiled_schema.prompt
 
     def test_bool_true_not_int(self):
-        """bool(True) is 1 in Python — timeout=True should be rejected
+        """bool(True) is 1 in Python — run_timeout=True should be rejected
         since bool is not int for our purposes... Actually, isinstance(True, int)
         is True in Python. The spec says 'Positive integer'. Let's verify
         current behavior is consistent."""
         # In Python, isinstance(True, int) is True and True > 0, so this
         # would pass. This is a Python quirk — booleans ARE integers.
         # The spec doesn't special-case this, so we follow Python semantics.
-        s = _make(timeout=True)  # True == 1, a positive int
-        assert s._timeout is True
+        s = _make(run_timeout=True)  # True == 1, a positive int
+        assert s._run_timeout is True
 
     def test_properties(self):
         """Public properties return correct values."""
@@ -655,27 +659,27 @@ class TestSpecExamples:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Round 3: AutoFixMode export, List deprecation, protect_script, warnings
+# Round 3: RegenerateMode export, List deprecation, protect_manual_edits, warnings
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestAutoFixModeExport:
-    """AutoFixMode enum is importable and usable."""
+class TestRegenerateModeExport:
+    """RegenerateMode enum is importable and usable."""
 
     def test_import_from_scout(self):
-        from scout import AutoFixMode
-        assert hasattr(AutoFixMode, "BALANCED")
-        assert hasattr(AutoFixMode, "CONSERVATIVE")
-        assert hasattr(AutoFixMode, "AGGRESSIVE")
-        assert hasattr(AutoFixMode, "ALWAYS")
+        from scout import RegenerateMode
+        assert hasattr(RegenerateMode, "BALANCED")
+        assert hasattr(RegenerateMode, "CAUTIOUS")
+        assert hasattr(RegenerateMode, "EAGER")
+        assert hasattr(RegenerateMode, "ALWAYS")
 
     def test_usable_in_constructor(self):
-        from scout import AutoFixMode
+        from scout import RegenerateMode
         s = _make(
-            auto_fix=AutoFixMode.BALANCED,
+            auto_regenerate=RegenerateMode.BALANCED,
             script="test.py",
         )
-        from scout.autofix.types import AutoFixMode as AFM
-        assert s._auto_fix_mode == AFM.BALANCED
+        from scout.autofix.types import RegenerateMode as RGM
+        assert s._auto_regenerate_mode == RGM.BALANCED
 
 
 class TestListDeprecation:
@@ -701,16 +705,16 @@ class TestListDeprecation:
             assert result.min_items == 5
 
 
-class TestProtectScript:
-    """protect_script parameter stores correctly."""
+class TestProtectManualEdits:
+    """protect_manual_edits parameter stores correctly."""
 
     def test_default_false(self):
         s = _make()
-        assert s._protect_script is False
+        assert s._protect_manual_edits is False
 
     def test_explicit_true(self):
-        s = _make(protect_script=True, script="test.py")
-        assert s._protect_script is True
+        s = _make(protect_manual_edits=True, script="test.py")
+        assert s._protect_manual_edits is True
 
 
 class TestScriptNoneWarning:

@@ -14,11 +14,16 @@ Spec reference: docs/specific/AUTO_FIX_ALGORITHM.md
 """
 
 from scout.autofix.diagnosis import diagnose
-from scout.autofix.types import AttemptResult, AutoFixMode, DiagnosisResult
+from scout.autofix.types import AttemptResult, RegenerateMode, DiagnosisResult
+
+# Backward compatibility alias
+AutoFixMode = RegenerateMode
 
 __all__ = [
     "AttemptResult",
-    "AutoFixMode",
+    "RegenerateMode",
     "DiagnosisResult",
     "diagnose",
+    # Backward compat
+    "AutoFixMode",
 ]

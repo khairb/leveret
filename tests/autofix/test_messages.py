@@ -3,7 +3,7 @@
 Tests verify that formatted messages match spec S12 templates:
   - Anti-bot blocked message
   - Server error blocked message
-  - Conservative mode declined D/E message
+  - Cautious mode declined D/E message
   - Stability too noisy (MIXED/CHAOTIC) message
   - Regeneration triggered message
   - Required fields present in all messages
@@ -23,7 +23,7 @@ from scout.autofix.diagnosis import (
 from scout.autofix.types import (
     AttemptResult,
     AutoFixAction,
-    AutoFixMode,
+    RegenerateMode,
     ErrorCategory,
     PageSignals,
     PageVerificationResult,
@@ -59,7 +59,7 @@ class TestAntibotMessage:
             stability=StabilityLevel.STABLE,
             page_results=[PageVerificationResult.ANTI_BOT] * 3,
             attempts=_make_attempts(),
-            mode=AutoFixMode.BALANCED,
+            mode=RegenerateMode.BALANCED,
         )
         assert "Cached script failed" in msg
         assert "Anti-bot detected" in msg
@@ -76,7 +76,7 @@ class TestAntibotMessage:
             stability=StabilityLevel.STABLE,
             page_results=[PageVerificationResult.ANTI_BOT] * 3,
             attempts=_make_attempts(),
-            mode=AutoFixMode.AGGRESSIVE,
+            mode=RegenerateMode.EAGER,
         )
         # Should not suggest regenerate=True for anti-bot (useless)
         assert "regenerate=True" not in msg
@@ -102,7 +102,7 @@ class TestServerErrorMessage:
             attempts=_make_attempts(
                 error="Page.wait_for_selector: Timeout 30000ms exceeded.",
             ),
-            mode=AutoFixMode.BALANCED,
+            mode=RegenerateMode.BALANCED,
         )
         assert "Cached script failed" in msg
         assert "Server error detected" in msg
@@ -121,47 +121,47 @@ class TestServerErrorMessage:
                 PageVerificationResult.REAL_PAGE,
             ],
             attempts=_make_attempts(),
-            mode=AutoFixMode.BALANCED,
+            mode=RegenerateMode.BALANCED,
         )
         assert "Server error detected (2/3 attempts)" in msg
 
 
-# -- Test: Conservative mode declined D/E ---------------------------------
+# -- Test: Cautious mode declined D/E ---------------------------------
 
 
-class TestConservativeDeclinedMessage:
-    """S12: Conservative mode declines D/E -> specific message template."""
+class TestCautiousDeclinedMessage:
+    """S12: Cautious mode declines D/E -> specific message template."""
 
-    def test_conservative_d_message(self):
+    def test_cautious_d_message(self):
         msg = format_diagnosis_message(
             action=AutoFixAction.RAISE,
-            reason="conservative mode does not regenerate ambiguous categories",
+            reason="cautious mode does not regenerate ambiguous categories",
             category=ErrorCategory.D,
             stability=StabilityLevel.STABLE,
             page_results=[PageVerificationResult.REAL_PAGE] * 3,
             attempts=_make_attempts(
                 error="Page.wait_for_selector: Timeout 30000ms exceeded.",
             ),
-            mode=AutoFixMode.CONSERVATIVE,
+            mode=RegenerateMode.CAUTIOUS,
         )
-        assert "conservative" in msg
+        assert "cautious" in msg
         assert "selector timeout" in msg.lower()
         assert "regenerate=True" in msg
-        assert 'auto_fix="balanced"' in msg or 'auto_fix="aggressive"' in msg
+        assert 'auto_regenerate="balanced"' in msg or 'auto_regenerate="eager"' in msg
 
-    def test_conservative_e_message(self):
+    def test_cautious_e_message(self):
         msg = format_diagnosis_message(
             action=AutoFixAction.RAISE,
-            reason="conservative mode does not regenerate ambiguous categories",
+            reason="cautious mode does not regenerate ambiguous categories",
             category=ErrorCategory.E,
             stability=StabilityLevel.STABLE,
             page_results=[PageVerificationResult.REAL_PAGE] * 3,
             attempts=_make_attempts(
                 error="<div> intercepts pointer events",
             ),
-            mode=AutoFixMode.CONSERVATIVE,
+            mode=RegenerateMode.CAUTIOUS,
         )
-        assert "conservative" in msg
+        assert "cautious" in msg
         assert "page state error" in msg.lower()
 
 
@@ -179,7 +179,7 @@ class TestStabilityNoisyMessage:
             stability=StabilityLevel.MIXED,
             page_results=[PageVerificationResult.REAL_PAGE] * 3,
             attempts=_make_attempts(),
-            mode=AutoFixMode.BALANCED,
+            mode=RegenerateMode.BALANCED,
         )
         assert "mixed pattern" in msg
         assert "inconsistent" in msg
@@ -194,7 +194,7 @@ class TestStabilityNoisyMessage:
             stability=StabilityLevel.CHAOTIC,
             page_results=[PageVerificationResult.REAL_PAGE] * 3,
             attempts=_make_attempts(),
-            mode=AutoFixMode.AGGRESSIVE,
+            mode=RegenerateMode.EAGER,
         )
         assert "chaotic pattern" in msg
         assert "inconsistent" in msg
@@ -214,7 +214,7 @@ class TestRegenerateMessage:
             stability=StabilityLevel.STABLE,
             page_results=[PageVerificationResult.REAL_PAGE] * 3,
             attempts=_make_attempts(),
-            mode=AutoFixMode.BALANCED,
+            mode=RegenerateMode.BALANCED,
         )
         assert "regenerating" in msg.lower()
         assert "balanced" in msg
@@ -227,7 +227,7 @@ class TestRegenerateMessage:
             stability=StabilityLevel.STABLE,
             page_results=[PageVerificationResult.REAL_PAGE] * 3,
             attempts=_make_attempts(),
-            mode=AutoFixMode.BALANCED,
+            mode=RegenerateMode.BALANCED,
         )
         assert "stable failure" in msg
 
@@ -240,7 +240,7 @@ class TestRegenerateMessage:
             stability=StabilityLevel.STABLE,
             page_results=[PageVerificationResult.REAL_PAGE] * 3,
             attempts=_make_attempts(),
-            mode=AutoFixMode.BALANCED,
+            mode=RegenerateMode.BALANCED,
         )
         assert "regenerate=True" not in msg
 
@@ -260,7 +260,7 @@ class TestRequiredFields:
             stability=StabilityLevel.STABLE,
             page_results=[PageVerificationResult.REAL_PAGE] * 3,
             attempts=_make_attempts(),
-            mode=AutoFixMode.BALANCED,
+            mode=RegenerateMode.BALANCED,
         )
         assert "Category:" in msg
         assert "Runtime crash" in msg
@@ -274,7 +274,7 @@ class TestRequiredFields:
             stability=StabilityLevel.STABLE,
             page_results=[PageVerificationResult.REAL_PAGE] * 3,
             attempts=_make_attempts(),
-            mode=AutoFixMode.BALANCED,
+            mode=RegenerateMode.BALANCED,
         )
         assert "3/3 failed" in msg
 
@@ -287,7 +287,7 @@ class TestRequiredFields:
             stability=StabilityLevel.STABLE,
             page_results=[PageVerificationResult.REAL_PAGE] * 3,
             attempts=_make_attempts(),
-            mode=AutoFixMode.BALANCED,
+            mode=RegenerateMode.BALANCED,
         )
         assert "Page:" in msg
         assert "Verified real" in msg
@@ -302,7 +302,7 @@ class TestRequiredFields:
             attempts=_make_attempts(
                 error="AttributeError: 'NoneType' has no attribute 'text_content'",
             ),
-            mode=AutoFixMode.BALANCED,
+            mode=RegenerateMode.BALANCED,
         )
         assert "Error:" in msg
         assert "text_content" in msg
@@ -315,7 +315,7 @@ class TestRequiredFields:
             stability=StabilityLevel.STABLE,
             page_results=[PageVerificationResult.REAL_PAGE] * 3,
             attempts=_make_attempts(),
-            mode=AutoFixMode.BALANCED,
+            mode=RegenerateMode.BALANCED,
         )
         assert "stable pattern" in msg
 
@@ -327,7 +327,7 @@ class TestRequiredFields:
             stability=None,
             page_results=[],
             attempts=_make_attempts(1, error="SyntaxError: invalid syntax"),
-            mode=AutoFixMode.BALANCED,
+            mode=RegenerateMode.BALANCED,
         )
         assert "pattern" not in msg.split("Attempts:")[1].split("\n")[0]
 
@@ -410,7 +410,7 @@ class TestMessageEdgeCases:
             stability=StabilityLevel.STABLE,
             page_results=[PageVerificationResult.REAL_PAGE] * 3,
             attempts=_make_attempts(error=""),
-            mode=AutoFixMode.BALANCED,
+            mode=RegenerateMode.BALANCED,
         )
         assert "Cached script failed" in msg
         # Should not have "Error:" line when error is empty
@@ -426,7 +426,7 @@ class TestMessageEdgeCases:
             stability=StabilityLevel.STABLE,
             page_results=[PageVerificationResult.REAL_PAGE] * 3,
             attempts=_make_attempts(error=long_error),
-            mode=AutoFixMode.BALANCED,
+            mode=RegenerateMode.BALANCED,
         )
         assert "..." in msg
         # The truncated summary should be <= 120 chars
@@ -444,7 +444,7 @@ class TestMessageEdgeCases:
             stability=None,
             page_results=[],
             attempts=_make_attempts(1, error="SyntaxError: invalid syntax"),
-            mode=AutoFixMode.BALANCED,
+            mode=RegenerateMode.BALANCED,
         )
         assert "Page:" not in msg
 
@@ -457,12 +457,12 @@ class TestMessageEdgeCases:
             stability=None,
             page_results=[],
             attempts=_make_attempts(1, error="SyntaxError: oops"),
-            mode=AutoFixMode.CONSERVATIVE,
+            mode=RegenerateMode.CAUTIOUS,
         )
         assert "1/1 failed" in msg
 
     def test_generic_raise_with_reason(self):
-        """Generic RAISE (no anti-bot, no server error, not conservative D/E,
+        """Generic RAISE (no anti-bot, no server error, not cautious D/E,
         not noisy) shows the reason from the decision engine."""
         msg = format_diagnosis_message(
             action=AutoFixAction.RAISE,
@@ -475,9 +475,9 @@ class TestMessageEdgeCases:
                 PageVerificationResult.REDIRECTED,
             ],
             attempts=_make_attempts(),
-            mode=AutoFixMode.CONSERVATIVE,
+            mode=RegenerateMode.CAUTIOUS,
         )
-        # Not anti-bot, not server error, not conservative D/E, not noisy
+        # Not anti-bot, not server error, not cautious D/E, not noisy
         # -> generic raise with reason
         assert "Page not fully verified" in msg
         assert "regenerate=True" in msg

@@ -13,8 +13,8 @@ Decision order for ``verify_page()`` (spec §6):
   6. All checks pass → REAL_PAGE
 
 Gate rules for ``check_page_gate()`` (spec §6):
-  Conservative/Balanced: ALL 3 attempts must be REAL_PAGE.
-  Aggressive: At least 2/3 REAL_PAGE, but any ANTI_BOT blocks all.
+  Cautious/Balanced: ALL 3 attempts must be REAL_PAGE.
+  Eager: At least 2/3 REAL_PAGE, but any ANTI_BOT blocks all.
 
 Spec reference: docs/specific/AUTO_FIX_ALGORITHM.md §6
 """
@@ -27,7 +27,7 @@ from urllib.parse import urlparse
 from scout.autofix.antibot import detect_antibot
 from scout.autofix.content_check import detect_non_content
 from scout.autofix.types import (
-    AutoFixMode,
+    RegenerateMode,
     PageVerificationResult,
     PageSignals,
 )
@@ -90,7 +90,7 @@ def verify_page(
 
 def check_page_gate(
     results: Sequence[PageVerificationResult],
-    mode: AutoFixMode,
+    mode: RegenerateMode,
 ) -> tuple[bool, str]:
     """Check whether page verification results pass the universal gate.
 
@@ -118,15 +118,15 @@ def check_page_gate(
     )
     total = len(results)
 
-    # §6: ANTI_BOT blocks regeneration in ALL modes, even aggressive.
+    # §6: ANTI_BOT blocks regeneration in ALL modes, even eager.
     if has_antibot:
         return False, (
             f"Anti-bot detected in {_count_of(results, PageVerificationResult.ANTI_BOT)}"
             f"/{total} attempts — regeneration blocked"
         )
 
-    if mode in (AutoFixMode.CONSERVATIVE, AutoFixMode.BALANCED):
-        # §6: Conservative/Balanced require ALL attempts to be REAL_PAGE.
+    if mode in (RegenerateMode.CAUTIOUS, RegenerateMode.BALANCED):
+        # §6: Cautious/Balanced require ALL attempts to be REAL_PAGE.
         if real_count == total:
             return True, f"Page verified real ({real_count}/{total} attempts)"
         # Describe what tainted the results.
@@ -136,12 +136,12 @@ def check_page_gate(
             f"{taint}) — regeneration blocked in {mode.value} mode"
         )
 
-    # Aggressive mode: at least 2/3 REAL_PAGE (no ANTI_BOT, already checked).
+    # Eager mode: at least 2/3 REAL_PAGE (no ANTI_BOT, already checked).
     required = max(2, (total * 2 + 2) // 3)  # ceil(2/3 * total)
     if real_count >= required:
         return True, (
             f"Page verified real ({real_count}/{total} attempts, "
-            "aggressive mode)"
+            "eager mode)"
         )
     taint = _describe_taint(results)
     return False, (

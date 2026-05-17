@@ -13,7 +13,7 @@ import pytest
 
 from scout.autofix.page_verifier import verify_page, check_page_gate
 from scout.autofix.types import (
-    AutoFixMode,
+    RegenerateMode,
     PageSignals,
     PageVerificationResult,
 )
@@ -336,19 +336,19 @@ class TestVerifyPagePriority:
         assert result == PageVerificationResult.REDIRECTED
 
 
-# ── check_page_gate: Conservative/Balanced ───────────────────
+# ── check_page_gate: Cautious/Balanced ───────────────────────
 
 
-class TestPageGateConservativeBalanced:
-    """Conservative and Balanced require 3/3 REAL_PAGE."""
+class TestPageGateCautiousBalanced:
+    """Cautious and Balanced require 3/3 REAL_PAGE."""
 
-    @pytest.mark.parametrize("mode", [AutoFixMode.CONSERVATIVE, AutoFixMode.BALANCED])
+    @pytest.mark.parametrize("mode", [RegenerateMode.CAUTIOUS, RegenerateMode.BALANCED])
     def test_all_real_passes(self, mode):
         results = [PageVerificationResult.REAL_PAGE] * 3
         passes, reason = check_page_gate(results, mode)
         assert passes is True
 
-    @pytest.mark.parametrize("mode", [AutoFixMode.CONSERVATIVE, AutoFixMode.BALANCED])
+    @pytest.mark.parametrize("mode", [RegenerateMode.CAUTIOUS, RegenerateMode.BALANCED])
     def test_one_server_error_blocks(self, mode):
         results = [
             PageVerificationResult.REAL_PAGE,
@@ -358,7 +358,7 @@ class TestPageGateConservativeBalanced:
         passes, reason = check_page_gate(results, mode)
         assert passes is False
 
-    @pytest.mark.parametrize("mode", [AutoFixMode.CONSERVATIVE, AutoFixMode.BALANCED])
+    @pytest.mark.parametrize("mode", [RegenerateMode.CAUTIOUS, RegenerateMode.BALANCED])
     def test_one_antibot_blocks(self, mode):
         results = [
             PageVerificationResult.REAL_PAGE,
@@ -369,7 +369,7 @@ class TestPageGateConservativeBalanced:
         assert passes is False
         assert "Anti-bot" in reason
 
-    @pytest.mark.parametrize("mode", [AutoFixMode.CONSERVATIVE, AutoFixMode.BALANCED])
+    @pytest.mark.parametrize("mode", [RegenerateMode.CAUTIOUS, RegenerateMode.BALANCED])
     def test_one_redirect_blocks(self, mode):
         results = [
             PageVerificationResult.REAL_PAGE,
@@ -379,7 +379,7 @@ class TestPageGateConservativeBalanced:
         passes, reason = check_page_gate(results, mode)
         assert passes is False
 
-    @pytest.mark.parametrize("mode", [AutoFixMode.CONSERVATIVE, AutoFixMode.BALANCED])
+    @pytest.mark.parametrize("mode", [RegenerateMode.CAUTIOUS, RegenerateMode.BALANCED])
     def test_one_no_response_blocks(self, mode):
         results = [
             PageVerificationResult.REAL_PAGE,
@@ -389,37 +389,37 @@ class TestPageGateConservativeBalanced:
         passes, reason = check_page_gate(results, mode)
         assert passes is False
 
-    @pytest.mark.parametrize("mode", [AutoFixMode.CONSERVATIVE, AutoFixMode.BALANCED])
+    @pytest.mark.parametrize("mode", [RegenerateMode.CAUTIOUS, RegenerateMode.BALANCED])
     def test_all_server_error_blocks(self, mode):
         results = [PageVerificationResult.SERVER_ERROR] * 3
         passes, reason = check_page_gate(results, mode)
         assert passes is False
 
-    @pytest.mark.parametrize("mode", [AutoFixMode.CONSERVATIVE, AutoFixMode.BALANCED])
+    @pytest.mark.parametrize("mode", [RegenerateMode.CAUTIOUS, RegenerateMode.BALANCED])
     def test_empty_results_blocks(self, mode):
         passes, reason = check_page_gate([], mode)
         assert passes is False
 
 
-# ── check_page_gate: Aggressive ──────────────────────────────
+# ── check_page_gate: Eager ───────────────────────────────────
 
 
-class TestPageGateAggressive:
-    """Aggressive: 2/3 REAL_PAGE, but ANTI_BOT blocks all."""
+class TestPageGateEager:
+    """Eager: 2/3 REAL_PAGE, but ANTI_BOT blocks all."""
 
     def test_all_real_passes(self):
         results = [PageVerificationResult.REAL_PAGE] * 3
-        passes, reason = check_page_gate(results, AutoFixMode.AGGRESSIVE)
+        passes, reason = check_page_gate(results, RegenerateMode.EAGER)
         assert passes is True
 
     def test_two_real_one_server_error_passes(self):
-        """2/3 REAL_PAGE with 1 SERVER_ERROR → passes in aggressive."""
+        """2/3 REAL_PAGE with 1 SERVER_ERROR → passes in eager."""
         results = [
             PageVerificationResult.REAL_PAGE,
             PageVerificationResult.REAL_PAGE,
             PageVerificationResult.SERVER_ERROR,
         ]
-        passes, reason = check_page_gate(results, AutoFixMode.AGGRESSIVE)
+        passes, reason = check_page_gate(results, RegenerateMode.EAGER)
         assert passes is True
 
     def test_two_real_one_redirect_passes(self):
@@ -428,7 +428,7 @@ class TestPageGateAggressive:
             PageVerificationResult.REAL_PAGE,
             PageVerificationResult.REDIRECTED,
         ]
-        passes, reason = check_page_gate(results, AutoFixMode.AGGRESSIVE)
+        passes, reason = check_page_gate(results, RegenerateMode.EAGER)
         assert passes is True
 
     def test_two_real_one_no_response_passes(self):
@@ -437,33 +437,33 @@ class TestPageGateAggressive:
             PageVerificationResult.REAL_PAGE,
             PageVerificationResult.NO_RESPONSE,
         ]
-        passes, reason = check_page_gate(results, AutoFixMode.AGGRESSIVE)
+        passes, reason = check_page_gate(results, RegenerateMode.EAGER)
         assert passes is True
 
     def test_one_real_two_errors_blocks(self):
-        """Only 1/3 REAL_PAGE → blocks even in aggressive."""
+        """Only 1/3 REAL_PAGE → blocks even in eager."""
         results = [
             PageVerificationResult.REAL_PAGE,
             PageVerificationResult.SERVER_ERROR,
             PageVerificationResult.SERVER_ERROR,
         ]
-        passes, reason = check_page_gate(results, AutoFixMode.AGGRESSIVE)
+        passes, reason = check_page_gate(results, RegenerateMode.EAGER)
         assert passes is False
 
     def test_antibot_blocks_even_with_two_real(self):
-        """§6: ANTI_BOT blocks regeneration even in aggressive mode."""
+        """§6: ANTI_BOT blocks regeneration even in eager mode."""
         results = [
             PageVerificationResult.REAL_PAGE,
             PageVerificationResult.REAL_PAGE,
             PageVerificationResult.ANTI_BOT,
         ]
-        passes, reason = check_page_gate(results, AutoFixMode.AGGRESSIVE)
+        passes, reason = check_page_gate(results, RegenerateMode.EAGER)
         assert passes is False
         assert "Anti-bot" in reason
 
     def test_all_antibot_blocks(self):
         results = [PageVerificationResult.ANTI_BOT] * 3
-        passes, reason = check_page_gate(results, AutoFixMode.AGGRESSIVE)
+        passes, reason = check_page_gate(results, RegenerateMode.EAGER)
         assert passes is False
 
     def test_antibot_plus_server_error_blocks(self):
@@ -472,11 +472,11 @@ class TestPageGateAggressive:
             PageVerificationResult.ANTI_BOT,
             PageVerificationResult.SERVER_ERROR,
         ]
-        passes, reason = check_page_gate(results, AutoFixMode.AGGRESSIVE)
+        passes, reason = check_page_gate(results, RegenerateMode.EAGER)
         assert passes is False
 
     def test_empty_results_blocks(self):
-        passes, reason = check_page_gate([], AutoFixMode.AGGRESSIVE)
+        passes, reason = check_page_gate([], RegenerateMode.EAGER)
         assert passes is False
 
     def test_zero_real_blocks(self):
@@ -485,7 +485,7 @@ class TestPageGateAggressive:
             PageVerificationResult.REDIRECTED,
             PageVerificationResult.NO_RESPONSE,
         ]
-        passes, reason = check_page_gate(results, AutoFixMode.AGGRESSIVE)
+        passes, reason = check_page_gate(results, RegenerateMode.EAGER)
         assert passes is False
 
 
@@ -497,7 +497,7 @@ class TestPageGateReasons:
 
     def test_passes_reason_mentions_real(self):
         results = [PageVerificationResult.REAL_PAGE] * 3
-        passes, reason = check_page_gate(results, AutoFixMode.BALANCED)
+        passes, reason = check_page_gate(results, RegenerateMode.BALANCED)
         assert "real" in reason.lower() or "verified" in reason.lower()
 
     def test_antibot_reason_mentions_antibot(self):
@@ -506,7 +506,7 @@ class TestPageGateReasons:
             PageVerificationResult.REAL_PAGE,
             PageVerificationResult.ANTI_BOT,
         ]
-        _, reason = check_page_gate(results, AutoFixMode.BALANCED)
+        _, reason = check_page_gate(results, RegenerateMode.BALANCED)
         assert "Anti-bot" in reason
 
     def test_failure_reason_mentions_mode(self):
@@ -515,18 +515,18 @@ class TestPageGateReasons:
             PageVerificationResult.REAL_PAGE,
             PageVerificationResult.SERVER_ERROR,
         ]
-        _, reason = check_page_gate(results, AutoFixMode.CONSERVATIVE)
-        assert "conservative" in reason.lower()
+        _, reason = check_page_gate(results, RegenerateMode.CAUTIOUS)
+        assert "cautious" in reason.lower()
 
-    def test_aggressive_pass_reason_mentions_aggressive(self):
+    def test_eager_pass_reason_mentions_eager(self):
         results = [
             PageVerificationResult.REAL_PAGE,
             PageVerificationResult.REAL_PAGE,
             PageVerificationResult.SERVER_ERROR,
         ]
-        passes, reason = check_page_gate(results, AutoFixMode.AGGRESSIVE)
+        passes, reason = check_page_gate(results, RegenerateMode.EAGER)
         assert passes is True
-        assert "aggressive" in reason.lower()
+        assert "eager" in reason.lower()
 
 
 # ── Domain matching edge cases ───────────────────────────────

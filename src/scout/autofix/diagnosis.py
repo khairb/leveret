@@ -29,7 +29,7 @@ from scout.autofix.stability import assess_stability
 from scout.autofix.types import (
     AttemptResult,
     AutoFixAction,
-    AutoFixMode,
+    RegenerateMode,
     DiagnosisResult,
     ErrorCategory,
     E_INELIGIBLE_PATTERNS,
@@ -54,7 +54,7 @@ _MAX_ATTEMPTS = 3
 async def diagnose(
     execute_fn: Callable[[], Awaitable[AttemptResult]],
     target_url: str,
-    mode: AutoFixMode,
+    mode: RegenerateMode,
 ) -> AttemptResult | DiagnosisResult:
     """Orchestrate the 3-attempt diagnosis loop (spec S7).
 
@@ -227,7 +227,7 @@ def format_diagnosis_message(
     stability: StabilityLevel | None,
     page_results: list[PageVerificationResult],
     attempts: list[AttemptResult],
-    mode: AutoFixMode,
+    mode: RegenerateMode,
 ) -> str:
     """Format a user-facing diagnostic message (spec S12).
 
@@ -403,7 +403,7 @@ def _append_raise_explanation(
     category: ErrorCategory,
     stability: StabilityLevel | None,
     page_results: list[PageVerificationResult],
-    mode: AutoFixMode,
+    mode: RegenerateMode,
 ) -> None:
     """Append RAISE-specific explanation and user actions to message lines."""
     has_antibot = any(
@@ -417,7 +417,7 @@ def _append_raise_explanation(
     )
     is_noisy = stability in (StabilityLevel.MIXED, StabilityLevel.CHAOTIC)
     is_conservative_d_e = (
-        mode == AutoFixMode.CONSERVATIVE
+        mode == RegenerateMode.CAUTIOUS
         and category in (ErrorCategory.D, ErrorCategory.E)
     )
 
@@ -486,7 +486,7 @@ def _append_raise_explanation(
             "  To regenerate: scraper.run(regenerate=True)",
         )
         lines.append(
-            '  To enable: auto_fix="balanced" or auto_fix="aggressive"',
+            '  To enable: auto_regenerate="balanced" or auto_regenerate="eager"',
         )
     else:
         # Generic RAISE explanation

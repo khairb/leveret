@@ -1,30 +1,30 @@
-"""Tests for auto-fix integration into the Scraper class (Phase 5).
+"""Tests for auto-regenerate integration into the Scraper class (Phase 5).
 
-Track 1: ScoutAutoFixError exception and ScraperResult.auto_fixed field.
+Track 1: ScoutAutoRegenerateError exception and ScraperResult.auto_regenerated field.
 Track 2: Execute function adapters (_make_subprocess_execute_fn,
          _make_in_process_execute_fn, _collect_in_process_signals).
-Track 3: Scraper integration — auto_fix parameter, _run_cached_with_autofix(),
+Track 3: Scraper integration — auto_regenerate parameter, _run_cached_with_autofix(),
          post-regeneration validation, error mapping, logging.
 
 Tests verify:
-  - ScoutAutoFixError is in the correct exception hierarchy
-  - ScoutAutoFixError can be raised and caught at multiple levels
-  - ScraperResult.auto_fixed defaults to False (backward compatibility)
-  - ScraperResult.auto_fixed=True works and implies generated=True
-  - ScraperResult repr shows auto_fixed only when True
-  - ScoutAutoFixError is importable from the top-level package
+  - ScoutAutoRegenerateError is in the correct exception hierarchy
+  - ScoutAutoRegenerateError can be raised and caught at multiple levels
+  - ScraperResult.auto_regenerated defaults to False (backward compatibility)
+  - ScraperResult.auto_regenerated=True works and implies script_generated=True
+  - ScraperResult repr shows auto_regenerated only when True
+  - ScoutAutoRegenerateError is importable from the top-level package
   - Subprocess adapter returns AttemptResult with page signals
   - In-process adapter returns AttemptResult with page signals
   - _collect_in_process_signals is fully defensive
-  - auto_fix parameter validation (False, True, str modes, invalid)
-  - auto_fix without script= logs warning, disables auto_fix
+  - auto_regenerate parameter validation (False, True, str modes, invalid)
+  - auto_regenerate without script= logs warning, disables auto_regenerate
   - _run_cached_with_autofix() delegates to diagnose()
-  - Diagnosis success returns ScraperResult(generated=False)
+  - Diagnosis success returns ScraperResult(script_generated=False)
   - Diagnosis RAISE raises appropriate exception type per category
   - Diagnosis REGENERATE triggers _run_generate()
-  - Successful regeneration returns ScraperResult(auto_fixed=True)
-  - Failed regeneration raises ScoutAutoFixError
-  - Schema failure on regeneration raises ScoutAutoFixError
+  - Successful regeneration returns ScraperResult(auto_regenerated=True)
+  - Failed regeneration raises ScoutAutoRegenerateError
+  - Schema failure on regeneration raises ScoutAutoRegenerateError
 """
 
 from __future__ import annotations
@@ -34,101 +34,101 @@ from pathlib import Path
 
 import pytest
 
-from scout import ScoutAutoFixError, ScoutError
+from scout import ScoutAutoRegenerateError, ScoutError
 from scout.errors import (
-    ScoutAutoFixError as ScoutAutoFixErrorDirect,
+    ScoutAutoRegenerateError as ScoutAutoRegenerateErrorDirect,
     ScoutScriptError,
 )
 from scout.scraper import ScraperResult
 
 
-# -- ScoutAutoFixError exception hierarchy -----------------------------------
+# -- ScoutAutoRegenerateError exception hierarchy -----------------------------------
 
 
-class TestScoutAutoFixErrorHierarchy:
-    """ScoutAutoFixError sits directly under ScoutError."""
+class TestScoutAutoRegenerateErrorHierarchy:
+    """ScoutAutoRegenerateError sits directly under ScoutError."""
 
     def test_is_subclass_of_scout_error(self):
-        assert issubclass(ScoutAutoFixError, ScoutError)
+        assert issubclass(ScoutAutoRegenerateError, ScoutError)
 
     def test_is_subclass_of_exception(self):
-        assert issubclass(ScoutAutoFixError, Exception)
+        assert issubclass(ScoutAutoRegenerateError, Exception)
 
     def test_is_not_subclass_of_scout_script_error(self):
-        """ScoutAutoFixError is NOT a script error — it's a diagnosis error."""
-        assert not issubclass(ScoutAutoFixError, ScoutScriptError)
+        """ScoutAutoRegenerateError is NOT a script error — it's a diagnosis error."""
+        assert not issubclass(ScoutAutoRegenerateError, ScoutScriptError)
 
     def test_direct_import_matches_package_import(self):
         """Same class whether imported from scout or scout.errors."""
-        assert ScoutAutoFixError is ScoutAutoFixErrorDirect
+        assert ScoutAutoRegenerateError is ScoutAutoRegenerateErrorDirect
 
     def test_raise_and_catch_as_scout_error(self):
         with pytest.raises(ScoutError, match="regen failed"):
-            raise ScoutAutoFixError("regen failed")
+            raise ScoutAutoRegenerateError("regen failed")
 
     def test_raise_and_catch_as_specific(self):
-        with pytest.raises(ScoutAutoFixError, match="same pattern"):
-            raise ScoutAutoFixError("same pattern")
+        with pytest.raises(ScoutAutoRegenerateError, match="same pattern"):
+            raise ScoutAutoRegenerateError("same pattern")
 
     def test_raise_and_catch_as_exception(self):
         with pytest.raises(Exception):
-            raise ScoutAutoFixError("test")
+            raise ScoutAutoRegenerateError("test")
 
     def test_message_preserved(self):
         try:
-            raise ScoutAutoFixError(
+            raise ScoutAutoRegenerateError(
                 "Regenerated script failed with the same error pattern."
             )
-        except ScoutAutoFixError as exc:
+        except ScoutAutoRegenerateError as exc:
             assert "same error pattern" in str(exc)
 
     def test_not_caught_by_scout_script_error(self):
-        """ScoutAutoFixError should NOT be caught by ScoutScriptError handler."""
-        with pytest.raises(ScoutAutoFixError):
+        """ScoutAutoRegenerateError should NOT be caught by ScoutScriptError handler."""
+        with pytest.raises(ScoutAutoRegenerateError):
             try:
-                raise ScoutAutoFixError("test")
+                raise ScoutAutoRegenerateError("test")
             except ScoutScriptError:
                 pytest.fail("Should not be caught by ScoutScriptError")
 
 
-# -- ScraperResult.auto_fixed ------------------------------------------------
+# -- ScraperResult.auto_regenerated ------------------------------------------------
 
 
-class TestScraperResultAutoFixed:
-    """ScraperResult.auto_fixed field — backward compatibility and behavior."""
+class TestScraperResultAutoRegenerated:
+    """ScraperResult.auto_regenerated field — backward compatibility and behavior."""
 
     def test_default_is_false(self):
-        """Existing code creating ScraperResult without auto_fixed still works."""
+        """Existing code creating ScraperResult without auto_regenerated still works."""
         result = ScraperResult(
             data={"title": "Test"},
             url="https://example.com",
             timestamp="2024-01-01T00:00:00.000000Z",
-            generated=False,
+            script_generated=False,
             script_path=Path("/path/to/script.py"),
         )
-        assert result.auto_fixed is False
+        assert result.auto_regenerated is False
 
     def test_explicit_false(self):
         result = ScraperResult(
             data=[1, 2, 3],
             url="https://example.com",
             timestamp="2024-01-01T00:00:00.000000Z",
-            generated=False,
+            script_generated=False,
             script_path=None,
-            auto_fixed=False,
+            auto_regenerated=False,
         )
-        assert result.auto_fixed is False
+        assert result.auto_regenerated is False
 
     def test_explicit_true(self):
         result = ScraperResult(
             data=[1, 2, 3],
             url="https://example.com",
             timestamp="2024-01-01T00:00:00.000000Z",
-            generated=True,
+            script_generated=True,
             script_path=Path("/path/to/script.py"),
-            auto_fixed=True,
+            auto_regenerated=True,
         )
-        assert result.auto_fixed is True
+        assert result.auto_regenerated is True
 
     def test_positional_args_still_work(self):
         """Existing code using positional args is not broken."""
@@ -139,69 +139,69 @@ class TestScraperResultAutoFixed:
             False,
             None,
         )
-        assert result.auto_fixed is False
+        assert result.auto_regenerated is False
         assert result.data == [{"a": 1}]
-        assert result.generated is False
+        assert result.script_generated is False
 
-    def test_auto_fixed_is_a_dataclass_field(self):
-        """auto_fixed is a proper dataclass field, not just an attribute."""
+    def test_auto_regenerated_is_a_dataclass_field(self):
+        """auto_regenerated is a proper dataclass field, not just an attribute."""
         import dataclasses
 
         fields = {f.name: f for f in dataclasses.fields(ScraperResult)}
-        assert "auto_fixed" in fields
-        assert fields["auto_fixed"].default is False
+        assert "auto_regenerated" in fields
+        assert fields["auto_regenerated"].default is False
 
 
-# -- ScraperResult repr with auto_fixed -------------------------------------
+# -- ScraperResult repr with auto_regenerated -------------------------------------
 
 
 class TestScraperResultRepr:
-    """Repr shows auto_fixed only when True to avoid noise."""
+    """Repr shows auto_regenerated only when True to avoid noise."""
 
-    def test_repr_without_auto_fixed(self):
+    def test_repr_without_auto_regenerated(self):
         result = ScraperResult(
             data=[1, 2, 3],
             url="https://example.com",
             timestamp="t",
-            generated=False,
+            script_generated=False,
             script_path=None,
         )
         r = repr(result)
-        assert "auto_fixed" not in r
-        assert "generated=False" in r
+        assert "auto_regenerated" not in r
+        assert "script_generated=False" in r
 
-    def test_repr_with_auto_fixed_false(self):
+    def test_repr_with_auto_regenerated_false(self):
         result = ScraperResult(
             data=[1, 2, 3],
             url="https://example.com",
             timestamp="t",
-            generated=False,
+            script_generated=False,
             script_path=None,
-            auto_fixed=False,
+            auto_regenerated=False,
         )
         r = repr(result)
-        assert "auto_fixed" not in r
+        assert "auto_regenerated" not in r
 
-    def test_repr_with_auto_fixed_true(self):
+    def test_repr_with_auto_regenerated_true(self):
         result = ScraperResult(
             data=[1, 2, 3],
             url="https://example.com",
             timestamp="t",
-            generated=True,
+            script_generated=True,
             script_path=Path("/path/to/script.py"),
-            auto_fixed=True,
+            auto_regenerated=True,
         )
         r = repr(result)
-        assert "auto_fixed=True" in r
-        assert "generated=True" in r
+        assert "auto_regenerated=True" in r
+        assert "script_generated=True" in r
 
     def test_repr_preserves_existing_format(self):
-        """Existing repr format is preserved for non-auto-fixed results."""
+        """Existing repr format is preserved for non-auto-regenerated results."""
         result = ScraperResult(
             data=[{"title": "A"}, {"title": "B"}],
             url="https://shop.example.com",
             timestamp="t",
-            generated=False,
+            script_generated=False,
             script_path=None,
         )
         r = repr(result)
@@ -209,25 +209,25 @@ class TestScraperResultRepr:
         assert r.endswith(")")
         assert "url='https://shop.example.com'" in r
         assert "items=2" in r
-        assert "generated=False" in r
+        assert "script_generated=False" in r
 
 
-# -- ScoutAutoFixError in package __all__ ------------------------------------
+# -- ScoutAutoRegenerateError in package __all__ ------------------------------------
 
 
 class TestPackageExports:
-    """ScoutAutoFixError is exported from the scout package."""
+    """ScoutAutoRegenerateError is exported from the scout package."""
 
     def test_in_scout_all(self):
         import scout
 
-        assert "AutoFixError" in scout.__all__
+        assert "AutoRegenerateError" in scout.__all__
 
     def test_importable_from_top_level(self):
         """Can import directly from scout package."""
-        from scout import ScoutAutoFixError as Exc
+        from scout import ScoutAutoRegenerateError as Exc
 
-        assert Exc is ScoutAutoFixError
+        assert Exc is ScoutAutoRegenerateError
 
 
 # -- Track 2: Execute function adapters ------------------------------------
@@ -370,7 +370,7 @@ class TestSubprocessExecuteAdapter:
             "async def scrape(page, url, checkpoint):\n"
             "    return []\n"
         )
-        s = _make_scraper(script=str(script), timeout=5)
+        s = _make_scraper(script=str(script), run_timeout=5)
         from scout.scraper import _load_script
 
         fn, _ = _load_script(script)
@@ -532,85 +532,85 @@ class TestCollectInProcessSignals:
         assert signals.page_url == "https://example.com"
 
 
-# -- Track 3: auto_fix parameter validation --------------------------------
+# -- Track 3: auto_regenerate parameter validation --------------------------------
 
 
-class TestAutoFixParameter:
-    """auto_fix parameter validation in Scraper.__init__()."""
+class TestAutoRegenerateParameter:
+    """auto_regenerate parameter validation in Scraper.__init__()."""
 
     def test_default_is_false(self, tmp_path):
-        """auto_fix defaults to False — no _auto_fix_mode set."""
+        """auto_regenerate defaults to False — no _auto_regenerate_mode set."""
         script = tmp_path / "s.py"
         script.write_text("async def scrape(page, url, checkpoint): return []")
         s = _make_scraper(script=str(script))
-        assert s._auto_fix_mode is None
+        assert s._auto_regenerate_mode is None
 
     def test_true_maps_to_balanced(self, tmp_path):
-        """auto_fix=True maps to AutoFixMode.BALANCED."""
-        from scout.autofix.types import AutoFixMode
+        """auto_regenerate=True maps to RegenerateMode.BALANCED."""
+        from scout.autofix.types import RegenerateMode
 
         script = tmp_path / "s.py"
         script.write_text("async def scrape(page, url, checkpoint): return []")
-        s = _make_scraper(script=str(script), auto_fix=True)
-        assert s._auto_fix_mode == AutoFixMode.BALANCED
+        s = _make_scraper(script=str(script), auto_regenerate=True)
+        assert s._auto_regenerate_mode == RegenerateMode.BALANCED
 
     def test_balanced_string(self, tmp_path):
-        from scout.autofix.types import AutoFixMode
+        from scout.autofix.types import RegenerateMode
 
         script = tmp_path / "s.py"
         script.write_text("async def scrape(page, url, checkpoint): return []")
-        s = _make_scraper(script=str(script), auto_fix="balanced")
-        assert s._auto_fix_mode == AutoFixMode.BALANCED
+        s = _make_scraper(script=str(script), auto_regenerate="balanced")
+        assert s._auto_regenerate_mode == RegenerateMode.BALANCED
 
-    def test_conservative_string(self, tmp_path):
-        from scout.autofix.types import AutoFixMode
-
-        script = tmp_path / "s.py"
-        script.write_text("async def scrape(page, url, checkpoint): return []")
-        s = _make_scraper(script=str(script), auto_fix="conservative")
-        assert s._auto_fix_mode == AutoFixMode.CONSERVATIVE
-
-    def test_aggressive_string(self, tmp_path):
-        from scout.autofix.types import AutoFixMode
+    def test_cautious_string(self, tmp_path):
+        from scout.autofix.types import RegenerateMode
 
         script = tmp_path / "s.py"
         script.write_text("async def scrape(page, url, checkpoint): return []")
-        s = _make_scraper(script=str(script), auto_fix="aggressive")
-        assert s._auto_fix_mode == AutoFixMode.AGGRESSIVE
+        s = _make_scraper(script=str(script), auto_regenerate="cautious")
+        assert s._auto_regenerate_mode == RegenerateMode.CAUTIOUS
+
+    def test_eager_string(self, tmp_path):
+        from scout.autofix.types import RegenerateMode
+
+        script = tmp_path / "s.py"
+        script.write_text("async def scrape(page, url, checkpoint): return []")
+        s = _make_scraper(script=str(script), auto_regenerate="eager")
+        assert s._auto_regenerate_mode == RegenerateMode.EAGER
 
     def test_invalid_string_raises(self, tmp_path):
-        """Invalid auto_fix value raises ScoutConfigError."""
+        """Invalid auto_regenerate value raises ScoutConfigError."""
         from scout.errors import ScoutConfigError
 
         script = tmp_path / "s.py"
         script.write_text("async def scrape(page, url, checkpoint): return []")
-        with pytest.raises(ScoutConfigError, match="auto_fix must be"):
-            _make_scraper(script=str(script), auto_fix="turbo")
+        with pytest.raises(ScoutConfigError, match="auto_regenerate must be"):
+            _make_scraper(script=str(script), auto_regenerate="turbo")
 
     def test_invalid_int_raises(self, tmp_path):
         from scout.errors import ScoutConfigError
 
         script = tmp_path / "s.py"
         script.write_text("async def scrape(page, url, checkpoint): return []")
-        with pytest.raises(ScoutConfigError, match="auto_fix must be"):
-            _make_scraper(script=str(script), auto_fix=42)
+        with pytest.raises(ScoutConfigError, match="auto_regenerate must be"):
+            _make_scraper(script=str(script), auto_regenerate=42)
 
     def test_without_script_disables(self, caplog):
-        """auto_fix=True without script= logs warning, sets mode to None."""
+        """auto_regenerate=True without script= logs warning, sets mode to None."""
         import logging
 
         with caplog.at_level(logging.WARNING):
-            s = _make_scraper(auto_fix=True)
-        assert s._auto_fix_mode is None
-        assert "auto_fix has no effect without script=" in caplog.text
+            s = _make_scraper(auto_regenerate=True)
+        assert s._auto_regenerate_mode is None
+        assert "auto_regenerate has no effect without script=" in caplog.text
 
     def test_false_has_zero_overhead(self, tmp_path):
-        """auto_fix=False does not import autofix modules."""
+        """auto_regenerate=False does not import autofix modules."""
         script = tmp_path / "s.py"
         script.write_text("async def scrape(page, url, checkpoint): return []")
         # This just verifies the constructor doesn't crash
-        s = _make_scraper(script=str(script), auto_fix=False)
-        assert s._auto_fix_mode is None
+        s = _make_scraper(script=str(script), auto_regenerate=False)
+        assert s._auto_regenerate_mode is None
 
 
 # -- Track 3: _run_cached_with_autofix() -----------------------------------
@@ -620,14 +620,14 @@ class TestRunCachedWithAutofix:
     """_run_cached_with_autofix() delegates to diagnose() correctly."""
 
     def _make_scraper_with_autofix(self, tmp_path, mode=True):
-        """Create a Scraper with auto_fix enabled and cached function loaded."""
+        """Create a Scraper with auto_regenerate enabled and cached function loaded."""
         script = tmp_path / "scraper.py"
         script.write_text(
             '"""\nurl: https://example.com\ntask: Extract products\n"""\n'
             "async def scrape(page, url, checkpoint):\n"
             "    return [{'title': 'Test'}]\n"
         )
-        s = _make_scraper(script=str(script), auto_fix=mode)
+        s = _make_scraper(script=str(script), auto_regenerate=mode)
         from scout.scraper import _load_script
 
         fn, _ = _load_script(script)
@@ -636,7 +636,7 @@ class TestRunCachedWithAutofix:
 
     @pytest.mark.asyncio
     async def test_diagnosis_success_returns_data(self, tmp_path):
-        """When diagnosis attempt succeeds, return ScraperResult(generated=False)."""
+        """When diagnosis attempt succeeds, return ScraperResult(script_generated=False)."""
         from scout.autofix.types import AttemptResult
 
         s = self._make_scraper_with_autofix(tmp_path)
@@ -646,11 +646,11 @@ class TestRunCachedWithAutofix:
         )
 
         with patch("scout.autofix.diagnose", return_value=mock_result) as mock_diag:
-            result = await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
+            result = await s._run_cached_with_autofix(VALID_URL, s._auto_regenerate_mode)
 
         assert result.data == [{"title": "Found"}]
-        assert result.generated is False
-        assert result.auto_fixed is False
+        assert result.script_generated is False
+        assert result.auto_regenerated is False
         assert result.url == VALID_URL
         mock_diag.assert_awaited_once()
 
@@ -674,7 +674,7 @@ class TestRunCachedWithAutofix:
 
         with patch("scout.autofix.diagnose", return_value=mock_result):
             with pytest.raises(ScoutScriptRuntimeError, match="Cached script failed"):
-                await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
+                await s._run_cached_with_autofix(VALID_URL, s._auto_regenerate_mode)
 
     @pytest.mark.asyncio
     async def test_diagnosis_raise_category_d(self, tmp_path):
@@ -696,7 +696,7 @@ class TestRunCachedWithAutofix:
 
         with patch("scout.autofix.diagnose", return_value=mock_result):
             with pytest.raises(ScoutScriptTimeoutError, match="Cached script failed"):
-                await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
+                await s._run_cached_with_autofix(VALID_URL, s._auto_regenerate_mode)
 
     @pytest.mark.asyncio
     async def test_diagnosis_raise_category_g(self, tmp_path):
@@ -718,7 +718,7 @@ class TestRunCachedWithAutofix:
 
         with patch("scout.autofix.diagnose", return_value=mock_result):
             with pytest.raises(ScoutValidationError, match="Cached script failed"):
-                await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
+                await s._run_cached_with_autofix(VALID_URL, s._auto_regenerate_mode)
 
     @pytest.mark.asyncio
     async def test_diagnosis_raise_category_f3(self, tmp_path):
@@ -739,7 +739,7 @@ class TestRunCachedWithAutofix:
 
         with patch("scout.autofix.diagnose", return_value=mock_result):
             with pytest.raises(ScoutError, match="Cached script failed"):
-                await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
+                await s._run_cached_with_autofix(VALID_URL, s._auto_regenerate_mode)
 
     @pytest.mark.asyncio
     async def test_diagnosis_raise_category_f2(self, tmp_path):
@@ -761,14 +761,14 @@ class TestRunCachedWithAutofix:
 
         with patch("scout.autofix.diagnose", return_value=mock_result):
             with pytest.raises(ScoutScriptTimeoutError, match="Cached script failed"):
-                await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
+                await s._run_cached_with_autofix(VALID_URL, s._auto_regenerate_mode)
 
 
 # -- Track 3: Regeneration flow -------------------------------------------
 
 
 class TestRegenerationFlow:
-    """Auto-fix REGENERATE decision triggers _run_generate()."""
+    """Auto-regenerate REGENERATE decision triggers _run_generate()."""
 
     def _make_scraper_with_autofix(self, tmp_path, mode=True):
         script = tmp_path / "scraper.py"
@@ -777,7 +777,7 @@ class TestRegenerationFlow:
             "async def scrape(page, url, checkpoint):\n"
             "    return [{'title': 'Test'}]\n"
         )
-        s = _make_scraper(script=str(script), auto_fix=mode)
+        s = _make_scraper(script=str(script), auto_regenerate=mode)
         from scout.scraper import _load_script
 
         fn, _ = _load_script(script)
@@ -798,8 +798,8 @@ class TestRegenerationFlow:
         )
 
     @pytest.mark.asyncio
-    async def test_regen_success_returns_auto_fixed(self, tmp_path):
-        """Successful regeneration returns ScraperResult(auto_fixed=True)."""
+    async def test_regen_success_returns_auto_regenerated(self, tmp_path):
+        """Successful regeneration returns ScraperResult(auto_regenerated=True)."""
         s = self._make_scraper_with_autofix(tmp_path)
         diag = self._make_regen_diagnosis()
 
@@ -807,7 +807,7 @@ class TestRegenerationFlow:
             data=[{"title": "New"}],
             url=VALID_URL,
             timestamp="2026-04-19T00:00:00.000000Z",
-            generated=True,
+            script_generated=True,
             script_path=tmp_path / "scraper.py",
         )
 
@@ -817,10 +817,10 @@ class TestRegenerationFlow:
             patch.object(s, "_check_api_key"),
             patch.object(s, "_check_playwright"),
         ):
-            result = await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
+            result = await s._run_cached_with_autofix(VALID_URL, s._auto_regenerate_mode)
 
-        assert result.auto_fixed is True
-        assert result.generated is True
+        assert result.auto_regenerated is True
+        assert result.script_generated is True
         assert result.data == [{"title": "New"}]
 
     @pytest.mark.asyncio
@@ -836,7 +836,7 @@ class TestRegenerationFlow:
             data=[{"title": "New"}],
             url=VALID_URL,
             timestamp="2026-04-19T00:00:00.000000Z",
-            generated=True,
+            script_generated=True,
             script_path=tmp_path / "scraper.py",
         )
 
@@ -853,15 +853,15 @@ class TestRegenerationFlow:
             patch.object(s, "_check_api_key"),
             patch.object(s, "_check_playwright"),
         ):
-            await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
+            await s._run_cached_with_autofix(VALID_URL, s._auto_regenerate_mode)
 
         # Cache was cleared BEFORE _run_generate was called
         assert fn_before_regen is None
         assert s._cached_source is None  # Cleared by _run_cached_with_autofix
 
     @pytest.mark.asyncio
-    async def test_regen_generation_error_raises_autofix_error(self, tmp_path):
-        """ScoutGenerationError from _run_generate → ScoutAutoFixError."""
+    async def test_regen_generation_error_raises_auto_regenerate_error(self, tmp_path):
+        """ScoutGenerationError from _run_generate → ScoutAutoRegenerateError."""
         from scout.errors import ScoutGenerationError
 
         s = self._make_scraper_with_autofix(tmp_path)
@@ -878,10 +878,10 @@ class TestRegenerationFlow:
             patch.object(s, "_check_playwright"),
         ):
             with pytest.raises(
-                ScoutAutoFixError,
+                ScoutAutoRegenerateError,
                 match="could not produce a valid script",
             ):
-                await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
+                await s._run_cached_with_autofix(VALID_URL, s._auto_regenerate_mode)
 
     @pytest.mark.asyncio
     async def test_regen_validation_error_raises_validation_error(self, tmp_path):
@@ -905,7 +905,7 @@ class TestRegenerationFlow:
                 ScoutValidationError,
                 match="does not match the schema",
             ):
-                await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
+                await s._run_cached_with_autofix(VALID_URL, s._auto_regenerate_mode)
 
     @pytest.mark.asyncio
     async def test_regen_checks_api_key(self, tmp_path):
@@ -917,7 +917,7 @@ class TestRegenerationFlow:
             data=[{"title": "New"}],
             url=VALID_URL,
             timestamp="2026-04-19T00:00:00.000000Z",
-            generated=True,
+            script_generated=True,
             script_path=tmp_path / "scraper.py",
         )
 
@@ -927,7 +927,7 @@ class TestRegenerationFlow:
             patch.object(s, "_check_api_key") as mock_key,
             patch.object(s, "_check_playwright"),
         ):
-            await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
+            await s._run_cached_with_autofix(VALID_URL, s._auto_regenerate_mode)
 
         mock_key.assert_called_once()
 
@@ -946,7 +946,7 @@ class TestRegenerationFlow:
             patch.object(s, "_make_subprocess_execute_fn", return_value=lambda: None) as mock_sub,
             patch.object(s, "_make_in_process_execute_fn") as mock_ip,
         ):
-            await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
+            await s._run_cached_with_autofix(VALID_URL, s._auto_regenerate_mode)
 
         mock_sub.assert_called_once_with(VALID_URL)
         mock_ip.assert_not_called()
@@ -966,7 +966,7 @@ class TestRegenerationFlow:
             patch.object(s, "_make_subprocess_execute_fn") as mock_sub,
             patch.object(s, "_make_in_process_execute_fn", return_value=lambda: None) as mock_ip,
         ):
-            await s._run_cached_with_autofix(VALID_URL, s._auto_fix_mode)
+            await s._run_cached_with_autofix(VALID_URL, s._auto_regenerate_mode)
 
         mock_ip.assert_called_once_with(VALID_URL)
         mock_sub.assert_not_called()
@@ -976,45 +976,45 @@ class TestRegenerationFlow:
 
 
 class TestRunCachedAutoFixBranch:
-    """_run_cached() branches to _run_cached_with_autofix when auto_fix is set."""
+    """_run_cached() branches to _run_cached_with_autofix when auto_regenerate is set."""
 
     @pytest.mark.asyncio
     async def test_delegates_when_autofix_enabled(self, tmp_path):
-        """_run_cached() calls _run_cached_with_autofix when auto_fix is set."""
+        """_run_cached() calls _run_cached_with_autofix when auto_regenerate is set."""
         script = tmp_path / "scraper.py"
         script.write_text(
             '"""\nurl: https://example.com\ntask: Extract products\n"""\n'
             "async def scrape(page, url, checkpoint):\n"
             "    return [{'title': 'Test'}]\n"
         )
-        s = _make_scraper(script=str(script), auto_fix=True)
+        s = _make_scraper(script=str(script), auto_regenerate=True)
 
         mock_result = ScraperResult(
             data=[{"title": "Test"}],
             url=VALID_URL,
             timestamp="2026-04-19T00:00:00.000000Z",
-            generated=False,
+            script_generated=False,
             script_path=script,
         )
 
         with patch.object(
             s, "_run_cached_with_autofix", return_value=mock_result,
         ) as mock_af:
-            result = await s._run_cached(VALID_URL, s._auto_fix_mode)
+            result = await s._run_cached(VALID_URL, s._auto_regenerate_mode)
 
-        mock_af.assert_awaited_once_with(VALID_URL, s._auto_fix_mode)
+        mock_af.assert_awaited_once_with(VALID_URL, s._auto_regenerate_mode)
         assert result.data == [{"title": "Test"}]
 
     @pytest.mark.asyncio
     async def test_normal_path_when_autofix_disabled(self, tmp_path):
-        """_run_cached() takes normal path when auto_fix is False."""
+        """_run_cached() takes normal path when auto_regenerate is False."""
         script = tmp_path / "scraper.py"
         script.write_text(
             '"""\nurl: https://example.com\ntask: Extract products\n"""\n'
             "async def scrape(page, url, checkpoint):\n"
             "    return [{'title': 'Test'}]\n"
         )
-        s = _make_scraper(script=str(script), auto_fix=False)
+        s = _make_scraper(script=str(script), auto_regenerate=False)
 
         with patch.object(
             s, "_run_cached_with_autofix",
@@ -1026,7 +1026,7 @@ class TestRunCachedAutoFixBranch:
                 # Will fail schema validation but that's fine —
                 # we just need to verify _run_cached_with_autofix was NOT called
                 try:
-                    await s._run_cached(VALID_URL, s._auto_fix_mode)
+                    await s._run_cached(VALID_URL, s._auto_regenerate_mode)
                 except Exception:
                     pass
 

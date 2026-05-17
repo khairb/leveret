@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Union
 
 from .errors import (
-    AutoFixError,
+    AutoRegenerateError,
     ConfigError,
     Error,
     GenerationError,
@@ -17,7 +17,7 @@ from .errors import (
     ScriptTimeoutError,
     ValidationError,
 )
-from .autofix.types import AutoFixMode
+from .autofix.types import RegenerateMode
 from .browser import Browser, LaunchOptions
 from .inputs import Input
 from .schema.tolerance import Tolerance
@@ -38,6 +38,7 @@ Schema = Union[
 from .agent.llm import ModelName as ModelName
 from .errors import (
     ScoutAutoFixError as ScoutAutoFixError,
+    ScoutAutoRegenerateError as ScoutAutoRegenerateError,
     ScoutConfigError as ScoutConfigError,
     ScoutError as ScoutError,
     ScoutGenerationError as ScoutGenerationError,
@@ -59,11 +60,11 @@ __all__ = [
     "Field",
     "Input",
     "Items",
-    "AutoFixMode",
+    "RegenerateMode",
     "LaunchOptions",
     "Tolerance",
     # Errors
-    "AutoFixError",
+    "AutoRegenerateError",
     "ConfigError",
     "Error",
     "GenerationError",
@@ -86,3 +87,22 @@ __all__ = [
     "ScoutScriptTimeoutError",
     "ScoutValidationError",
 ]
+
+
+# ── Backward compatibility: deprecated names importable but not in __all__ ──
+
+def __getattr__(name: str):
+    import warnings as _warnings
+    _deprecated = {
+        "AutoFixMode": ("RegenerateMode", RegenerateMode),
+        "AutoFixError": ("AutoRegenerateError", AutoRegenerateError),
+    }
+    if name in _deprecated:
+        new_name, obj = _deprecated[name]
+        _warnings.warn(
+            f"{name} is deprecated, use {new_name} instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return obj
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

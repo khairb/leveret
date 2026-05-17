@@ -29,11 +29,13 @@ class Tolerance(Enum):
     Members:
         STRICT: 100% of items must pass validation.
         BALANCED: 80% of items must pass (default).
-        TOLERANT: 50% of items must pass.
+        LENIENT: 50% of items must pass.
+        TOLERANT: Deprecated alias for LENIENT.
     """
 
     STRICT = "strict"
     BALANCED = "balanced"
+    LENIENT = "lenient"
     TOLERANT = "tolerant"
 
 
@@ -41,6 +43,7 @@ class Tolerance(Enum):
 TOLERANCE_THRESHOLDS: dict[Tolerance, float] = {
     Tolerance.STRICT: 1.0,
     Tolerance.BALANCED: 0.8,
+    Tolerance.LENIENT: 0.5,
     Tolerance.TOLERANT: 0.5,
 }
 

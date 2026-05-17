@@ -31,7 +31,7 @@ from scout.autofix.diagnosis import (
 from scout.autofix.types import (
     AttemptResult,
     AutoFixAction,
-    AutoFixMode,
+    RegenerateMode,
     DiagnosisResult,
     ErrorCategory,
     Fingerprint,
@@ -114,7 +114,7 @@ class TestRetrySuccess:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, AttemptResult)
         assert result.success is True
@@ -131,7 +131,7 @@ class TestRetrySuccess:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.AGGRESSIVE)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.EAGER)
 
         assert isinstance(result, AttemptResult)
         assert result.success is True
@@ -144,7 +144,7 @@ class TestRetrySuccess:
         results = [_make_success_attempt(data="hello")]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, AttemptResult)
         assert result.success is True
@@ -166,7 +166,7 @@ class TestImmediateExits:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.REGENERATE
@@ -177,14 +177,14 @@ class TestImmediateExits:
         assert "Parse error" in result.message
 
     @pytest.mark.asyncio
-    async def test_category_a_conservative(self):
-        """Category A -> REGENERATE even in conservative mode."""
+    async def test_category_a_cautious(self):
+        """Category A -> REGENERATE even in cautious mode."""
         results = [
             _make_failed_attempt(error="IndentationError: expected an indented block"),
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.CONSERVATIVE)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.CAUTIOUS)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.REGENERATE
@@ -200,7 +200,7 @@ class TestImmediateExits:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.AGGRESSIVE)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.EAGER)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
@@ -219,7 +219,7 @@ class TestImmediateExits:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
@@ -245,7 +245,7 @@ class TestEarlyExitMidLoop:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.REGENERATE
@@ -264,7 +264,7 @@ class TestEarlyExitMidLoop:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
@@ -286,7 +286,7 @@ class TestEarlyExitMidLoop:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.REGENERATE
@@ -306,7 +306,7 @@ class TestEarlyExitMidLoop:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
@@ -331,7 +331,7 @@ class TestFullDiagnosis:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.REGENERATE
@@ -343,8 +343,8 @@ class TestFullDiagnosis:
         assert len(result.attempts) == 3
 
     @pytest.mark.asyncio
-    async def test_3x_category_b_stable_real_page_conservative_regenerate(self):
-        """3x Cat B STABLE + 3/3 REAL_PAGE + conservative -> REGENERATE."""
+    async def test_3x_category_b_stable_real_page_cautious_regenerate(self):
+        """3x Cat B STABLE + 3/3 REAL_PAGE + cautious -> REGENERATE."""
         error = "KeyError: 'price'"
         results = [
             _make_failed_attempt(error=error),
@@ -353,7 +353,7 @@ class TestFullDiagnosis:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.CONSERVATIVE)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.CAUTIOUS)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.REGENERATE
@@ -371,7 +371,7 @@ class TestFullDiagnosis:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.REGENERATE
@@ -379,10 +379,10 @@ class TestFullDiagnosis:
         assert result.stability == StabilityLevel.STABLE
 
     @pytest.mark.asyncio
-    async def test_3x_category_d_stable_real_page_conservative_raise(self):
-        """3x Cat D STABLE + 3/3 REAL_PAGE + conservative -> RAISE.
+    async def test_3x_category_d_stable_real_page_cautious_raise(self):
+        """3x Cat D STABLE + 3/3 REAL_PAGE + cautious -> RAISE.
 
-        S9: Conservative never regenerates ambiguous categories (D/E).
+        S9: Cautious never regenerates ambiguous categories (D/E).
         """
         error = "Page.wait_for_selector: Timeout 5000ms exceeded."
         results = [
@@ -392,7 +392,7 @@ class TestFullDiagnosis:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.CONSERVATIVE)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.CAUTIOUS)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
@@ -402,7 +402,7 @@ class TestFullDiagnosis:
     async def test_3x_category_c_raise_all_modes(self):
         """3x Cat C (Tier 3) -> RAISE in all modes."""
         error = "Page.goto: net::ERR_CONNECTION_REFUSED at https://example.com"
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             results = [
                 _make_failed_attempt(error=error),
                 _make_failed_attempt(error=error),
@@ -420,7 +420,7 @@ class TestFullDiagnosis:
     async def test_3x_category_f1_raise_all_modes(self):
         """3x Cat F1 (Tier 3) -> RAISE in all modes."""
         error = "Page crashed"
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             results = [
                 _make_failed_attempt(error=error, page_signals=PageSignals()),
                 _make_failed_attempt(error=error, page_signals=PageSignals()),
@@ -455,7 +455,7 @@ class TestFullDiagnosis:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.REGENERATE
@@ -485,7 +485,7 @@ class TestStabilityPatterns:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.AGGRESSIVE)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.EAGER)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
@@ -507,7 +507,7 @@ class TestStabilityPatterns:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.AGGRESSIVE)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.EAGER)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
@@ -523,7 +523,7 @@ class TestStabilityPatterns:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert result.category == ErrorCategory.B
@@ -559,7 +559,7 @@ class TestPageVerification:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.AGGRESSIVE)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.EAGER)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
@@ -568,8 +568,8 @@ class TestPageVerification:
         )
 
     @pytest.mark.asyncio
-    async def test_server_error_blocks_conservative(self):
-        """1/3 SERVER_ERROR blocks regeneration in conservative mode."""
+    async def test_server_error_blocks_cautious(self):
+        """1/3 SERVER_ERROR blocks regeneration in cautious mode."""
         error = "AttributeError: 'NoneType' object has no attribute 'text'"
         real = PageSignals(
             http_status=200,
@@ -588,7 +588,7 @@ class TestPageVerification:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.CONSERVATIVE)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.CAUTIOUS)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
@@ -604,7 +604,7 @@ class TestPageVerification:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
@@ -638,7 +638,7 @@ class TestEEligibility:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.REGENERATE
@@ -649,7 +649,7 @@ class TestEEligibility:
     async def test_e_ineligible_context_destroyed_raise(self):
         """Category E (context destroyed, ineligible) -> RAISE in all modes."""
         error = "Execution context was destroyed, most likely because of a navigation."
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             results = [
                 _make_failed_attempt(error=error),
                 _make_failed_attempt(error=error),
@@ -674,7 +674,7 @@ class TestEEligibility:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.AGGRESSIVE)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.EAGER)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
@@ -735,7 +735,7 @@ class TestExecuteFnCrashProtection:
                 raise RuntimeError("Unexpected internal error")
             return _make_failed_attempt()
 
-        result = await diagnose(fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(fn, TARGET_URL, RegenerateMode.BALANCED)
 
         # Should not crash — the exception is caught and wrapped
         assert isinstance(result, DiagnosisResult)
@@ -748,7 +748,7 @@ class TestExecuteFnCrashProtection:
         async def always_crash():
             raise ValueError("Boom!")
 
-        result = await diagnose(always_crash, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(always_crash, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert len(result.attempts) == 3
@@ -781,7 +781,7 @@ class TestDelays:
             "scout.autofix.diagnosis.random.uniform",
             return_value=4.0,
         ):
-            await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+            await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
             # 2 delays: before attempt 2 and before attempt 3
             assert mock_sleep.call_count == 2
@@ -800,7 +800,7 @@ class TestDelays:
             "scout.autofix.diagnosis.asyncio.sleep",
             new_callable=AsyncMock,
         ) as mock_sleep:
-            await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+            await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
             mock_sleep.assert_not_called()
 
@@ -821,7 +821,7 @@ class TestDelays:
             "scout.autofix.diagnosis.random.uniform",
             return_value=3.5,
         ) as mock_uniform:
-            await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+            await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
             for call in mock_uniform.call_args_list:
                 assert call.args == (3.0, 5.0)
@@ -844,7 +844,7 @@ class TestDiagnosisResultFields:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert len(result.fingerprints) == 3
@@ -862,7 +862,7 @@ class TestDiagnosisResultFields:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert len(result.page_results) == 3
@@ -878,7 +878,7 @@ class TestDiagnosisResultFields:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert len(result.attempts) == 3
@@ -898,7 +898,7 @@ class TestDiagnosisResultFields:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert result.message
@@ -920,7 +920,7 @@ class TestDiagnosisResultFields:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         # All are Cat B (same primary category)
@@ -953,7 +953,7 @@ class TestEdgeCases:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         # All 3 attempts should run (F2 doesn't trigger early exit)
@@ -977,14 +977,14 @@ class TestEdgeCases:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.AGGRESSIVE)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.EAGER)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
         assert result.e_eligible is False
 
     @pytest.mark.asyncio
-    async def test_redirected_page_blocks_conservative(self):
+    async def test_redirected_page_blocks_cautious(self):
         """Page URL domain mismatch -> REDIRECTED -> blocks regeneration."""
         error = "AttributeError: 'NoneType' has no attribute 'text'"
         redirected_signals = PageSignals(
@@ -999,7 +999,7 @@ class TestEdgeCases:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
@@ -1018,7 +1018,7 @@ class TestEdgeCases:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert result.category == ErrorCategory.B
@@ -1040,7 +1040,7 @@ class TestEdgeCases:
         crash_once_then_fail.calls = 0
 
         result = await diagnose(
-            crash_once_then_fail, TARGET_URL, AutoFixMode.BALANCED,
+            crash_once_then_fail, TARGET_URL, RegenerateMode.BALANCED,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -1060,7 +1060,7 @@ class TestEdgeCases:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert result.stability is None
@@ -1075,7 +1075,7 @@ class TestEdgeCases:
         ]
         execute_fn = _make_execute_fn(results)
 
-        result = await diagnose(execute_fn, TARGET_URL, AutoFixMode.BALANCED)
+        result = await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.REGENERATE

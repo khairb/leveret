@@ -22,7 +22,7 @@ import pytest
 from scout.autofix.antibot import detect_antibot
 from scout.autofix.page_verifier import verify_page, check_page_gate
 from scout.autofix.types import (
-    AutoFixMode,
+    RegenerateMode,
     PageSignals,
     PageVerificationResult,
 )
@@ -638,14 +638,14 @@ class TestGateWithFixtureData:
     def test_3_real_pages_all_modes_pass(self):
         """3/3 REAL_PAGE → gate passes in all modes."""
         results = [PageVerificationResult.REAL_PAGE] * 3
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             passes, _ = check_page_gate(results, mode)
             assert passes, f"Should pass in {mode.value}"
 
     def test_3_antibot_all_modes_block(self):
         """3/3 ANTI_BOT → gate blocks in all modes."""
         results = [PageVerificationResult.ANTI_BOT] * 3
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             passes, reason = check_page_gate(results, mode)
             assert not passes, f"Should block in {mode.value}"
             assert "Anti-bot" in reason
@@ -657,7 +657,7 @@ class TestGateWithFixtureData:
             PageVerificationResult.REAL_PAGE,
             PageVerificationResult.ANTI_BOT,
         ]
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             passes, reason = check_page_gate(results, mode)
             assert not passes, f"ANTI_BOT should block in {mode.value}"
             assert "Anti-bot" in reason
@@ -670,15 +670,15 @@ class TestGateWithFixtureData:
             PageVerificationResult.SERVER_ERROR,
         ]
         # Conservative: blocks (needs 3/3)
-        passes, _ = check_page_gate(results, AutoFixMode.CONSERVATIVE)
+        passes, _ = check_page_gate(results, RegenerateMode.CAUTIOUS)
         assert not passes
 
         # Balanced: blocks (needs 3/3)
-        passes, _ = check_page_gate(results, AutoFixMode.BALANCED)
+        passes, _ = check_page_gate(results, RegenerateMode.BALANCED)
         assert not passes
 
         # Aggressive: passes (2/3 sufficient, no ANTI_BOT)
-        passes, _ = check_page_gate(results, AutoFixMode.AGGRESSIVE)
+        passes, _ = check_page_gate(results, RegenerateMode.EAGER)
         assert passes
 
     def test_mixed_taint_types(self):
@@ -694,7 +694,7 @@ class TestGateWithFixtureData:
                 PageVerificationResult.REAL_PAGE,
                 taint,
             ]
-            passes, _ = check_page_gate(results, AutoFixMode.BALANCED)
+            passes, _ = check_page_gate(results, RegenerateMode.BALANCED)
             assert not passes, f"{taint} should block balanced mode"
 
     def test_1_real_2_tainted_blocks_all(self):
@@ -704,7 +704,7 @@ class TestGateWithFixtureData:
             PageVerificationResult.SERVER_ERROR,
             PageVerificationResult.REDIRECTED,
         ]
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             passes, _ = check_page_gate(results, mode)
             assert not passes, f"Should block in {mode.value}"
 
@@ -715,7 +715,7 @@ class TestGateWithFixtureData:
             PageVerificationResult.NO_RESPONSE,
             PageVerificationResult.REDIRECTED,
         ]
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             passes, _ = check_page_gate(results, mode)
             assert not passes
 
@@ -723,13 +723,13 @@ class TestGateWithFixtureData:
         """Gate with only 1 attempt."""
         passes, _ = check_page_gate(
             [PageVerificationResult.REAL_PAGE],
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
         assert passes
 
         passes, _ = check_page_gate(
             [PageVerificationResult.ANTI_BOT],
-            AutoFixMode.AGGRESSIVE,
+            RegenerateMode.EAGER,
         )
         assert not passes
 
@@ -738,7 +738,7 @@ class TestGateWithFixtureData:
         # 2/2 REAL_PAGE → passes all modes.
         passes, _ = check_page_gate(
             [PageVerificationResult.REAL_PAGE] * 2,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
         assert passes
 
@@ -748,9 +748,9 @@ class TestGateWithFixtureData:
             PageVerificationResult.REAL_PAGE,
             PageVerificationResult.SERVER_ERROR,
         ]
-        passes, _ = check_page_gate(results, AutoFixMode.BALANCED)
+        passes, _ = check_page_gate(results, RegenerateMode.BALANCED)
         assert not passes
-        passes, _ = check_page_gate(results, AutoFixMode.AGGRESSIVE)
+        passes, _ = check_page_gate(results, RegenerateMode.EAGER)
         assert not passes
 
 
@@ -775,7 +775,7 @@ class TestEndToEndScenarios:
 
         # 3 attempts all ANTI_BOT → gate blocks all modes
         results = [result] * 3
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             passes, _ = check_page_gate(results, mode)
             assert not passes
 
@@ -789,7 +789,7 @@ class TestEndToEndScenarios:
         cf_result = verify_page(cf_signals, "https://example.com")
 
         results = [real_result, real_result, cf_result]
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             passes, reason = check_page_gate(results, mode)
             assert not passes, f"Intermittent ANTI_BOT should block {mode.value}"
             assert "Anti-bot" in reason
@@ -801,7 +801,7 @@ class TestEndToEndScenarios:
         assert result == PageVerificationResult.SERVER_ERROR
 
         results = [result] * 3
-        for mode in AutoFixMode:
+        for mode in RegenerateMode:
             passes, _ = check_page_gate(results, mode)
             assert not passes
 
@@ -812,11 +812,11 @@ class TestEndToEndScenarios:
             PageVerificationResult.REAL_PAGE,
             PageVerificationResult.SERVER_ERROR,
         ]
-        passes, _ = check_page_gate(results, AutoFixMode.CONSERVATIVE)
+        passes, _ = check_page_gate(results, RegenerateMode.CAUTIOUS)
         assert not passes
-        passes, _ = check_page_gate(results, AutoFixMode.BALANCED)
+        passes, _ = check_page_gate(results, RegenerateMode.BALANCED)
         assert not passes
-        passes, _ = check_page_gate(results, AutoFixMode.AGGRESSIVE)
+        passes, _ = check_page_gate(results, RegenerateMode.EAGER)
         assert passes
 
     def test_scenario_login_redirect(self):

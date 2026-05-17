@@ -40,7 +40,7 @@ from scout.autofix.diagnosis import diagnose
 from scout.autofix.types import (
     AttemptResult,
     AutoFixAction,
-    AutoFixMode,
+    RegenerateMode,
     DiagnosisResult,
     PageSignals,
     PageVerificationResult,
@@ -399,7 +399,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_waits_for(".product")),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -424,7 +424,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_waits_for(".product")),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -449,7 +449,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_queries(".product")),
             url,
-            AutoFixMode.AGGRESSIVE,
+            RegenerateMode.EAGER,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -484,7 +484,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_waits_for(".product")),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -517,7 +517,7 @@ class TestBattle:
                 ),
             ),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         # Should return successful AttemptResult, not DiagnosisResult
@@ -545,7 +545,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_clicks_through_overlay()),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -572,7 +572,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_waits_for(".product")),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -608,7 +608,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_waits_for(".product")),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -642,7 +642,7 @@ class TestBattle:
                 ),
             ),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -667,7 +667,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_has_syntax_error()),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -686,7 +686,7 @@ class TestBattle:
         page behavior, not a timing issue. A new script would face
         the same redirect.
 
-        The algorithm should NOT regenerate — even in aggressive mode.
+        The algorithm should NOT regenerate — even in eager mode.
         """
         server.program("/products", PRODUCTS_PAGE)
         url = server.url("/products")
@@ -694,7 +694,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_hits_navigation_redirect()),
             url,
-            AutoFixMode.AGGRESSIVE,
+            RegenerateMode.EAGER,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -723,7 +723,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_waits_for(".product")),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         # Attempt 1 fails, attempt 2 succeeds (old layout has .product)
@@ -776,7 +776,7 @@ class TestBattle:
                 page_signals=signals,
             )
 
-        result = await diagnose(execute, url, AutoFixMode.BALANCED)
+        result = await diagnose(execute, url, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         # Fix 2: Network noise (attempt 2) is filtered out of stability.
@@ -784,11 +784,11 @@ class TestBattle:
         # 2/3 REAL_PAGE → balanced: REGENERATE.
         assert result.action == AutoFixAction.REGENERATE
 
-    # -- 14. The Conservative User ----------------------------------
+    # -- 14. The Cautious User ----------------------------------------
 
     @pytest.mark.asyncio
-    async def test_conservative_user_with_clear_evidence(self, server):
-        """User explicitly chose conservative mode. Evidence is strong.
+    async def test_cautious_user_with_clear_evidence(self, server):
+        """User explicitly chose cautious mode. Evidence is strong.
 
         Common for cost-sensitive deployments — batch jobs where one
         false regeneration wastes money. The script has stale selectors
@@ -805,17 +805,17 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_waits_for(".product")),
             url,
-            AutoFixMode.CONSERVATIVE,
+            RegenerateMode.CAUTIOUS,
         )
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
 
-    # -- 15. The Aggressive User ------------------------------------
+    # -- 15. The Eager User --------------------------------------------
 
     @pytest.mark.asyncio
-    async def test_aggressive_user_with_partial_evidence(self, server):
-        """User chose aggressive mode. One request got a 503.
+    async def test_eager_user_with_partial_evidence(self, server):
+        """User chose eager mode. One request got a 503.
 
         Common for monitoring dashboards, real-time data pipelines.
         The user wants fast recovery even with imperfect evidence.
@@ -823,7 +823,7 @@ class TestBattle:
         just server noise.
 
         The algorithm should regenerate — the user accepted this
-        trade-off by choosing aggressive mode.
+        trade-off by choosing eager mode.
         """
         server.program(
             "/products",
@@ -836,7 +836,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_queries(".product")),
             url,
-            AutoFixMode.AGGRESSIVE,
+            RegenerateMode.EAGER,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -866,7 +866,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_waits_for(".product")),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -894,7 +894,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_waits_for(".product")),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -921,7 +921,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_waits_for(".product")),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         # FINDING: Attempt 1 succeeds — returns data from old version.
@@ -947,7 +947,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_waits_for(".product")),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -973,7 +973,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_waits_for(".product")),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         # Attempt 1 fails (429). Attempt 2 succeeds. Returns data.
@@ -999,7 +999,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_waits_for(".product")),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         # FINDING: The algorithm returns potentially stale CDN data.
@@ -1023,7 +1023,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_queries(".product")),
             url,
-            AutoFixMode.AGGRESSIVE,
+            RegenerateMode.EAGER,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -1054,7 +1054,7 @@ class TestBattle:
                 ),
             ),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -1084,7 +1084,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_queries(".product")),
             url,
-            AutoFixMode.AGGRESSIVE,
+            RegenerateMode.EAGER,
         )
 
         assert isinstance(result, DiagnosisResult)
@@ -1105,7 +1105,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_waits_for(".product")),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         assert isinstance(result, AttemptResult)
@@ -1130,7 +1130,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_waits_for(".product")),
             url,
-            AutoFixMode.BALANCED,
+            RegenerateMode.BALANCED,
         )
 
         assert isinstance(result, AttemptResult)
@@ -1185,20 +1185,20 @@ class TestBattle:
                 page_signals=signals,
             )
 
-        result = await diagnose(execute, url, AutoFixMode.BALANCED)
+        result = await diagnose(execute, url, RegenerateMode.BALANCED)
 
         assert isinstance(result, DiagnosisResult)
         # Script crashes at multiple points — same root cause.
         # Algorithm should still regenerate.
         assert result.action == AutoFixAction.REGENERATE
 
-    # -- 28. Aggressive Mode Still Blocked by Anti-Bot --------------
+    # -- 28. Eager Mode Still Blocked by Anti-Bot --------------------
 
     @pytest.mark.asyncio
-    async def test_aggressive_still_blocked_by_antibot(self, server):
-        """Aggressive mode should not override anti-bot protection.
+    async def test_eager_still_blocked_by_antibot(self, server):
+        """Eager mode should not override anti-bot protection.
 
-        2 real pages + 1 anti-bot. Aggressive tolerates server errors
+        2 real pages + 1 anti-bot. Eager tolerates server errors
         but anti-bot is different — a new script will be blocked too.
         """
         server.program(
@@ -1212,17 +1212,17 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_queries(".product")),
             url,
-            AutoFixMode.AGGRESSIVE,
+            RegenerateMode.EAGER,
         )
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
 
-    # -- 29. Full Outage + Aggressive Mode --------------------------
+    # -- 29. Full Outage + Eager Mode --------------------------------
 
     @pytest.mark.asyncio
-    async def test_full_outage_aggressive_mode(self, server):
-        """Complete server outage. Even aggressive shouldn't regenerate.
+    async def test_full_outage_eager_mode(self, server):
+        """Complete server outage. Even eager shouldn't regenerate.
 
         No script can work against a server returning 503 on every
         request.
@@ -1233,20 +1233,20 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_queries(".product")),
             url,
-            AutoFixMode.AGGRESSIVE,
+            RegenerateMode.EAGER,
         )
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
 
-    # -- 30. Conservative with Clear Crash --------------------------
+    # -- 30. Cautious with Clear Crash --------------------------------
 
     @pytest.mark.asyncio
-    async def test_conservative_with_runtime_crash(self, server):
-        """Conservative mode with a clear runtime crash (not a timeout).
+    async def test_cautious_with_runtime_crash(self, server):
+        """Cautious mode with a clear runtime crash (not a timeout).
 
         AttributeError is high-confidence — the element doesn't exist.
-        Even conservative mode should regenerate for clear crashes
+        Even cautious mode should regenerate for clear crashes
         on verified real pages.
         """
         server.program("/products", CHANGED_LAYOUT)
@@ -1255,7 +1255,7 @@ class TestBattle:
         result = await diagnose(
             make_execute_fn(url, script_queries(".product")),
             url,
-            AutoFixMode.CONSERVATIVE,
+            RegenerateMode.CAUTIOUS,
         )
 
         assert isinstance(result, DiagnosisResult)
