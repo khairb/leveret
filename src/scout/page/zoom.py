@@ -43,6 +43,7 @@ _DATA_HIDDEN_RE = re.compile(r'\s+data-hidden="[^"]*"')
 #  Element Location
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def _build_bs4_dom_index(soup: BeautifulSoup) -> list[Tag]:
     """Build a flat list of BS4 Tags in depth-first order.
 
@@ -74,6 +75,7 @@ def _build_bs4_dom_index(soup: BeautifulSoup) -> list[Tag]:
 # ═══════════════════════════════════════════════════════════════════════════
 #  Public API
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def zoom_in(
     html: str,

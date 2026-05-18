@@ -25,6 +25,7 @@ class TestCompileSchema:
 
     def test_has_root_node(self):
         from scout.schema.nodes import ListNode
+
         cs = compile_schema([{"x": str}])
         assert isinstance(cs.root, ListNode)
 
@@ -86,11 +87,13 @@ class TestCompileSchemaPromptQuality:
         assert "minimum 10" in cs.prompt
 
     def test_prompt_mentions_all_fields(self):
-        cs = compile_schema({
-            "name": str,
-            "age": int,
-            "bio": Field(str, optional=True),
-        })
+        cs = compile_schema(
+            {
+                "name": str,
+                "age": int,
+                "bio": Field(str, optional=True),
+            }
+        )
         for field in ["name", "age", "bio"]:
             assert field in cs.prompt
 
@@ -107,45 +110,61 @@ class TestRoundTrip:
     """Compile a schema, validate good and bad data, check error quality."""
 
     def test_ecommerce_schema(self):
-        cs = compile_schema(List({
-            "title": Field(str, min_length=1),
-            "price": Field(float, min=0),
-            "currency": Field(str, enum=["USD", "EUR", "GBP"]),
-            "in_stock": bool,
-        }, min_items=5))
+        cs = compile_schema(
+            List(
+                {
+                    "title": Field(str, min_length=1),
+                    "price": Field(float, min=0),
+                    "currency": Field(str, enum=["USD", "EUR", "GBP"]),
+                    "in_stock": bool,
+                },
+                min_items=5,
+            )
+        )
 
         # Good data
-        good = [{"title": f"P{i}", "price": float(i), "currency": "USD",
-                 "in_stock": True} for i in range(10)]
+        good = [
+            {"title": f"P{i}", "price": float(i), "currency": "USD", "in_stock": True}
+            for i in range(10)
+        ]
         assert cs.validate(good) == (True, "")
 
         # Bad data: wrong types
-        bad = [{"title": "", "price": "free", "currency": "Dollar",
-                "in_stock": "yes"}]
+        bad = [{"title": "", "price": "free", "currency": "Dollar", "in_stock": "yes"}]
         valid, msg = cs.validate(bad)
         assert not valid
         assert "expected float" in msg
         assert "not one of" in msg
 
     def test_job_listings_schema(self):
-        cs = compile_schema(List({
-            "title": Field(str, min_length=3),
-            "company": str,
-            "salary": {
-                "min": Field(int, min=0, optional=True),
-                "max": Field(int, min=0, optional=True),
-            },
-            "posted": Field(str, pattern=r"\d{4}-\d{2}-\d{2}"),
-        }, min_items=10))
+        cs = compile_schema(
+            List(
+                {
+                    "title": Field(str, min_length=3),
+                    "company": str,
+                    "salary": {
+                        "min": Field(int, min=0, optional=True),
+                        "max": Field(int, min=0, optional=True),
+                    },
+                    "posted": Field(str, pattern=r"\d{4}-\d{2}-\d{2}"),
+                },
+                min_items=10,
+            )
+        )
 
-        good = [{"title": "Engineer", "company": "Acme",
-                 "salary": {"min": 80000, "max": 120000},
-                 "posted": "2024-03-15"} for _ in range(15)]
+        good = [
+            {
+                "title": "Engineer",
+                "company": "Acme",
+                "salary": {"min": 80000, "max": 120000},
+                "posted": "2024-03-15",
+            }
+            for _ in range(15)
+        ]
         assert cs.validate(good) == (True, "")
 
         # Salary as a number instead of object
-        bad = [{"title": "Eng", "company": "X",
-                "salary": 80000, "posted": "2024-03-15"}]
+        bad = [{"title": "Eng", "company": "X", "salary": 80000, "posted": "2024-03-15"}]
         valid, msg = cs.validate(bad)
         assert not valid
         assert "expected an object" in msg

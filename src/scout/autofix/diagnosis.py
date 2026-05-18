@@ -27,14 +27,14 @@ from scout.autofix.fingerprint import extract_fingerprint
 from scout.autofix.page_verifier import verify_page
 from scout.autofix.stability import assess_stability
 from scout.autofix.types import (
-    AttemptResult,
-    AutoFixAction,
-    RegenerateMode,
-    DiagnosisResult,
-    ErrorCategory,
     E_INELIGIBLE_PATTERNS,
     NO_RETRY_CATEGORIES,
+    AttemptResult,
+    AutoFixAction,
+    DiagnosisResult,
+    ErrorCategory,
     PageVerificationResult,
+    RegenerateMode,
     StabilityLevel,
 )
 
@@ -85,7 +85,8 @@ async def diagnose(
     primary_category = attempt.category
 
     logger.debug(
-        "Auto-fix: attempt 1 failed — %s", primary_category.value,
+        "Auto-fix: attempt 1 failed — %s",
+        primary_category.value,
     )
 
     # -- Immediate exits (no retries needed) --
@@ -96,8 +97,7 @@ async def diagnose(
             AutoFixAction.REGENERATE,
             primary_category,
             attempts,
-            "Parse error (Category A) — code is structurally broken, "
-            "regenerating immediately",
+            "Parse error (Category A) — code is structurally broken, regenerating immediately",
         )
 
     # S7: Category F2/F3 -> RAISE immediately (cost-prohibitive or impossible)
@@ -113,14 +113,17 @@ async def diagnose(
     for attempt_num in range(2, _MAX_ATTEMPTS + 1):
         delay = random.uniform(_MIN_DELAY_S, _MAX_DELAY_S)
         logger.debug(
-            "Auto-fix: waiting %.1fs before attempt %d", delay, attempt_num,
+            "Auto-fix: waiting %.1fs before attempt %d",
+            delay,
+            attempt_num,
         )
         await asyncio.sleep(delay)
 
         attempt = await _safe_execute(execute_fn)
         if attempt.success:
             logger.debug(
-                "Auto-fix: attempt %d succeeded", attempt_num,
+                "Auto-fix: attempt %d succeeded",
+                attempt_num,
             )
             return attempt
 
@@ -129,7 +132,8 @@ async def diagnose(
 
         logger.debug(
             "Auto-fix: attempt %d failed — %s",
-            attempt_num, attempt.category.value,
+            attempt_num,
+            attempt.category.value,
         )
 
         # S7: Early exit — Category A or F3 appearing mid-loop means
@@ -152,28 +156,20 @@ async def diagnose(
             )
 
     # -- All attempts failed: assess and decide --
-    fingerprints = [
-        a.fingerprint for a in attempts if a.fingerprint is not None
-    ]
-    page_results = [
-        a.page_result for a in attempts if a.page_result is not None
-    ]
+    fingerprints = [a.fingerprint for a in attempts if a.fingerprint is not None]
+    page_results = [a.page_result for a in attempts if a.page_result is not None]
 
     # S8: Assess stability only from attempts that saw the real page.
     # Attempts with SERVER_ERROR, NO_RESPONSE, SOFT_BLOCK, etc. didn't
     # see real content — their errors reflect the environment, not the
     # script. Including them would mix two unrelated signals.
     real_fingerprints = [
-        a.fingerprint for a in attempts
-        if a.fingerprint is not None
-        and a.page_result == PageVerificationResult.REAL_PAGE
+        a.fingerprint
+        for a in attempts
+        if a.fingerprint is not None and a.page_result == PageVerificationResult.REAL_PAGE
     ]
 
-    stability = (
-        assess_stability(real_fingerprints)
-        if len(real_fingerprints) >= 2
-        else None
-    )
+    stability = assess_stability(real_fingerprints) if len(real_fingerprints) >= 2 else None
 
     e_eligible = _check_e_eligibility(attempts)
 
@@ -199,7 +195,10 @@ async def diagnose(
     if action == AutoFixAction.REGENERATE:
         logger.info(
             "Auto-fix: cached script failed (%s — %d/%d attempts). %s",
-            primary_category.value, len(attempts), len(attempts), reason,
+            primary_category.value,
+            len(attempts),
+            len(attempts),
+            reason,
         )
     else:
         logger.info("Auto-fix: not regenerating — %s", reason)
@@ -273,14 +272,17 @@ def format_diagnosis_message(
 
     # -- Decision explanation --
     if action == AutoFixAction.REGENERATE:
-        lines.append(
-            f"  Auto-fix is regenerating the script ({mode.value} mode)."
-        )
+        lines.append(f"  Auto-fix is regenerating the script ({mode.value} mode).")
         lines.append(f"  Reason: {reason}")
     else:
         # S12: Explain why auto-fix declined and what the user can do
         _append_raise_explanation(
-            lines, reason, category, stability, page_results, mode,
+            lines,
+            reason,
+            category,
+            stability,
+            page_results,
+            mode,
         )
 
     return "\n".join(lines)
@@ -302,7 +304,8 @@ async def _safe_execute(
     except Exception as exc:
         logger.warning(
             "Auto-fix: execute_fn raised unexpected %s: %s",
-            type(exc).__name__, exc,
+            type(exc).__name__,
+            exc,
         )
         return AttemptResult(
             success=False,
@@ -359,12 +362,8 @@ def _build_immediate_result(
     message: str,
 ) -> DiagnosisResult:
     """Build a DiagnosisResult for immediate decisions (no stability/page)."""
-    fingerprints = [
-        a.fingerprint for a in attempts if a.fingerprint is not None
-    ]
-    page_results = [
-        a.page_result for a in attempts if a.page_result is not None
-    ]
+    fingerprints = [a.fingerprint for a in attempts if a.fingerprint is not None]
+    page_results = [a.page_result for a in attempts if a.page_result is not None]
 
     return DiagnosisResult(
         action=action,
@@ -381,8 +380,7 @@ def _no_retry_reason(category: ErrorCategory) -> str:
     """Reason string for no-retry categories (F2, F3)."""
     reasons = {
         ErrorCategory.F2: (
-            "Subprocess timeout (Category F2) — diagnostic cost "
-            "prohibitive, not retrying"
+            "Subprocess timeout (Category F2) — diagnostic cost prohibitive, not retrying"
         ),
         ErrorCategory.F3: (
             "Infrastructure failure (Category F3) — no script can "
@@ -390,7 +388,8 @@ def _no_retry_reason(category: ErrorCategory) -> str:
         ),
     }
     return reasons.get(
-        category, f"Category {category.value} does not support retries",
+        category,
+        f"Category {category.value} does not support retries",
     )
 
 
@@ -406,26 +405,19 @@ def _append_raise_explanation(
     mode: RegenerateMode,
 ) -> None:
     """Append RAISE-specific explanation and user actions to message lines."""
-    has_antibot = any(
-        r == PageVerificationResult.ANTI_BOT for r in page_results
-    )
-    has_soft_block = any(
-        r == PageVerificationResult.SOFT_BLOCK for r in page_results
-    )
-    has_server_err = any(
-        r == PageVerificationResult.SERVER_ERROR for r in page_results
-    )
+    has_antibot = any(r == PageVerificationResult.ANTI_BOT for r in page_results)
+    has_soft_block = any(r == PageVerificationResult.SOFT_BLOCK for r in page_results)
+    has_server_err = any(r == PageVerificationResult.SERVER_ERROR for r in page_results)
     is_noisy = stability in (StabilityLevel.MIXED, StabilityLevel.CHAOTIC)
-    is_conservative_d_e = (
-        mode == RegenerateMode.CAUTIOUS
-        and category in (ErrorCategory.D, ErrorCategory.E)
+    is_conservative_d_e = mode == RegenerateMode.CAUTIOUS and category in (
+        ErrorCategory.D,
+        ErrorCategory.E,
     )
 
     if has_antibot:
         # S12: Anti-bot blocked
         lines.append(
-            "  Auto-fix will not regenerate — the page served is not "
-            "real content.",
+            "  Auto-fix will not regenerate — the page served is not real content.",
         )
         lines.append(
             "  A new script would face the same anti-bot system.",
@@ -446,35 +438,29 @@ def _append_raise_explanation(
         )
         lines.append("")
         lines.append(
-            "  Check the URL manually, or try from a different "
-            "network/session.",
+            "  Check the URL manually, or try from a different network/session.",
         )
     elif has_server_err:
         # S12: Server error blocked
         lines.append(
-            "  Auto-fix will not regenerate — the server returned "
-            "errors during diagnosis.",
+            "  Auto-fix will not regenerate — the server returned errors during diagnosis.",
         )
         lines.append(
-            "  The failure may be caused by server issues, "
-            "not a broken script.",
+            "  The failure may be caused by server issues, not a broken script.",
         )
         lines.append("")
         lines.append(
-            "  Try again later, or force regeneration: "
-            "scraper.run(regenerate=True)",
+            "  Try again later, or force regeneration: scraper.run(regenerate=True)",
         )
     elif is_noisy:
         # S12: Stability too noisy
         lines.append(
-            "  The failure pattern is inconsistent — likely an "
-            "environmental issue.",
+            "  The failure pattern is inconsistent — likely an environmental issue.",
         )
         lines.append("  Auto-fix will not regenerate.")
         lines.append("")
         lines.append(
-            "  Try again later, or force regeneration: "
-            "scraper.run(regenerate=True)",
+            "  Try again later, or force regeneration: scraper.run(regenerate=True)",
         )
     elif is_conservative_d_e:
         # S12: Conservative mode declined D/E
@@ -493,8 +479,7 @@ def _append_raise_explanation(
         lines.append(f"  Auto-fix will not regenerate — {reason}")
         lines.append("")
         lines.append(
-            "  Try again later, or force regeneration: "
-            "scraper.run(regenerate=True)",
+            "  Try again later, or force regeneration: scraper.run(regenerate=True)",
         )
 
 
@@ -503,11 +488,7 @@ def _extract_error_summary(attempts: list[AttemptResult]) -> str:
     for attempt in attempts:
         if not attempt.success and attempt.error:
             # Get the last meaningful line (usually the exception line)
-            lines = [
-                line.strip()
-                for line in attempt.error.strip().splitlines()
-                if line.strip()
-            ]
+            lines = [line.strip() for line in attempt.error.strip().splitlines() if line.strip()]
             if lines:
                 last = lines[-1]
                 if len(last) > 120:
@@ -551,19 +532,11 @@ def _page_summary(
         return ""
 
     total = len(page_results)
-    real = sum(
-        1 for r in page_results if r == PageVerificationResult.REAL_PAGE
-    )
-    antibot = sum(
-        1 for r in page_results if r == PageVerificationResult.ANTI_BOT
-    )
-    server_err = sum(
-        1 for r in page_results if r == PageVerificationResult.SERVER_ERROR
-    )
+    real = sum(1 for r in page_results if r == PageVerificationResult.REAL_PAGE)
+    antibot = sum(1 for r in page_results if r == PageVerificationResult.ANTI_BOT)
+    server_err = sum(1 for r in page_results if r == PageVerificationResult.SERVER_ERROR)
 
-    soft_block = sum(
-        1 for r in page_results if r == PageVerificationResult.SOFT_BLOCK
-    )
+    soft_block = sum(1 for r in page_results if r == PageVerificationResult.SOFT_BLOCK)
 
     if antibot > 0:
         return f"Anti-bot detected ({antibot}/{total} attempts)"

@@ -15,8 +15,6 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from ..runtime.environment import BrowserManager
-
 # ═══════════════════════════════════════════════════════════════
 #  Markers for return value extraction from subprocess stdout
 # ═══════════════════════════════════════════════════════════════
@@ -140,6 +138,7 @@ async def _run():
 #  Subprocess wrapper (used by the engine for validation)
 # ═══════════════════════════════════════════════════════════════
 
+
 def generate_subprocess_wrapper(
     agent_code: str,
     url: str,
@@ -176,6 +175,7 @@ def generate_subprocess_wrapper(
     """
     if launch_options is None:
         from ..browser import resolve_launch_options
+
         launch_options = resolve_launch_options(None, headless=False)
 
     # Strip internal sentinels that are not valid Playwright kwargs.
@@ -411,6 +411,7 @@ def _build_call_section_with_signals(*, has_inputs: bool = False) -> str:
 #  Standalone script (for the user to run directly)
 # ═══════════════════════════════════════════════════════════════
 
+
 def generate_standalone_script(
     agent_code: str,
     url: str,
@@ -423,9 +424,10 @@ def generate_standalone_script(
     The user can ``python scraper.py`` with no Scout dependency.
     """
     from ..browser import resolve_launch_options
+
     default_opts = resolve_launch_options(None, headless=False)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    safe_task = task.replace('"""', r'\"\"\"')
+    safe_task = task.replace('"""', r"\"\"\"")
 
     has_inputs = inputs is not None and len(inputs) > 0
     if has_inputs:
@@ -487,6 +489,7 @@ async def _checkpoint(label, data_preview=None):
 #  Return value parsing from subprocess stdout
 # ═══════════════════════════════════════════════════════════════
 
+
 def parse_return_value(raw_stdout: str) -> tuple[str, str | None]:
     """Split subprocess stdout into progress output and return value.
 
@@ -502,9 +505,7 @@ def parse_return_value(raw_stdout: str) -> tuple[str, str | None]:
         return raw_stdout, None
 
     clean_stdout = raw_stdout[:start_idx].rstrip()
-    return_value_json = raw_stdout[
-        start_idx + len(RETURN_VALUE_START) : end_idx
-    ].strip()
+    return_value_json = raw_stdout[start_idx + len(RETURN_VALUE_START) : end_idx].strip()
 
     # Include any output after the end marker (unlikely but safe).
     after = raw_stdout[end_idx + len(RETURN_VALUE_END) :].strip()
@@ -532,9 +533,7 @@ def parse_page_signals(raw_stdout: str) -> dict[str, Any] | None:
     if start_idx == -1 or end_idx == -1 or end_idx <= start_idx:
         return None
 
-    signals_json = raw_stdout[
-        start_idx + len(PAGE_SIGNALS_START) : end_idx
-    ].strip()
+    signals_json = raw_stdout[start_idx + len(PAGE_SIGNALS_START) : end_idx].strip()
 
     if not signals_json:
         return None
@@ -569,8 +568,6 @@ def build_combined_output(
     if return_value_json is not None:
         parts.append(return_value_json)
     else:
-        parts.append(
-            "(no return value — function raised or did not return)"
-        )
+        parts.append("(no return value — function raised or did not return)")
 
     return "\n".join(parts)

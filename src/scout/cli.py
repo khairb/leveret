@@ -27,6 +27,7 @@ from .agent.wrapper import generate_standalone_script
 
 def main() -> None:
     from dotenv import load_dotenv
+
     load_dotenv()
 
     parser = argparse.ArgumentParser(
@@ -149,7 +150,9 @@ def main() -> None:
 
     # Standalone file — complete runnable script with engine wrapper.
     standalone_code = generate_standalone_script(
-        result.final_script, args.url, args.task,
+        result.final_script,
+        args.url,
+        args.task,
     )
     standalone_path.write_text(standalone_code, encoding="utf-8")
     print(f"  Standalone script saved to: {standalone_path}")

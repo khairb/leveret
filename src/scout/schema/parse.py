@@ -91,10 +91,10 @@ def parse_schema(schema: Any) -> Node:
         f"  Got: {type(schema).__name__}"
         + (f" value {schema!r}" if not callable(schema) else "")
         + "\n\n"
-        f"  Quick examples:\n"
-        f"    schema={{'title': str, 'price': float}}  # single object\n"
-        f"    schema=[{{'title': str}}]                 # list of objects\n"
-        f"    schema=Items({{'title': str}}, min_items=10)    # list with constraints"
+        "  Quick examples:\n"
+        "    schema={'title': str, 'price': float}  # single object\n"
+        "    schema=[{'title': str}]                 # list of objects\n"
+        "    schema=Items({'title': str}, min_items=10)    # list with constraints"
     )
 
 
@@ -103,9 +103,7 @@ def _parse_object(schema: dict[str, Any]) -> ObjectNode:
     fields: dict[str, tuple[Node, bool]] = {}
     for key, value in schema.items():
         if not isinstance(key, str):
-            raise ScoutSchemaError(
-                f"Field names must be strings, got {type(key).__name__}"
-            )
+            raise ScoutSchemaError(f"Field names must be strings, got {type(key).__name__}")
         node, optional = _parse_field_value(value, key)
         fields[key] = (node, optional)
     return ObjectNode(fields=fields)
@@ -157,6 +155,7 @@ def _field_to_scalar(field: Field) -> ScalarNode:
 # Constraint validation
 # ---------------------------------------------------------------------------
 
+
 def _validate_field_constraints(field: Field) -> None:
     """Validate that a Field's constraints are compatible with its type.
 
@@ -173,8 +172,7 @@ def _validate_field_constraints(field: Field) -> None:
                 "Use List() for list schemas, or [type] for inline list syntax."
             )
         raise ScoutSchemaError(
-            f"Invalid type {t.__name__!r} for Field. "
-            f"Allowed types: str, int, float, bool."
+            f"Invalid type {t.__name__!r} for Field. Allowed types: str, int, float, bool."
         )
 
     # Type-specific constraint compatibility
@@ -198,18 +196,15 @@ def _validate_field_constraints(field: Field) -> None:
         # int, float, bool
         if field.min_length is not None or field.max_length is not None:
             raise ScoutSchemaError(
-                f"'min_length'/'max_length' are not valid for {t.__name__}. "
-                f"Use 'min'/'max'."
+                f"'min_length'/'max_length' are not valid for {t.__name__}. Use 'min'/'max'."
             )
         if field.pattern is not None:
             raise ScoutSchemaError(
-                f"'pattern' is not valid for {t.__name__!r}. "
-                f"'pattern' can only be used with 'str'."
+                f"'pattern' is not valid for {t.__name__!r}. 'pattern' can only be used with 'str'."
             )
         if field.enum is not None:
             raise ScoutSchemaError(
-                f"'enum' is not valid for {t.__name__!r}. "
-                f"'enum' can only be used with 'str'."
+                f"'enum' is not valid for {t.__name__!r}. 'enum' can only be used with 'str'."
             )
         _validate_numeric_range_constraints(field)
 
@@ -220,23 +215,19 @@ def _validate_enum_constraints(field: Field) -> None:
         return
 
     if not isinstance(field.enum, list):
-        raise ScoutSchemaError(
-            f"'enum' must be a list of strings, got {type(field.enum).__name__}"
-        )
+        raise ScoutSchemaError(f"'enum' must be a list of strings, got {type(field.enum).__name__}")
     if len(field.enum) == 0:
         raise ScoutSchemaError("'enum' must not be empty")
     for i, val in enumerate(field.enum):
         if not isinstance(val, str):
             raise ScoutSchemaError(
-                f"'enum' values must be strings, got {type(val).__name__} "
-                f"at index {i}"
+                f"'enum' values must be strings, got {type(val).__name__} at index {i}"
             )
 
     # enum is redundant with pattern/min_length/max_length
     if field.pattern is not None:
         raise ScoutSchemaError(
-            "'enum' cannot be combined with 'pattern' — "
-            "the allowed values are already known"
+            "'enum' cannot be combined with 'pattern' — the allowed values are already known"
         )
     if field.min_length is not None or field.max_length is not None:
         raise ScoutSchemaError(
@@ -248,34 +239,23 @@ def _validate_enum_constraints(field: Field) -> None:
 def _validate_string_length_constraints(field: Field) -> None:
     """Validate min_length/max_length on a str field."""
     if field.min_length is not None and field.min_length < 0:
-        raise ScoutSchemaError(
-            f"'min_length' must be non-negative, got {field.min_length}"
-        )
+        raise ScoutSchemaError(f"'min_length' must be non-negative, got {field.min_length}")
     if field.max_length is not None and field.max_length < 0:
-        raise ScoutSchemaError(
-            f"'max_length' must be non-negative, got {field.max_length}"
-        )
+        raise ScoutSchemaError(f"'max_length' must be non-negative, got {field.max_length}")
     if (
         field.min_length is not None
         and field.max_length is not None
         and field.min_length > field.max_length
     ):
         raise ScoutSchemaError(
-            f"'min_length' ({field.min_length}) must be <= "
-            f"'max_length' ({field.max_length})"
+            f"'min_length' ({field.min_length}) must be <= 'max_length' ({field.max_length})"
         )
 
 
 def _validate_numeric_range_constraints(field: Field) -> None:
     """Validate min/max on an int or float field."""
-    if (
-        field.min is not None
-        and field.max is not None
-        and field.min > field.max
-    ):
-        raise ScoutSchemaError(
-            f"'min' ({field.min}) must be <= 'max' ({field.max})"
-        )
+    if field.min is not None and field.max is not None and field.min > field.max:
+        raise ScoutSchemaError(f"'min' ({field.min}) must be <= 'max' ({field.max})")
 
 
 def _validate_list_constraints(lst: Items) -> None:
@@ -285,18 +265,10 @@ def _validate_list_constraints(lst: Items) -> None:
         ScoutSchemaError: If constraints are invalid.
     """
     if lst.min_items is not None and lst.min_items < 0:
-        raise ScoutSchemaError(
-            f"'min_items' must be non-negative, got {lst.min_items}"
-        )
+        raise ScoutSchemaError(f"'min_items' must be non-negative, got {lst.min_items}")
     if lst.max_items is not None and lst.max_items < 0:
-        raise ScoutSchemaError(
-            f"'max_items' must be non-negative, got {lst.max_items}"
-        )
-    if (
-        lst.min_items is not None
-        and lst.max_items is not None
-        and lst.min_items > lst.max_items
-    ):
+        raise ScoutSchemaError(f"'max_items' must be non-negative, got {lst.max_items}")
+    if lst.min_items is not None and lst.max_items is not None and lst.min_items > lst.max_items:
         raise ScoutSchemaError(
             f"'min_items' ({lst.min_items}) must be <= 'max_items' ({lst.max_items})"
         )

@@ -37,10 +37,11 @@ import pytest
 from scout import ScoutAutoRegenerateError, ScoutError
 from scout.errors import (
     ScoutAutoRegenerateError as ScoutAutoRegenerateErrorDirect,
+)
+from scout.errors import (
     ScoutScriptError,
 )
 from scout.scraper import ScraperResult
-
 
 # -- ScoutAutoRegenerateError exception hierarchy -----------------------------------
 
@@ -76,9 +77,7 @@ class TestScoutAutoRegenerateErrorHierarchy:
 
     def test_message_preserved(self):
         try:
-            raise ScoutAutoRegenerateError(
-                "Regenerated script failed with the same error pattern."
-            )
+            raise ScoutAutoRegenerateError("Regenerated script failed with the same error pattern.")
         except ScoutAutoRegenerateError as exc:
             assert "same error pattern" in str(exc)
 
@@ -239,7 +238,6 @@ class TestPackageExports:
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 VALID_URL = "https://example.com"
 VALID_TASK = "Extract products"
 VALID_SCHEMA = [{"title": str}]
@@ -263,7 +261,8 @@ class TestSubprocessExecuteAdapter:
     async def test_success_returns_attempt_result(self, tmp_path):
         """Subprocess success → AttemptResult(success=True, data=...)."""
         import json
-        from scout.agent.wrapper import RETURN_VALUE_START, RETURN_VALUE_END
+
+        from scout.agent.wrapper import RETURN_VALUE_END, RETURN_VALUE_START
 
         script = tmp_path / "scraper.py"
         script.write_text(
@@ -308,7 +307,8 @@ class TestSubprocessExecuteAdapter:
     async def test_failure_returns_error_and_signals(self, tmp_path):
         """Subprocess failure → AttemptResult with error, page_signals."""
         import json
-        from scout.agent.wrapper import PAGE_SIGNALS_START, PAGE_SIGNALS_END
+
+        from scout.agent.wrapper import PAGE_SIGNALS_END, PAGE_SIGNALS_START
 
         script = tmp_path / "scraper.py"
         script.write_text(
@@ -333,9 +333,7 @@ class TestSubprocessExecuteAdapter:
             "cookies": [{"name": "sid", "value": "x"}],
         }
         signals_json = json.dumps(signals)
-        mock_stdout = (
-            f"{PAGE_SIGNALS_START}\n{signals_json}\n{PAGE_SIGNALS_END}\n"
-        )
+        mock_stdout = f"{PAGE_SIGNALS_START}\n{signals_json}\n{PAGE_SIGNALS_END}\n"
         mock_stderr = b"AttributeError: 'NoneType' has no attribute 'text'\n"
 
         with patch(
@@ -343,9 +341,7 @@ class TestSubprocessExecuteAdapter:
             new_callable=AsyncMock,
         ) as mock_proc:
             proc = AsyncMock()
-            proc.communicate = AsyncMock(
-                return_value=(mock_stdout.encode(), mock_stderr)
-            )
+            proc.communicate = AsyncMock(return_value=(mock_stdout.encode(), mock_stderr))
             proc.returncode = 1
             mock_proc.return_value = proc
 
@@ -383,9 +379,7 @@ class TestSubprocessExecuteAdapter:
             new_callable=AsyncMock,
         ) as mock_proc:
             proc = AsyncMock()
-            proc.communicate = AsyncMock(
-                side_effect=asyncio.TimeoutError()
-            )
+            proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
             proc.kill = AsyncMock()
             # After kill, communicate returns empty
             proc.communicate.side_effect = [
@@ -405,7 +399,8 @@ class TestSubprocessExecuteAdapter:
     async def test_schema_failure_returns_category_g(self, tmp_path):
         """Success with schema validation failure → Category G AttemptResult."""
         import json
-        from scout.agent.wrapper import RETURN_VALUE_START, RETURN_VALUE_END
+
+        from scout.agent.wrapper import RETURN_VALUE_END, RETURN_VALUE_START
 
         script = tmp_path / "scraper.py"
         script.write_text(
@@ -432,9 +427,7 @@ class TestSubprocessExecuteAdapter:
             new_callable=AsyncMock,
         ) as mock_proc:
             proc = AsyncMock()
-            proc.communicate = AsyncMock(
-                return_value=(mock_stdout.encode(), b"")
-            )
+            proc.communicate = AsyncMock(return_value=(mock_stdout.encode(), b""))
             proc.returncode = 0
             mock_proc.return_value = proc
 
@@ -458,9 +451,11 @@ class TestCollectInProcessSignals:
         page.content = AsyncMock(return_value="<html>content</html>")
 
         context = MagicMock()
-        context.cookies = AsyncMock(return_value=[
-            {"name": "sid", "value": "abc", "domain": "example.com"},
-        ])
+        context.cookies = AsyncMock(
+            return_value=[
+                {"name": "sid", "value": "abc", "domain": "example.com"},
+            ]
+        )
         page.context = context
 
         resp = MagicMock()
@@ -468,7 +463,8 @@ class TestCollectInProcessSignals:
         resp.headers = {"content-type": "text/html", "server": "nginx"}
 
         signals = await Scraper._collect_in_process_signals(
-            page, [resp],
+            page,
+            [resp],
         )
 
         assert signals.page_url == "https://example.com/page"
@@ -642,7 +638,8 @@ class TestRunCachedWithAutofix:
         s = self._make_scraper_with_autofix(tmp_path)
 
         mock_result = AttemptResult(
-            success=True, data=[{"title": "Found"}],
+            success=True,
+            data=[{"title": "Found"}],
         )
 
         with patch("scout.autofix.diagnose", return_value=mock_result) as mock_diag:
@@ -942,7 +939,7 @@ class TestRegenerationFlow:
         mock_result = AttemptResult(success=True, data=[{"title": "Ok"}])
 
         with (
-            patch("scout.autofix.diagnose", return_value=mock_result) as mock_diag,
+            patch("scout.autofix.diagnose", return_value=mock_result),
             patch.object(s, "_make_subprocess_execute_fn", return_value=lambda: None) as mock_sub,
             patch.object(s, "_make_in_process_execute_fn") as mock_ip,
         ):
@@ -962,7 +959,7 @@ class TestRegenerationFlow:
         mock_result = AttemptResult(success=True, data=[{"title": "Ok"}])
 
         with (
-            patch("scout.autofix.diagnose", return_value=mock_result) as mock_diag,
+            patch("scout.autofix.diagnose", return_value=mock_result),
             patch.object(s, "_make_subprocess_execute_fn") as mock_sub,
             patch.object(s, "_make_in_process_execute_fn", return_value=lambda: None) as mock_ip,
         ):
@@ -998,7 +995,9 @@ class TestRunCachedAutoFixBranch:
         )
 
         with patch.object(
-            s, "_run_cached_with_autofix", return_value=mock_result,
+            s,
+            "_run_cached_with_autofix",
+            return_value=mock_result,
         ) as mock_af:
             result = await s._run_cached(VALID_URL, s._auto_regenerate_mode)
 
@@ -1017,11 +1016,13 @@ class TestRunCachedAutoFixBranch:
         s = _make_scraper(script=str(script), auto_regenerate=False)
 
         with patch.object(
-            s, "_run_cached_with_autofix",
+            s,
+            "_run_cached_with_autofix",
         ) as mock_af:
             with patch.object(
-                s, "_execute_function",
-                return_value=("", '[]', "", 0),
+                s,
+                "_execute_function",
+                return_value=("", "[]", "", 0),
             ):
                 # Will fail schema validation but that's fine —
                 # we just need to verify _run_cached_with_autofix was NOT called

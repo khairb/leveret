@@ -6,20 +6,16 @@ receives these messages should understand exactly what went wrong and
 how to fix it.
 """
 
-import math
-
-import pytest
-
 from scout.schema.compiler import compile_schema
 from scout.schema.formatter import format_errors
 from scout.schema.parse import parse_schema
 from scout.schema.types import Field, Items, List
 from scout.schema.validate import RawError, _check_type, validate
 
-
 # ---------------------------------------------------------------------------
 # Type coercion — the boundary between "right type" and "wrong type"
 # ---------------------------------------------------------------------------
+
 
 class TestTypeCoercion:
     """Type checking with lenient coercion rules."""
@@ -92,6 +88,7 @@ class TestTypeCoercion:
 # Tier 1: Top-level type check
 # ---------------------------------------------------------------------------
 
+
 class TestTier1:
     """Wrong top-level type → single error, immediate short-circuit."""
 
@@ -125,6 +122,7 @@ class TestTier1:
 # ---------------------------------------------------------------------------
 # Tier 2: Container constraints
 # ---------------------------------------------------------------------------
+
 
 class TestTier2:
     """List count constraints with correct short-circuiting."""
@@ -161,6 +159,7 @@ class TestTier2:
 # ---------------------------------------------------------------------------
 # Tier 3: Object field checks
 # ---------------------------------------------------------------------------
+
 
 class TestTier3:
     """Object field presence, null handling, extra fields."""
@@ -213,6 +212,7 @@ class TestTier3:
 # ---------------------------------------------------------------------------
 # Tier 4: Value constraints
 # ---------------------------------------------------------------------------
+
 
 class TestTier4:
     """Field-level constraint validation."""
@@ -304,6 +304,7 @@ class TestTier4:
 # Deep nesting
 # ---------------------------------------------------------------------------
 
+
 class TestDeepNesting:
     """Errors in deeply nested structures have correct paths."""
 
@@ -321,6 +322,7 @@ class TestDeepNesting:
 # ---------------------------------------------------------------------------
 # Error formatter — agent-facing quality
 # ---------------------------------------------------------------------------
+
 
 class TestErrorFormatterGrouping:
     """Errors are grouped, sorted, and capped correctly."""
@@ -408,12 +410,17 @@ class TestEndToEndValidation:
 
     def test_complex_realistic_scenario(self):
         """Simulate a realistic agent output with multiple error types."""
-        cs = compile_schema(List({
-            "title": Field(str, min_length=1),
-            "price": Field(float, min=0),
-            "rating": Field(int, min=1, max=5, optional=True),
-            "url": str,
-        }, min_items=20))
+        cs = compile_schema(
+            List(
+                {
+                    "title": Field(str, min_length=1),
+                    "price": Field(float, min=0),
+                    "rating": Field(int, min=1, max=5, optional=True),
+                    "url": str,
+                },
+                min_items=20,
+            )
+        )
 
         # Agent got 8 items (not enough), some have type errors
         data = [
@@ -449,6 +456,7 @@ class TestEndToEndValidation:
 # ---------------------------------------------------------------------------
 # Empty root list rejection
 # ---------------------------------------------------------------------------
+
 
 class TestEmptyRootList:
     """Empty root lists are rejected by default (allow_empty=False)."""

@@ -5,7 +5,6 @@
 
 # Python
 __pycache__/
-_model_db_cache.json
 *.pyc
 *.pyo
 *.egg-info/
@@ -29,6 +28,11 @@ Thumbs.db
 
 # Scout runtime outputs
 traces/
+scrapers/
 test_outputs/
+*.log
 
+# Development artifacts
+temp/
+benchmark/
 my-notes*

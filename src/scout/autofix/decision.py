@@ -22,14 +22,13 @@ Spec reference: docs/specific/AUTO_FIX_ALGORITHM.md §9
 from __future__ import annotations
 
 from scout.autofix.types import (
+    TIER_3_CATEGORIES,
     AutoFixAction,
-    RegenerateMode,
     ErrorCategory,
     PageVerificationResult,
+    RegenerateMode,
     StabilityLevel,
-    TIER_3_CATEGORIES,
 )
-
 
 # ── Public API ───────────────────────────────────────────────
 
@@ -66,8 +65,7 @@ def decide(
     if category == ErrorCategory.A:
         return (
             AutoFixAction.REGENERATE,
-            "Parse error (Category A) — code is structurally broken, "
-            "regenerating immediately",
+            "Parse error (Category A) — code is structurally broken, regenerating immediately",
         )
 
     # §9: Tier 3 — never regenerate (C, F1, F2, F3)
@@ -88,8 +86,7 @@ def decide(
     if stability in (StabilityLevel.MIXED, StabilityLevel.CHAOTIC):
         return (
             AutoFixAction.RAISE,
-            f"Failure pattern is {stability.value} — evidence too noisy "
-            f"to justify regeneration",
+            f"Failure pattern is {stability.value} — evidence too noisy to justify regeneration",
         )
 
     # ── 3. Universal page checks ──
@@ -112,8 +109,7 @@ def decide(
     if stability not in (StabilityLevel.STABLE, StabilityLevel.CONSISTENT):
         return (
             AutoFixAction.RAISE,
-            f"Unexpected stability {stability!r} after gate — "
-            f"defaulting to raise",
+            f"Unexpected stability {stability!r} after gate — defaulting to raise",
         )
 
     if category in (ErrorCategory.B, ErrorCategory.G):
@@ -281,8 +277,7 @@ def _raise_tier3(
             "same browser environment and will likely crash too"
         ),
         ErrorCategory.F2: (
-            "Subprocess timeout (Category F2) — diagnostic cost prohibitive, "
-            "not retrying"
+            "Subprocess timeout (Category F2) — diagnostic cost prohibitive, not retrying"
         ),
         ErrorCategory.F3: (
             "Infrastructure failure (Category F3) — no script can execute "
@@ -315,19 +310,14 @@ def _check_universal_page_rules(
 
     total = len(page_results)
     real_count = _count_real(page_results)
-    has_antibot = any(
-        r == PageVerificationResult.ANTI_BOT for r in page_results
-    )
+    has_antibot = any(r == PageVerificationResult.ANTI_BOT for r in page_results)
 
     # §9: ANTI_BOT blocks all modes, even eager
     if has_antibot:
-        antibot_count = sum(
-            1 for r in page_results if r == PageVerificationResult.ANTI_BOT
-        )
+        antibot_count = sum(1 for r in page_results if r == PageVerificationResult.ANTI_BOT)
         return (
             AutoFixAction.RAISE,
-            f"Anti-bot detected in {antibot_count}/{total} attempts "
-            f"— regeneration blocked",
+            f"Anti-bot detected in {antibot_count}/{total} attempts — regeneration blocked",
         )
 
     # §9: <=1/3 REAL_PAGE blocks all modes
@@ -365,6 +355,4 @@ def _describe_taint(
 
 def _count_real(page_results: list[PageVerificationResult]) -> int:
     """Count REAL_PAGE results."""
-    return sum(
-        1 for r in page_results if r == PageVerificationResult.REAL_PAGE
-    )
+    return sum(1 for r in page_results if r == PageVerificationResult.REAL_PAGE)

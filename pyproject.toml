@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "scout"
 version = "0.1.0"
@@ -5,6 +9,7 @@ description = "AI agent that writes web scraping scripts — generate once, run 
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
+authors = [{name = "Mohammad Khair Barghouth"}]
 keywords = ["scraping", "web-scraping", "ai", "browser", "playwright", "automation"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -16,6 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Internet :: WWW/HTTP",
     "Topic :: Software Development :: Libraries",
+    "Typing :: Typed",
 ]
 dependencies = [
     "beautifulsoup4>=4.14.3",
@@ -27,8 +33,12 @@ dependencies = [
     "RestrictedPython>=7.0",
 ]
 
+[project.urls]
+Repository = "https://github.com/mkhairbarghouth/scout"
+Issues = "https://github.com/mkhairbarghouth/scout/issues"
+Changelog = "https://github.com/mkhairbarghouth/scout/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
-slim = []  # Anthropic only (included in base)
 mistral = ["pydantic-ai-slim[mistral]>=1.84.0"]
 cohere = ["pydantic-ai-slim[cohere]>=1.84.0"]
 bedrock = ["pydantic-ai-slim[bedrock]>=1.84.0"]
@@ -39,13 +49,28 @@ all = [
 ]
 
 [tool.setuptools.package-data]
-scout = ["agent/*.md", "agent/*.json"]
+scout = ["agent/*.md", "agent/*.json", "py.typed"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501", "E721", "E741", "UP007"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["E402", "F841", "B007", "B017"]
+"examples/**/*.py" = ["E402"]
+"src/scout/__init__.py" = ["E402"]
+"src/scout/schema/types.py" = ["E402"]
 
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
     "pytest-asyncio>=0.23",
+    "ruff>=0.15.13",
 ]

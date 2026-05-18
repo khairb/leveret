@@ -12,17 +12,12 @@ import math
 from scout.agent.show_page_context import (
     INDIRECT_MAX_ABSOLUTE,
     INDIRECT_MAX_RATIO,
-    INDIRECT_NEIGHBOR_RADIUS,
-    MIN_ID_TOKEN_LENGTH,
-    SKELETON_PREVIEW_CHARS,
-    IndirectMatchResult,
-    SectionMeta,
     _build_section_preview,
     _compute_token_idf,
     _interactive_label,
+    _tokenize_section_id,
     _truncate_at_word,
     _truncate_at_word_reverse,
-    _tokenize_section_id,
     build_section_meta,
     get_indirect_references,
     parse_section_meta,
@@ -30,10 +25,10 @@ from scout.agent.show_page_context import (
 )
 from scout.page.converter import RenderedInteractiveElement
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_element(
     tag: str = "a",
@@ -66,7 +61,6 @@ def _make_sections_4tuple(
 
 
 class TestTokenizeSectionId:
-
     def test_basic_split(self):
         assert _tokenize_section_id("sidebar-about") == ["sidebar", "about"]
 
@@ -97,18 +91,14 @@ class TestTokenizeSectionId:
         assert result == ["item"]
 
     def test_real_github_id(self):
-        result = _tokenize_section_id(
-            "summary-spoken-language-any-language"
-        )
+        result = _tokenize_section_id("summary-spoken-language-any-language")
         assert "spoken" in result
         assert "language" in result
         # "language" appears twice — dedup keeps only first occurrence.
         assert result.count("language") == 1
 
     def test_real_yc_id(self):
-        result = _tokenize_section_id(
-            "div-batch-industry-hq-region-company-size"
-        )
+        result = _tokenize_section_id("div-batch-industry-hq-region-company-size")
         # "div" and "hq" are < 4 chars → filtered
         assert "batch" in result
         assert "industry" in result
@@ -125,13 +115,9 @@ class TestTokenizeSectionId:
 
 
 class TestComputeTokenIdf:
-
     def test_unique_token_high_idf(self):
         """A token in only 1 of 10 sections gets high idf."""
-        sections = [
-            (f"section-{i}", f"content {i}", "content", 0)
-            for i in range(10)
-        ]
+        sections = [(f"section-{i}", f"content {i}", "content", 0) for i in range(10)]
         sections[0] = ("unique-section-identifier", "content 0", "content", 0)
         idf = _compute_token_idf(sections)
         # "unique" only in section 0 → idf = log(1 + 10/1) = log(11)
@@ -139,20 +125,14 @@ class TestComputeTokenIdf:
 
     def test_ubiquitous_token_low_idf(self):
         """A token in ALL sections gets low (but non-zero) idf."""
-        sections = [
-            (f"content-item-{i}", "some text", "content", 0)
-            for i in range(10)
-        ]
+        sections = [(f"content-item-{i}", "some text", "content", 0) for i in range(10)]
         idf = _compute_token_idf(sections)
         # "content" in all 10 → idf = log(1 + 10/10) = log(2) ≈ 0.69
         assert abs(idf.get("content", 999) - math.log(2)) < 0.01
 
     def test_unique_vs_ubiquitous_ratio(self):
         """Unique token should have much higher IDF than ubiquitous one."""
-        sections = [
-            (f"content-item-{i}", "some text", "content", 0)
-            for i in range(10)
-        ]
+        sections = [(f"content-item-{i}", "some text", "content", 0) for i in range(10)]
         sections[0] = ("unique-section-identifier", "content 0", "content", 0)
         idf = _compute_token_idf(sections)
         assert idf.get("unique", 0) > idf.get("content", 0) * 2
@@ -188,46 +168,57 @@ class TestComputeTokenIdf:
 
 
 class TestScoreSectionIndirect:
-
     def _make_idf(self, sections):
         return _compute_token_idf(sections)
 
     def test_full_id_match(self):
-        sections = _make_sections_4tuple([
-            ("sidebar-about", "About section content"),
-            ("readme-article", "README content here"),
-        ])
+        sections = _make_sections_4tuple(
+            [
+                ("sidebar-about", "About section content"),
+                ("readme-article", "README content here"),
+            ]
+        )
         idf = self._make_idf(sections)
         score, matched, source = score_section_indirect(
-            "sidebar-about", "About section content",
-            "i need the sidebar and the about section", idf,
+            "sidebar-about",
+            "About section content",
+            "i need the sidebar and the about section",
+            idf,
         )
         assert score > 0.8
         assert "sidebar" in matched
         assert "about" in matched
 
     def test_no_match(self):
-        sections = _make_sections_4tuple([
-            ("sidebar-about", "About content"),
-            ("readme-article", "README text"),
-        ])
+        sections = _make_sections_4tuple(
+            [
+                ("sidebar-about", "About content"),
+                ("readme-article", "README text"),
+            ]
+        )
         idf = self._make_idf(sections)
         score, matched, source = score_section_indirect(
-            "sidebar-about", "About content",
-            "the footer has navigation links", idf,
+            "sidebar-about",
+            "About content",
+            "the footer has navigation links",
+            idf,
         )
         assert score == 0.0
         assert matched == []
 
     def test_partial_match_weighted(self):
         """Matching 1 of 2 tokens should give a score between 0 and 1."""
-        sections = _make_sections_4tuple([
-            ("sidebar-about", "About this project"),
-        ])
+        sections = _make_sections_4tuple(
+            [
+                ("sidebar-about", "About this project"),
+            ]
+        )
         idf = self._make_idf(sections)
         score, matched, source = score_section_indirect(
-            "sidebar-about", "About this project",
-            "the sidebar contains links", idf,
+            "sidebar-about",
+            "About this project",
+            "the sidebar contains links",
+            idf,
         )
         assert 0 < score < 1.0
         assert "sidebar" in matched
@@ -235,35 +226,45 @@ class TestScoreSectionIndirect:
 
     def test_high_idf_token_beats_low_idf(self):
         """A unique token matching should give more score than a common one."""
-        sections = _make_sections_4tuple([
-            ("content-wrapper-main", "Main page content"),
-            ("content-wrapper-aside", "Side content"),
-            ("content-wrapper-footer", "Footer content"),
-            ("unique-trending-page", "Trending repos"),
-        ])
+        sections = _make_sections_4tuple(
+            [
+                ("content-wrapper-main", "Main page content"),
+                ("content-wrapper-aside", "Side content"),
+                ("content-wrapper-footer", "Footer content"),
+                ("unique-trending-page", "Trending repos"),
+            ]
+        )
         idf = self._make_idf(sections)
         # "content" is in 3/4 sections (low idf), "trending" is in 1/4 (high idf)
         score_common, _, _ = score_section_indirect(
-            "content-wrapper-main", "Main page content",
-            "the content area", idf,
+            "content-wrapper-main",
+            "Main page content",
+            "the content area",
+            idf,
         )
         score_unique, _, _ = score_section_indirect(
-            "unique-trending-page", "Trending repos",
-            "the trending page", idf,
+            "unique-trending-page",
+            "Trending repos",
+            "the trending page",
+            idf,
         )
         assert score_unique > score_common
 
     def test_content_fallback(self):
         """When ID tokens don't match, content keywords should be tried."""
         # Multiple sections so IDF varies. "div-xyz-123" has no valid ID tokens.
-        sections = _make_sections_4tuple([
-            ("div-xyz-123", "Django framework tutorial guide"),
-            ("section-other", "Unrelated content about cats"),
-        ])
+        sections = _make_sections_4tuple(
+            [
+                ("div-xyz-123", "Django framework tutorial guide"),
+                ("section-other", "Unrelated content about cats"),
+            ]
+        )
         idf = self._make_idf(sections)
         score, matched, source = score_section_indirect(
-            "div-xyz-123", "Django framework tutorial guide",
-            "looking at the django framework tutorial", idf,
+            "div-xyz-123",
+            "Django framework tutorial guide",
+            "looking at the django framework tutorial",
+            idf,
         )
         assert score > 0
         assert source == "content"
@@ -271,13 +272,17 @@ class TestScoreSectionIndirect:
 
     def test_word_boundary(self):
         """'sidebar' should not match 'sidebars' in reasoning."""
-        sections = _make_sections_4tuple([
-            ("sidebar-about", "About section"),
-        ])
+        sections = _make_sections_4tuple(
+            [
+                ("sidebar-about", "About section"),
+            ]
+        )
         idf = self._make_idf(sections)
         score, matched, _ = score_section_indirect(
-            "sidebar-about", "About section",
-            "the sidebars are too wide", idf,
+            "sidebar-about",
+            "About section",
+            "the sidebars are too wide",
+            idf,
         )
         # "sidebar" should NOT match "sidebars"
         assert "sidebar" not in matched
@@ -289,24 +294,33 @@ class TestScoreSectionIndirect:
         sections.append(("unique-special-data", "text", "content", 0))
         idf = _compute_token_idf(sections)
         score_common, _, _ = score_section_indirect(
-            "content-item-0", "text", "the content is here", idf,
+            "content-item-0",
+            "text",
+            "the content is here",
+            idf,
         )
         score_unique, _, _ = score_section_indirect(
-            "unique-special-data", "text", "unique special data", idf,
+            "unique-special-data",
+            "text",
+            "unique special data",
+            idf,
         )
         # Unique section should score higher (unique tokens have higher IDF)
         assert score_unique > score_common
 
     def test_real_github_example(self):
         """AI reasoning says 'the About sidebar', section is 'sidebar-about'."""
-        sections = _make_sections_4tuple([
-            ("sidebar-about", "About: A research assistant"),
-            ("readme-article", "# README content"),
-            ("nav-header", "Home Navigation"),
-        ])
+        sections = _make_sections_4tuple(
+            [
+                ("sidebar-about", "About: A research assistant"),
+                ("readme-article", "# README content"),
+                ("nav-header", "Home Navigation"),
+            ]
+        )
         idf = self._make_idf(sections)
         score, matched, _ = score_section_indirect(
-            "sidebar-about", "About: A research assistant",
+            "sidebar-about",
+            "About: A research assistant",
             "I need to find the description in the about sidebar",
             idf,
         )
@@ -315,14 +329,17 @@ class TestScoreSectionIndirect:
 
     def test_real_yc_example(self):
         """AI reasoning says 'batch filter', section has 'batch' in ID."""
-        sections = _make_sections_4tuple([
-            ("div-batch-industry-hq-region-company-size", "Filter panel"),
-            ("div-search", "Search box"),
-            ("div-loading-more", "Loading more..."),
-        ])
+        sections = _make_sections_4tuple(
+            [
+                ("div-batch-industry-hq-region-company-size", "Filter panel"),
+                ("div-search", "Search box"),
+                ("div-loading-more", "Loading more..."),
+            ]
+        )
         idf = self._make_idf(sections)
         score, matched, source = score_section_indirect(
-            "div-batch-industry-hq-region-company-size", "Filter panel",
+            "div-batch-industry-hq-region-company-size",
+            "Filter panel",
             "I need to use the batch filter to find companies by industry",
             idf,
         )
@@ -337,23 +354,16 @@ class TestScoreSectionIndirect:
 
 
 class TestGetIndirectReferences:
-
     def test_budget_cap_large_page(self):
         """91 sections → budget = min(18, 15) = 15."""
-        sections = [
-            (f"section-unique{i}-item", f"content {i}", "content", 0)
-            for i in range(91)
-        ]
+        sections = [(f"section-unique{i}-item", f"content {i}", "content", 0) for i in range(91)]
         reasoning = " ".join(f"unique{i}" for i in range(91))
         refs, matches = get_indirect_references(reasoning, sections, set())
         assert len(refs) <= INDIRECT_MAX_ABSOLUTE
 
     def test_budget_cap_small_page(self):
         """10 sections → budget = min(2, 15) = 2."""
-        sections = [
-            (f"section-unique{i}", f"content {i}", "content", 0)
-            for i in range(10)
-        ]
+        sections = [(f"section-unique{i}", f"content {i}", "content", 0) for i in range(10)]
         reasoning = " ".join(f"unique{i}" for i in range(10))
         refs, matches = get_indirect_references(reasoning, sections, set())
         budget = min(int(10 * INDIRECT_MAX_RATIO), INDIRECT_MAX_ABSOLUTE)
@@ -361,10 +371,12 @@ class TestGetIndirectReferences:
 
     def test_already_referenced_excluded(self):
         """Sections in already_referenced are not scored."""
-        sections = _make_sections_4tuple([
-            ("sidebar-about", "About content"),
-            ("readme-article", "README content"),
-        ])
+        sections = _make_sections_4tuple(
+            [
+                ("sidebar-about", "About content"),
+                ("readme-article", "README content"),
+            ]
+        )
         refs, _ = get_indirect_references(
             "sidebar about readme article",
             sections,
@@ -374,9 +386,11 @@ class TestGetIndirectReferences:
 
     def test_zero_score_filtered(self):
         """Sections with no token overlap are not returned."""
-        sections = _make_sections_4tuple([
-            ("sidebar-about", "About content"),
-        ])
+        sections = _make_sections_4tuple(
+            [
+                ("sidebar-about", "About content"),
+            ]
+        )
         refs, _ = get_indirect_references(
             "completely unrelated text xyz",
             sections,
@@ -386,11 +400,13 @@ class TestGetIndirectReferences:
 
     def test_ranking_order(self):
         """Higher-scoring sections take priority."""
-        sections = _make_sections_4tuple([
-            ("sidebar-about", "About section"),
-            ("unique-trending-page", "Trending repositories"),
-            ("generic-item-content", "Some content"),
-        ])
+        sections = _make_sections_4tuple(
+            [
+                ("sidebar-about", "About section"),
+                ("unique-trending-page", "Trending repositories"),
+                ("generic-item-content", "Some content"),
+            ]
+        )
         refs, matches = get_indirect_references(
             "I need the trending page and the about sidebar",
             sections,
@@ -400,18 +416,22 @@ class TestGetIndirectReferences:
             assert matches[0].score >= matches[1].score
 
     def test_empty_reasoning(self):
-        sections = _make_sections_4tuple([
-            ("sidebar-about", "About content"),
-        ])
+        sections = _make_sections_4tuple(
+            [
+                ("sidebar-about", "About content"),
+            ]
+        )
         refs, _ = get_indirect_references("", sections, set())
         assert refs == set()
 
     def test_all_sections_referenced(self):
         """When all sections are already referenced, nothing left to score."""
-        sections = _make_sections_4tuple([
-            ("sidebar-about", "About content"),
-            ("readme-article", "README"),
-        ])
+        sections = _make_sections_4tuple(
+            [
+                ("sidebar-about", "About content"),
+                ("readme-article", "README"),
+            ]
+        )
         refs, _ = get_indirect_references(
             "sidebar about readme article",
             sections,
@@ -426,7 +446,6 @@ class TestGetIndirectReferences:
 
 
 class TestTruncateHelpers:
-
     def test_truncate_at_word_short(self):
         assert _truncate_at_word("hello", 10) == "hello"
 
@@ -449,20 +468,21 @@ class TestTruncateHelpers:
 
 
 class TestInteractiveLabel:
-
     def test_visible_text_priority(self):
         el = _make_element(tag="button", element_text="Star")
         assert _interactive_label(el) == 'button "Star"'
 
     def test_aria_label_fallback(self):
         el = _make_element(
-            tag="a", attributes={"aria-label": "Issues 45"},
+            tag="a",
+            attributes={"aria-label": "Issues 45"},
         )
         assert _interactive_label(el) == 'a "Issues 45"'
 
     def test_href_fallback(self):
         el = _make_element(
-            tag="a", attributes={"href": "/repo/issues"},
+            tag="a",
+            attributes={"href": "/repo/issues"},
         )
         assert _interactive_label(el) == 'a "/repo/issues"'
 
@@ -483,7 +503,6 @@ class TestInteractiveLabel:
 
 
 class TestBuildSectionPreview:
-
     def test_short_content_no_truncation(self):
         preview = _build_section_preview("Hello world")
         assert "Hello world" in preview
@@ -528,7 +547,6 @@ class TestBuildSectionPreview:
 
 
 class TestSectionMeta:
-
     def test_round_trip(self):
         sections = [
             ("sidebar-about", "About: A research assistant for deep research", "content", 3),
@@ -695,22 +713,23 @@ class TestRealTraceGitHub:
     """Validate indirect reference detection against real GitHub trace data."""
 
     def _sections(self):
-        return [
-            (sid, f"Content for {sid}", "content", 2)
-            for sid in _GITHUB_SECTION_IDS
-        ]
+        return [(sid, f"Content for {sid}", "content", 2) for sid in _GITHUB_SECTION_IDS]
 
     def test_trending_matched(self):
         """'trending' in reasoning should match 'div-trending'."""
         refs, _ = get_indirect_references(
-            _GITHUB_REASONING, self._sections(), set(),
+            _GITHUB_REASONING,
+            self._sections(),
+            set(),
         )
         assert "div-trending" in refs
 
     def test_multiple_sections_matched(self):
         """Multiple sections should score > 0, top ones within budget."""
         _, matches = get_indirect_references(
-            _GITHUB_REASONING, self._sections(), set(),
+            _GITHUB_REASONING,
+            self._sections(),
+            set(),
         )
         # At least one section matched
         assert len(matches) >= 1
@@ -719,7 +738,9 @@ class TestRealTraceGitHub:
 
     def test_budget_respected(self):
         refs, _ = get_indirect_references(
-            _GITHUB_REASONING, self._sections(), set(),
+            _GITHUB_REASONING,
+            self._sections(),
+            set(),
         )
         budget = min(
             int(len(_GITHUB_SECTION_IDS) * INDIRECT_MAX_RATIO),
@@ -732,29 +753,32 @@ class TestRealTraceYCombinator:
     """Validate indirect reference detection against real YC trace data."""
 
     def _sections(self):
-        return [
-            (sid, f"Content for {sid}", "content", 2)
-            for sid in _YC_SECTION_IDS
-        ]
+        return [(sid, f"Content for {sid}", "content", 2) for sid in _YC_SECTION_IDS]
 
     def test_batch_filter_matched(self):
         """Reasoning mentions 'batch filter' — should match the filter section."""
         refs, _ = get_indirect_references(
-            _YC_REASONING, self._sections(), set(),
+            _YC_REASONING,
+            self._sections(),
+            set(),
         )
         assert "div-batch-industry-hq-region-company-size" in refs
 
     def test_search_matched(self):
         """Reasoning mentions 'search' — should match div-search."""
         refs, _ = get_indirect_references(
-            _YC_REASONING, self._sections(), set(),
+            _YC_REASONING,
+            self._sections(),
+            set(),
         )
         assert "div-search" in refs
 
     def test_common_tokens_dont_flood(self):
         """'item' appears in 40+ section IDs — shouldn't cause all to match."""
         refs, _ = get_indirect_references(
-            _YC_REASONING, self._sections(), set(),
+            _YC_REASONING,
+            self._sections(),
+            set(),
         )
         budget = min(
             int(len(_YC_SECTION_IDS) * INDIRECT_MAX_RATIO),
@@ -765,7 +789,9 @@ class TestRealTraceYCombinator:
     def test_loading_more_matched(self):
         """Reasoning mentions 'loading more' — should match."""
         refs, _ = get_indirect_references(
-            _YC_REASONING, self._sections(), set(),
+            _YC_REASONING,
+            self._sections(),
+            set(),
         )
         assert "div-loading-more" in refs
 
@@ -774,15 +800,14 @@ class TestRealTraceBooks:
     """Validate indirect reference detection against real Books.toscrape data."""
 
     def _sections(self):
-        return [
-            (sid, f"Content for {sid}", "content", 2)
-            for sid in _BOOKS_SECTION_IDS
-        ]
+        return [(sid, f"Content for {sid}", "content", 2) for sid in _BOOKS_SECTION_IDS]
 
     def test_best_section_matched(self):
         """With 4 sections (budget=1), the most relevant section should win."""
         refs, matches = get_indirect_references(
-            _BOOKS_REASONING, self._sections(), set(),
+            _BOOKS_REASONING,
+            self._sections(),
+            set(),
         )
         assert len(refs) >= 1
         # The aside section has many matching tokens (travel, mystery,
@@ -798,9 +823,12 @@ class TestRealTraceBooks:
         idf = _compute_token_idf(sections)
         reasoning_lower = _BOOKS_REASONING.lower()
         scores = {}
-        for sid, content, role, ic in sections:
+        for sid, content, _role, _ic in sections:
             score, _, _ = score_section_indirect(
-                sid, content, reasoning_lower, idf,
+                sid,
+                content,
+                reasoning_lower,
+                idf,
             )
             scores[sid] = score
         # At least 3 of 4 sections should have some overlap
@@ -815,17 +843,16 @@ class TestIdfPreventsCommonTokenFlooding:
         """20 sections with 'div-content-...' + 5 unique. Reasoning mentions
         'content'. The 20 generic ones should NOT all get matched — budget
         cap + IDF weighting should prefer the unique sections."""
-        sections = [
-            (f"div-content-item-{i}", f"Generic text {i}", "content", 0)
-            for i in range(20)
-        ]
-        sections.extend([
-            ("unique-sidebar-about", "About this project", "content", 0),
-            ("unique-trending-page", "Trending repositories", "content", 0),
-            ("unique-readme-article", "README documentation", "content", 0),
-            ("unique-footer-links", "Footer navigation", "content", 0),
-            ("unique-search-panel", "Search functionality", "content", 0),
-        ])
+        sections = [(f"div-content-item-{i}", f"Generic text {i}", "content", 0) for i in range(20)]
+        sections.extend(
+            [
+                ("unique-sidebar-about", "About this project", "content", 0),
+                ("unique-trending-page", "Trending repositories", "content", 0),
+                ("unique-readme-article", "README documentation", "content", 0),
+                ("unique-footer-links", "Footer navigation", "content", 0),
+                ("unique-search-panel", "Search functionality", "content", 0),
+            ]
+        )
         # Reasoning mentions unique section keywords AND "content"
         reasoning = (
             "I see the sidebar about section, the trending page with "
@@ -843,14 +870,11 @@ class TestIdfPreventsCommonTokenFlooding:
 #  build_filtered_output with indirect_refs
 # ═══════════════════════════════════════════════════════════════
 
-from scout.agent.show_page_context import build_filtered_output, NEIGHBOR_RADIUS
+from scout.agent.show_page_context import build_filtered_output
 
 
 def _make_sections_list(n: int) -> list[tuple[str, str, str, int]]:
-    return [
-        (f"section-{i}", f"Content for section {i}", "content", i % 3)
-        for i in range(n)
-    ]
+    return [(f"section-{i}", f"Content for section {i}", "content", i % 3) for i in range(n)]
 
 
 class TestBuildFilteredOutputWithIndirect:
@@ -965,10 +989,7 @@ from scout.agent.context import (
     _build_page_view_stub,
     _build_skeleton_from_filtered,
     _stub_old_page_views_inplace,
-    _SKELETON_AFTER_TURNS,
-    _STUB_AFTER_TURNS,
 )
-from scout.agent.show_page_context import _SECTION_META_START, _SECTION_META_END
 
 
 def _wrap_page_view(
@@ -1003,6 +1024,7 @@ def _build_filtered_with_meta() -> str:
         ("footer-links", "Footer navigation links", "navigation", 5),
     ]
     from scout.agent.show_page_context import build_filtered_output
+
     filtered = build_filtered_output(
         sections,
         referenced={"sidebar-about"},
@@ -1014,7 +1036,6 @@ def _build_filtered_with_meta() -> str:
 
 
 class TestBuildSkeletonFromFiltered:
-
     def test_returns_none_without_meta(self):
         """Page views without __SECTION_META__ block return None."""
         pv = (
@@ -1127,7 +1148,6 @@ class TestThreeStageLifecycle:
 
 
 class TestEnhancedStub:
-
     def test_stub_has_section_index(self):
         """Enhanced stub should include [all: ...] section index."""
         pv = _build_filtered_with_meta()
@@ -1156,7 +1176,6 @@ class TestEnhancedStub:
 
 
 class TestRegressionSafety:
-
     def test_no_meta_stub_unchanged(self):
         """Page views without meta produce the same stub format as before."""
         pv = (

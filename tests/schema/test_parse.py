@@ -12,10 +12,10 @@ from scout.schema.nodes import (
 from scout.schema.parse import parse_schema
 from scout.schema.types import Field, List
 
-
 # ---------------------------------------------------------------------------
 # Happy paths — every valid schema form
 # ---------------------------------------------------------------------------
+
 
 class TestParseBaretypes:
     """Bare Python types → ScalarNode or FreestyleDictNode."""
@@ -126,14 +126,21 @@ class TestParseDeepNesting:
     """Deeply nested schemas parse correctly."""
 
     def test_three_levels_deep(self):
-        schema = List({
-            "categories": [{
-                "products": [{
-                    "title": str,
-                    "variants": [{"color": str, "size": str}],
-                }],
-            }],
-        }, min_items=1)
+        schema = List(
+            {
+                "categories": [
+                    {
+                        "products": [
+                            {
+                                "title": str,
+                                "variants": [{"color": str, "size": str}],
+                            }
+                        ],
+                    }
+                ],
+            },
+            min_items=1,
+        )
         node = parse_schema(schema)
         assert isinstance(node, ListNode)
         cat_node = node.item.fields["categories"][0]
@@ -148,6 +155,7 @@ class TestParseDeepNesting:
 # ---------------------------------------------------------------------------
 # Error cases — every invalid schema form
 # ---------------------------------------------------------------------------
+
 
 class TestParseErrors:
     """Invalid schemas raise ScoutSchemaError with clear messages."""
@@ -263,5 +271,7 @@ class TestListConstraintErrors:
             parse_schema(List(str, max_items=-1))
 
     def test_min_greater_than_max(self):
-        with pytest.raises(ScoutSchemaError, match=r"'min_items' \(10\) must be <= 'max_items' \(5\)"):
+        with pytest.raises(
+            ScoutSchemaError, match=r"'min_items' \(10\) must be <= 'max_items' \(5\)"
+        ):
             parse_schema(List(str, min_items=10, max_items=5))

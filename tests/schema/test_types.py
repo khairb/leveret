@@ -1,7 +1,5 @@
 """Tests for Layer 1: Field and List schema types."""
 
-import pytest
-
 from scout.schema.types import Field, List, SchemaType
 
 
@@ -71,8 +69,7 @@ class TestField:
         assert "max=1" in r
 
     def test_repr_includes_all_set_params(self):
-        f = Field(str, min_length=1, max_length=50, pattern=r"\w+",
-                  enum=["a"], optional=True)
+        f = Field(str, min_length=1, max_length=50, pattern=r"\w+", enum=["a"], optional=True)
         r = repr(f)
         for part in ["min_length=1", "max_length=50", "pattern=", "enum=", "optional=True"]:
             assert part in r, f"Missing {part!r} in repr: {r}"

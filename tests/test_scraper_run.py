@@ -27,8 +27,6 @@ from scout.errors import (
     ScoutConfigError,
     ScoutError,
     ScoutGenerationError,
-    ScoutSchemaError,
-    ScoutScriptLoadError,
     ScoutScriptRuntimeError,
     ScoutScriptTimeoutError,
     ScoutValidationError,
@@ -36,12 +34,11 @@ from scout.errors import (
 from scout.scraper import (
     Scraper,
     ScraperResult,
-    _load_script,
     _save_script,
 )
 
-
 # ── Helpers ──────────────────────────────────────────────────────
+
 
 def _make_scraper(
     url: str = "https://example.com/products",
@@ -77,8 +74,8 @@ def _mock_execute_result(
 
 # ── Positional argument guard ────────────────────────────────────
 
-class TestPositionalArgGuard:
 
+class TestPositionalArgGuard:
     def test_run_positional_url_raises(self):
         """run('https://...') raises TypeError — all args are keyword-only."""
         s = _make_scraper()
@@ -98,8 +95,8 @@ class TestPositionalArgGuard:
 
 # ── URL resolution ───────────────────────────────────────────────
 
-class TestURLResolution:
 
+class TestURLResolution:
     def test_no_override_uses_constructor_url(self):
         s = _make_scraper(url="https://example.com/products")
         assert s._resolve_url(None) == "https://example.com/products"
@@ -131,8 +128,8 @@ class TestURLResolution:
 
 # ── Prerequisite checks ─────────────────────────────────────────
 
-class TestPrerequisiteChecks:
 
+class TestPrerequisiteChecks:
     def test_api_key_from_constructor(self):
         s = _make_scraper(api_key="sk-ant-test")
         s._check_api_key()  # should not raise
@@ -160,6 +157,7 @@ class TestPrerequisiteChecks:
         # If not installed, this test itself is expected to fail
         try:
             import patchright  # noqa: F401
+
             s._check_playwright()  # should not raise
         except ImportError:
             pytest.skip("patchright not installed")
@@ -173,8 +171,8 @@ class TestPrerequisiteChecks:
 
 # ── Event loop detection ─────────────────────────────────────────
 
-class TestEventLoopDetection:
 
+class TestEventLoopDetection:
     def test_run_inside_event_loop_raises(self):
         """run() inside a running loop raises with Jupyter hint."""
         s = _make_scraper()
@@ -197,8 +195,8 @@ class TestEventLoopDetection:
 
 # ── Cached execution path ───────────────────────────────────────
 
-class TestCachedExecution:
 
+class TestCachedExecution:
     @pytest.fixture
     def script_path(self, tmp_path):
         """Create a valid script file."""
@@ -267,7 +265,8 @@ class TestCachedExecution:
         s = _make_scraper(script=str(script_path))
 
         mock_result = _mock_execute_result(
-            stderr="Some error", returncode=1,
+            stderr="Some error",
+            returncode=1,
         )
 
         with patch.object(s, "_execute_function", new_callable=AsyncMock, return_value=mock_result):
@@ -301,8 +300,11 @@ class TestCachedExecution:
         )
 
         import logging
+
         with caplog.at_level(logging.WARNING, logger="scout"):
-            with patch.object(s, "_execute_function", new_callable=AsyncMock, return_value=mock_result):
+            with patch.object(
+                s, "_execute_function", new_callable=AsyncMock, return_value=mock_result
+            ):
                 asyncio.run(s.async_run())
 
         assert any("Task description has changed" in r.message for r in caplog.records)
@@ -358,7 +360,7 @@ class TestCachedExecution:
             return_value_json=json.dumps([{"name": "W", "price": 1.0}]),
         )
 
-        with patch.object(s, "_execute_function", new_callable=AsyncMock, return_value=mock_result) as mock_exec:
+        with patch.object(s, "_execute_function", new_callable=AsyncMock, return_value=mock_result):
             result = asyncio.run(s.async_run(url="https://example.com/other"))
 
         assert result.url == "https://example.com/other"
@@ -373,8 +375,8 @@ class TestCachedExecution:
 
 # ── Generation path ──────────────────────────────────────────────
 
-class TestGeneration:
 
+class TestGeneration:
     def test_generation_called_when_no_script(self, monkeypatch, tmp_path):
         """When no script exists, generation runs."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
@@ -423,7 +425,9 @@ class TestGeneration:
 
         # Remove API key from env
         with patch.dict(os.environ, {}, clear=True):
-            with patch.object(s, "_execute_function", new_callable=AsyncMock, return_value=mock_result):
+            with patch.object(
+                s, "_execute_function", new_callable=AsyncMock, return_value=mock_result
+            ):
                 result = asyncio.run(s.async_run())
 
         assert result.script_generated is False
@@ -443,8 +447,11 @@ class TestGeneration:
         mock_loop_cls.return_value = mock_loop_instance
 
         with patch.object(s, "_check_playwright"):
-            with patch("scout.scraper.AgentLoop", mock_loop_cls) if False else \
-                 patch.object(s, "_run_generate", new_callable=AsyncMock) as mock_gen:
+            with (
+                patch("scout.scraper.AgentLoop", mock_loop_cls)
+                if False
+                else patch.object(s, "_run_generate", new_callable=AsyncMock) as mock_gen
+            ):
                 mock_gen.side_effect = ScoutGenerationError("Agent ran out of budget")
                 with pytest.raises(ScoutGenerationError, match="Agent ran out of budget"):
                     asyncio.run(s.async_run())
@@ -472,13 +479,11 @@ class TestGeneration:
 
 # ── Return value validation ──────────────────────────────────────
 
-class TestReturnValueValidation:
 
+class TestReturnValueValidation:
     def test_valid_data_passes(self):
         s = _make_scraper(ai_review=True)
-        data = s._validate_return_value(
-            json.dumps([{"name": "W", "price": 1.0}])
-        )
+        data = s._validate_return_value(json.dumps([{"name": "W", "price": 1.0}]))
         assert data == [{"name": "W", "price": 1.0}]
 
     def test_none_json_fails(self):
@@ -518,10 +523,17 @@ class TestReturnValueValidation:
 
     def test_complex_schema_validation(self):
         from scout.schema.types import Field, List
-        s = _make_scraper(ai_review=True, schema=List({
-            "title": Field(str, min_length=1),
-            "price": Field(float, min=0),
-        }, min_items=2))
+
+        s = _make_scraper(
+            ai_review=True,
+            schema=List(
+                {
+                    "title": Field(str, min_length=1),
+                    "price": Field(float, min=0),
+                },
+                min_items=2,
+            ),
+        )
         data = [
             {"title": "A", "price": 1.0},
             {"title": "B", "price": 2.0},
@@ -530,7 +542,8 @@ class TestReturnValueValidation:
         assert result == data
 
     def test_complex_schema_too_few_items(self):
-        from scout.schema.types import Field, List
+        from scout.schema.types import List
+
         s = _make_scraper(ai_review=True, schema=List({"title": str}, min_items=10))
         with pytest.raises(ScoutValidationError):
             s._validate_return_value(json.dumps([{"title": "Only one"}]))
@@ -538,14 +551,15 @@ class TestReturnValueValidation:
 
 # ── LLM error mapping ───────────────────────────────────────────
 
-class TestErrorMapping:
 
+class TestErrorMapping:
     def _make_scraper_for_mapping(self):
         return _make_scraper()
 
     def test_rate_limit_error(self):
         s = self._make_scraper_for_mapping()
         from pydantic_ai.exceptions import ModelHTTPError
+
         exc = ModelHTTPError(status_code=429, model_name="test", body="Rate limited")
         result = s._map_generation_error(exc)
         assert isinstance(result, ScoutGenerationError)
@@ -554,6 +568,7 @@ class TestErrorMapping:
     def test_auth_error(self):
         s = self._make_scraper_for_mapping()
         from pydantic_ai.exceptions import ModelHTTPError
+
         exc = ModelHTTPError(status_code=401, model_name="test", body="Unauthorized")
         result = s._map_generation_error(exc)
         assert isinstance(result, ScoutGenerationError)
@@ -576,14 +591,15 @@ class TestErrorMapping:
 
 # ── Console output ───────────────────────────────────────────────
 
-class TestConsoleOutput:
 
+class TestConsoleOutput:
     def test_generation_first_run_logs(self, monkeypatch, caplog):
         """First generation logs appropriate messages."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
         s = _make_scraper(script=str(Path("/tmp/nonexistent_scraper.py")))
 
         import logging
+
         with caplog.at_level(logging.INFO, logger="scout"):
             with patch.object(s, "_check_playwright"):
                 with patch.object(s, "_run_generate", new_callable=AsyncMock) as mock_gen:
@@ -611,8 +627,11 @@ class TestConsoleOutput:
         )
 
         import logging
+
         with caplog.at_level(logging.INFO, logger="scout"):
-            with patch.object(s, "_execute_function", new_callable=AsyncMock, return_value=mock_result):
+            with patch.object(
+                s, "_execute_function", new_callable=AsyncMock, return_value=mock_result
+            ):
                 asyncio.run(s.async_run())
 
         messages = [r.getMessage() for r in caplog.records]
@@ -626,6 +645,7 @@ class TestConsoleOutput:
         s = _make_scraper(script=str(path))
 
         import logging
+
         with caplog.at_level(logging.INFO, logger="scout"):
             with patch.object(s, "_check_playwright"):
                 with patch.object(s, "_run_generate", new_callable=AsyncMock) as mock_gen:
@@ -647,6 +667,7 @@ class TestConsoleOutput:
         s = _make_scraper()  # no script=
 
         import logging
+
         with caplog.at_level(logging.INFO, logger="scout"):
             with patch.object(s, "_check_playwright"):
                 with patch.object(s, "_run_generate", new_callable=AsyncMock) as mock_gen:
@@ -665,8 +686,8 @@ class TestConsoleOutput:
 
 # ── ScraperResult ────────────────────────────────────────────────
 
-class TestScraperResultFromRun:
 
+class TestScraperResultFromRun:
     def test_result_fields_cached(self, tmp_path):
         """ScraperResult has correct fields for cached run."""
         path = tmp_path / "scraper.py"
@@ -699,7 +720,8 @@ class TestScraperResultFromRun:
         with patch.object(s, "_execute_function", new_callable=AsyncMock, return_value=mock_result):
             result = asyncio.run(s.async_run())
 
-        from datetime import datetime, timezone
+        from datetime import datetime
+
         # Should parse without error
         dt = datetime.fromisoformat(result.timestamp.replace("Z", "+00:00"))
         assert dt.tzinfo is not None
@@ -707,8 +729,8 @@ class TestScraperResultFromRun:
 
 # ── run() wrapper ────────────────────────────────────────────────
 
-class TestRunWrapper:
 
+class TestRunWrapper:
     def test_run_calls_async_run(self, tmp_path):
         """run() delegates to async_run()."""
         path = tmp_path / "scraper.py"
@@ -743,14 +765,16 @@ class TestRunWrapper:
             s.run(url="https://example.com/other", auto_regenerate="always")
 
         mock_async.assert_awaited_once_with(
-            url="https://example.com/other", auto_regenerate="always", inputs=None,
+            url="https://example.com/other",
+            auto_regenerate="always",
+            inputs=None,
         )
 
 
 # ── Edge cases ───────────────────────────────────────────────────
 
-class TestEdgeCases:
 
+class TestEdgeCases:
     def test_no_script_no_cache_goes_to_generation(self, monkeypatch):
         """No script= and no cache triggers generation."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
@@ -828,7 +852,9 @@ class TestEdgeCases:
             mock_result = _mock_execute_result(
                 return_value_json=json.dumps([{"name": f"P{i}", "price": float(i)}]),
             )
-            with patch.object(s, "_execute_function", new_callable=AsyncMock, return_value=mock_result):
+            with patch.object(
+                s, "_execute_function", new_callable=AsyncMock, return_value=mock_result
+            ):
                 result = s.run()
             assert result.data == [{"name": f"P{i}", "price": float(i)}]
 
@@ -837,16 +863,19 @@ class TestEdgeCases:
 # GenerationError.is_transient
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestGenerationErrorTransient:
     """GenerationError exposes is_transient for programmatic retry decisions."""
 
     def test_transient_on_rate_limit(self):
         from scout.errors import GenerationError
+
         e = GenerationError("rate limited", status_code=429)
         assert e.is_transient is True
 
     def test_transient_on_server_error(self):
         from scout.errors import GenerationError
+
         e = GenerationError("server error", status_code=500)
         assert e.is_transient is True
         e2 = GenerationError("server error", status_code=503)
@@ -854,17 +883,20 @@ class TestGenerationErrorTransient:
 
     def test_not_transient_on_auth_error(self):
         from scout.errors import GenerationError
+
         e = GenerationError("auth failed", status_code=401)
         assert e.is_transient is False
 
     def test_not_transient_without_status_code(self):
         from scout.errors import GenerationError
+
         e = GenerationError("agent failed")
         assert e.is_transient is False
         assert e.status_code is None
 
     def test_status_code_preserved(self):
         from scout.errors import GenerationError
+
         e = GenerationError("error", status_code=429)
         assert e.status_code == 429
         assert str(e) == "error"
@@ -874,24 +906,32 @@ class TestGenerationErrorTransient:
 # Script backup on overwrite
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestScriptBackup:
     """_save_script creates a .bak backup before overwriting."""
 
     def test_backup_created_on_overwrite(self, tmp_path):
         from scout.scraper import _save_script
+
         path = tmp_path / "scraper.py"
 
         # First write
         _save_script(
             "async def scrape(page, start_url, checkpoint):\n    return []",
-            path, "https://example.com", "task", "model",
+            path,
+            "https://example.com",
+            "task",
+            "model",
         )
         original_content = path.read_text()
 
         # Second write (overwrite)
         _save_script(
             "async def scrape(page, start_url, checkpoint):\n    return [1]",
-            path, "https://example.com", "task", "model",
+            path,
+            "https://example.com",
+            "task",
+            "model",
         )
 
         bak = tmp_path / "scraper.py.bak"
@@ -900,11 +940,15 @@ class TestScriptBackup:
 
     def test_no_backup_on_first_write(self, tmp_path):
         from scout.scraper import _save_script
+
         path = tmp_path / "scraper.py"
 
         _save_script(
             "async def scrape(page, start_url, checkpoint):\n    return []",
-            path, "https://example.com", "task", "model",
+            path,
+            "https://example.com",
+            "task",
+            "model",
         )
 
         bak = tmp_path / "scraper.py.bak"

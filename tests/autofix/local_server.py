@@ -40,9 +40,7 @@ HTML_PAGES: dict[str, str] = {
         "</body></html>"
     ),
     "hidden.html": (
-        "<html><body>"
-        '<div style="display:none" id="hidden">Hidden content</div>'
-        "</body></html>"
+        '<html><body><div style="display:none" id="hidden">Hidden content</div></body></html>'
     ),
     "strict.html": (
         "<html><body>"
@@ -57,11 +55,7 @@ HTML_PAGES: dict[str, str] = {
         "<p>Will navigate away</p>"
         "</body></html>"
     ),
-    "dialog.html": (
-        "<html><body>"
-        "<script>alert('blocking dialog')</script>"
-        "</body></html>"
-    ),
+    "dialog.html": ("<html><body><script>alert('blocking dialog')</script></body></html>"),
     "detach_frame.html": (
         "<html><body>"
         '<iframe id="f" src="about:blank"></iframe>'
@@ -70,9 +64,7 @@ HTML_PAGES: dict[str, str] = {
         "</script>"
         "</body></html>"
     ),
-    "spa_shell.html": (
-        '<html><body><div id="root"></div></body></html>'
-    ),
+    "spa_shell.html": ('<html><body><div id="root"></div></body></html>'),
     "delayed_dialog.html": (
         "<html><body>"
         "<p>Content loaded</p>"
@@ -138,10 +130,7 @@ _GENERIC_BLOCK_HTML = """\
 </body>
 </html>"""
 
-_EMPTY_SHELL_HTML = (
-    '<html><body><div id="root"></div>'
-    '<script src="/app.js"></script></body></html>'
-)
+_EMPTY_SHELL_HTML = '<html><body><div id="root"></div><script src="/app.js"></script></body></html>'
 
 _NORMAL_HTML = """\
 <html>
@@ -220,7 +209,7 @@ async def _route(path: str, writer: asyncio.StreamWriter) -> None:
 
     # -- Crafted HTML pages --
     if path.startswith("/page/"):
-        page_name = path[len("/page/"):]
+        page_name = path[len("/page/") :]
         html = HTML_PAGES.get(page_name)
         if html is not None:
             writer.write(_http_response(200, html))
@@ -391,7 +380,9 @@ class LocalTestServer:
     async def start(self) -> None:
         """Start the server. Use port=0 for an OS-assigned free port."""
         self._server = await asyncio.start_server(
-            _handle_client, self._host, self._port,
+            _handle_client,
+            self._host,
+            self._port,
         )
         # Retrieve the actual port (useful when port=0).
         sockets = self._server.sockets

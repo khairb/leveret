@@ -29,7 +29,6 @@ from scout.scraper import (
     _unescape_metadata,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -66,8 +65,8 @@ def _write_script(path: Path, code: str, *, with_metadata: bool = True) -> None:
 # Metadata escaping
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestMetadataEscaping:
 
+class TestMetadataEscaping:
     def test_simple_string_unchanged(self):
         assert _escape_metadata("hello world") == "hello world"
         assert _unescape_metadata("hello world") == "hello world"
@@ -103,15 +102,18 @@ class TestMetadataEscaping:
         assert _escape_metadata("") == ""
         assert _unescape_metadata("") == ""
 
-    @pytest.mark.parametrize("val", [
-        '"""',
-        '""""""',
-        'a"""b"""c',
-        "\\\\\\",
-        "\n\n\n",
-        'mixed\n"""\n\\end',
-        "unicode: äöü 日本語 🎯",
-    ])
+    @pytest.mark.parametrize(
+        "val",
+        [
+            '"""',
+            '""""""',
+            'a"""b"""c',
+            "\\\\\\",
+            "\n\n\n",
+            'mixed\n"""\n\\end',
+            "unicode: äöü 日本語 🎯",
+        ],
+    )
     def test_round_trip(self, val):
         assert _unescape_metadata(_escape_metadata(val)) == val
 
@@ -120,8 +122,8 @@ class TestMetadataEscaping:
 # Metadata docstring building and parsing
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestMetadataDocstring:
 
+class TestMetadataDocstring:
     def test_build_contains_all_fields(self):
         doc = _build_metadata_docstring(URL, TASK, MODEL, "2024-01-01T00:00:00Z")
         assert "Scout Script" in doc
@@ -167,8 +169,8 @@ class TestMetadataDocstring:
 # Script saving
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestSaveScript:
 
+class TestSaveScript:
     def test_creates_file(self, tmp_path):
         path = tmp_path / "scraper.py"
         _save_script(VALID_SCRAPE_CODE, path, URL, TASK, MODEL)
@@ -200,6 +202,7 @@ class TestSaveScript:
         content = path.read_text()
         # Should be valid Python
         import ast
+
         ast.parse(content)
 
     def test_overwrites_existing_file(self, tmp_path):
@@ -246,8 +249,8 @@ class TestSaveScript:
 # Script loading — happy path
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestLoadScriptHappy:
 
+class TestLoadScriptHappy:
     def test_loads_valid_script(self, tmp_path):
         path = tmp_path / "scraper.py"
         _write_script(path, VALID_SCRAPE_CODE)
@@ -307,8 +310,8 @@ class TestLoadScriptHappy:
 # Script loading — error paths
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestLoadScriptErrors:
 
+class TestLoadScriptErrors:
     def test_empty_file(self, tmp_path):
         path = tmp_path / "scraper.py"
         path.write_text("")
@@ -395,8 +398,8 @@ class TestLoadScriptErrors:
 # Config mismatch detection
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestDomainMismatch:
 
+class TestDomainMismatch:
     def test_same_domain_different_path_ok(self):
         # Should not raise
         _check_domain_mismatch(
@@ -473,7 +476,6 @@ class TestDomainMismatch:
 
 
 class TestTaskMismatch:
-
     def test_same_task_no_warning(self, caplog):
         with caplog.at_level(logging.WARNING, logger="scout"):
             _check_task_mismatch("Extract prices", "Extract prices")
@@ -496,8 +498,8 @@ class TestTaskMismatch:
 # Real-world edge cases
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestRealWorldEdgeCases:
 
+class TestRealWorldEdgeCases:
     def test_script_with_triple_quote_in_url(self, tmp_path):
         """URL with triple quotes round-trips through save/load."""
         path = tmp_path / "scraper.py"
@@ -506,6 +508,7 @@ class TestRealWorldEdgeCases:
         content = path.read_text()
         # File should be valid Python (docstring not broken)
         import ast
+
         ast.parse(content)
         meta = _parse_script_metadata(content)
         assert meta["url"] == url
@@ -516,6 +519,7 @@ class TestRealWorldEdgeCases:
         _save_script(VALID_SCRAPE_CODE, path, URL, task, MODEL)
         content = path.read_text()
         import ast
+
         ast.parse(content)
         meta = _parse_script_metadata(content)
         assert meta["task"] == task
@@ -526,6 +530,7 @@ class TestRealWorldEdgeCases:
         _save_script(VALID_SCRAPE_CODE, path, URL, task, MODEL)
         content = path.read_text()
         import ast
+
         ast.parse(content)
         meta = _parse_script_metadata(content)
         assert meta["task"] == task
@@ -561,13 +566,16 @@ class TestRealWorldEdgeCases:
     def test_user_edited_script_loads(self, tmp_path):
         """User edited the script — added comments, changed logic."""
         path = tmp_path / "scraper.py"
-        _write_script(path, textwrap.dedent("""\
+        _write_script(
+            path,
+            textwrap.dedent("""\
             # User edited: added filtering
             async def scrape(page, url, checkpoint):
                 # Only get products over $10
                 items = [{"title": "Expensive", "price": 99.99}]
                 return [i for i in items if i["price"] > 10]
-        """))
+        """),
+        )
         fn, _ = _load_script(path)
         result = asyncio.run(fn(None, "url", lambda *a, **k: None))
         assert len(result) == 1
@@ -605,16 +613,16 @@ class TestRealWorldEdgeCases:
         base = Path("./s.py")
 
         # Same domain, different path — OK
-        _check_domain_mismatch(base, "https://example.com/product/123",
-                                "https://example.com/product/456")
-        _check_domain_mismatch(base, "https://example.com/products",
-                                "https://example.com/categories")
+        _check_domain_mismatch(
+            base, "https://example.com/product/123", "https://example.com/product/456"
+        )
+        _check_domain_mismatch(
+            base, "https://example.com/products", "https://example.com/categories"
+        )
 
         # Different domain — Error
         with pytest.raises(ScoutConfigError):
-            _check_domain_mismatch(base, "https://news.ycombinator.com",
-                                    "https://reddit.com")
+            _check_domain_mismatch(base, "https://news.ycombinator.com", "https://reddit.com")
 
         # Same host, different scheme — OK
-        _check_domain_mismatch(base, "http://example.com",
-                                "https://example.com")
+        _check_domain_mismatch(base, "http://example.com", "https://example.com")

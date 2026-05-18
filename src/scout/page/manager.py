@@ -27,21 +27,24 @@ from dataclasses import dataclass, field
 # ---------------------------------------------------------------------------
 from .converter import (
     InteractiveElement as ConverterElement,
+)
+from .converter import (
     html_to_text,
 )
 from .interactive import (
     InteractiveElement as DetectionElement,
+)
+from .interactive import (
     detect_interactive_elements,
 )
 from .sanitize import format_html_conservative
 from .sectioner import Section, section_page
-
 from .zoom import zoom_in as _zoom_in
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Data Structures
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 @dataclass
 class PageState:
@@ -86,6 +89,7 @@ class PageState:
 #  Bridge: detection elements → converter elements
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def _bridge_elements(
     detection_elements: list[DetectionElement],
 ) -> list[ConverterElement]:
@@ -111,6 +115,7 @@ def _bridge_elements(
 #  Page View Formatting
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def _format_page_view(state: PageState) -> str:
     """Build the formatted text view the agent sees after each capture.
 
@@ -131,10 +136,7 @@ def _format_page_view(state: PageState) -> str:
     for section in state.sections:
         i_count = section.interactive_count
         i_label = "interactive" if i_count != 1 else "interactive"
-        header = (
-            f"--- [{section.id}] {section.semantic_role} "
-            f"({i_count} {i_label}) ---"
-        )
+        header = f"--- [{section.id}] {section.semantic_role} ({i_count} {i_label}) ---"
         parts.append(header)
         parts.append(section.text)
         parts.append("")
@@ -145,6 +147,7 @@ def _format_page_view(state: PageState) -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 #  PageStateManager
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class PageStateManager:
     """Central manager for all page-state operations.

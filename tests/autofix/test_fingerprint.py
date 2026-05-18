@@ -10,11 +10,9 @@ from __future__ import annotations
 
 import pytest
 
-from scout.autofix.classifier import classify_error
 from scout.autofix.fingerprint import compare_fingerprints, extract_fingerprint
 from scout.autofix.types import ComparisonLevel, ErrorCategory, Fingerprint
 from tests.autofix.conftest import all_error_fixtures, load_fixture
-
 
 # ══════════════════════════════════════════════════════════════
 #  Fixture-driven tests — fingerprints from real fixtures
@@ -34,7 +32,9 @@ def test_fingerprint_extraction_from_fixtures(fixture_name: str) -> None:
     fixture = load_fixture(fixture_name)
     category = _expected_category(fixture_name)
     fp = extract_fingerprint(
-        fixture["stderr"], category, schema_error=fixture.get("schema_error"),
+        fixture["stderr"],
+        category,
+        schema_error=fixture.get("schema_error"),
     )
     assert fp.category == category
     # Should preserve the raw message (or schema_error for G).
@@ -152,10 +152,7 @@ class TestFingerprintCategoryC:
         assert fp.target == "http://localhost:9999/"
 
     def test_navigation_timeout(self) -> None:
-        stderr = (
-            "patchright._impl._errors.TimeoutError: Page.goto: "
-            "Timeout 30000ms exceeded.\n"
-        )
+        stderr = "patchright._impl._errors.TimeoutError: Page.goto: Timeout 30000ms exceeded.\n"
         fp = extract_fingerprint(stderr, ErrorCategory.C)
         assert fp.error_type == "TimeoutError"
         assert fp.method == "Page.goto"
@@ -222,11 +219,7 @@ class TestFingerprintCategoryE:
         assert fp.target == "<div>"
 
     def test_not_visible(self) -> None:
-        stderr = (
-            "Page.click: Timeout 5000ms exceeded.\n"
-            "Call log:\n"
-            "  - element is not visible\n"
-        )
+        stderr = "Page.click: Timeout 5000ms exceeded.\nCall log:\n  - element is not visible\n"
         fp = extract_fingerprint(stderr, ErrorCategory.E)
         assert fp.error_type == "not_visible"
 
@@ -240,37 +233,27 @@ class TestFingerprintCategoryE:
         assert fp.target == "resolved_to_3"
 
     def test_context_destroyed(self) -> None:
-        stderr = (
-            "patchright._impl._errors.Error: Page.evaluate: "
-            "Execution context was destroyed\n"
-        )
+        stderr = "patchright._impl._errors.Error: Page.evaluate: Execution context was destroyed\n"
         fp = extract_fingerprint(stderr, ErrorCategory.E)
         assert fp.error_type == "context_destroyed"
         assert fp.method == "Page.evaluate"
 
     def test_frame_detached(self) -> None:
-        stderr = (
-            "patchright._impl._errors.Error: Frame.evaluate: "
-            "Frame was detached\n"
-        )
+        stderr = "patchright._impl._errors.Error: Frame.evaluate: Frame was detached\n"
         fp = extract_fingerprint(stderr, ErrorCategory.E)
         assert fp.error_type == "frame_detached"
         assert fp.method == "Frame.evaluate"
 
     def test_dialog_blocking(self) -> None:
         stderr = (
-            'Page.evaluate: Cannot evaluate, page has an open JavaScript dialog: '
+            "Page.evaluate: Cannot evaluate, page has an open JavaScript dialog: "
             'alert with message "test"\n'
         )
         fp = extract_fingerprint(stderr, ErrorCategory.E)
         assert fp.error_type == "dialog_blocking"
 
     def test_not_enabled(self) -> None:
-        stderr = (
-            "Locator.fill: Timeout 5000ms exceeded.\n"
-            "Call log:\n"
-            "  - element is not enabled\n"
-        )
+        stderr = "Locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - element is not enabled\n"
         fp = extract_fingerprint(stderr, ErrorCategory.E)
         assert fp.error_type == "not_enabled"
 
@@ -364,7 +347,9 @@ class TestFingerprintCategoryG:
 
     def test_type_mismatch(self) -> None:
         fp = extract_fingerprint(
-            "", ErrorCategory.G, "Expected float for field 'price', got str",
+            "",
+            ErrorCategory.G,
+            "Expected float for field 'price', got str",
         )
         assert fp.target == "type mismatch: price"
 
@@ -384,28 +369,52 @@ class TestCompareFingerprints:
 
     def test_exact_match(self) -> None:
         fp1 = Fingerprint(
-            ErrorCategory.D, "TimeoutError", "Page.click", ".card", "msg",
+            ErrorCategory.D,
+            "TimeoutError",
+            "Page.click",
+            ".card",
+            "msg",
         )
         fp2 = Fingerprint(
-            ErrorCategory.D, "TimeoutError", "Page.click", ".card", "msg2",
+            ErrorCategory.D,
+            "TimeoutError",
+            "Page.click",
+            ".card",
+            "msg2",
         )
         assert compare_fingerprints(fp1, fp2) == ComparisonLevel.EXACT
 
     def test_same_kind_different_targets(self) -> None:
         fp1 = Fingerprint(
-            ErrorCategory.D, "TimeoutError", "Page.click", ".card", "",
+            ErrorCategory.D,
+            "TimeoutError",
+            "Page.click",
+            ".card",
+            "",
         )
         fp2 = Fingerprint(
-            ErrorCategory.D, "TimeoutError", "Page.click", ".price", "",
+            ErrorCategory.D,
+            "TimeoutError",
+            "Page.click",
+            ".price",
+            "",
         )
         assert compare_fingerprints(fp1, fp2) == ComparisonLevel.SAME_KIND
 
     def test_same_category_different_method(self) -> None:
         fp1 = Fingerprint(
-            ErrorCategory.D, "TimeoutError", "Page.click", ".card", "",
+            ErrorCategory.D,
+            "TimeoutError",
+            "Page.click",
+            ".card",
+            "",
         )
         fp2 = Fingerprint(
-            ErrorCategory.D, "TimeoutError", "Page.fill", ".card", "",
+            ErrorCategory.D,
+            "TimeoutError",
+            "Page.fill",
+            ".card",
+            "",
         )
         assert compare_fingerprints(fp1, fp2) == ComparisonLevel.SAME_CATEGORY
 
@@ -427,10 +436,18 @@ class TestCompareFingerprints:
     def test_one_target_none_is_same_kind(self) -> None:
         """Degraded: one has target, other doesn't."""
         fp1 = Fingerprint(
-            ErrorCategory.D, "TimeoutError", "Page.click", ".card", "",
+            ErrorCategory.D,
+            "TimeoutError",
+            "Page.click",
+            ".card",
+            "",
         )
         fp2 = Fingerprint(
-            ErrorCategory.D, "TimeoutError", "Page.click", None, "",
+            ErrorCategory.D,
+            "TimeoutError",
+            "Page.click",
+            None,
+            "",
         )
         assert compare_fingerprints(fp1, fp2) == ComparisonLevel.SAME_KIND
 
@@ -443,40 +460,70 @@ class TestCompareFingerprints:
 
     def test_schema_fingerprints_exact(self) -> None:
         fp1 = Fingerprint(
-            ErrorCategory.G, "SchemaValidationError", None, "item_count < 5", "",
+            ErrorCategory.G,
+            "SchemaValidationError",
+            None,
+            "item_count < 5",
+            "",
         )
         fp2 = Fingerprint(
-            ErrorCategory.G, "SchemaValidationError", None, "item_count < 5", "",
+            ErrorCategory.G,
+            "SchemaValidationError",
+            None,
+            "item_count < 5",
+            "",
         )
         assert compare_fingerprints(fp1, fp2) == ComparisonLevel.EXACT
 
     def test_schema_fingerprints_same_kind(self) -> None:
         fp1 = Fingerprint(
-            ErrorCategory.G, "SchemaValidationError", None, "item_count < 5", "",
+            ErrorCategory.G,
+            "SchemaValidationError",
+            None,
+            "item_count < 5",
+            "",
         )
         fp2 = Fingerprint(
-            ErrorCategory.G, "SchemaValidationError", None, "missing field: price", "",
+            ErrorCategory.G,
+            "SchemaValidationError",
+            None,
+            "missing field: price",
+            "",
         )
         assert compare_fingerprints(fp1, fp2) == ComparisonLevel.SAME_KIND
 
     def test_network_errors_same_kind(self) -> None:
         """Different net::ERR_* codes = SAME_CATEGORY (different error_type)."""
         fp1 = Fingerprint(
-            ErrorCategory.C, "net::ERR_CONNECTION_REFUSED", "Page.goto", None, "",
+            ErrorCategory.C,
+            "net::ERR_CONNECTION_REFUSED",
+            "Page.goto",
+            None,
+            "",
         )
         fp2 = Fingerprint(
-            ErrorCategory.C, "net::ERR_CONNECTION_RESET", "Page.goto", None, "",
+            ErrorCategory.C,
+            "net::ERR_CONNECTION_RESET",
+            "Page.goto",
+            None,
+            "",
         )
         assert compare_fingerprints(fp1, fp2) == ComparisonLevel.SAME_CATEGORY
 
     def test_identical_network_errors_exact(self) -> None:
         fp1 = Fingerprint(
-            ErrorCategory.C, "net::ERR_CONNECTION_REFUSED", "Page.goto",
-            "http://example.com/", "",
+            ErrorCategory.C,
+            "net::ERR_CONNECTION_REFUSED",
+            "Page.goto",
+            "http://example.com/",
+            "",
         )
         fp2 = Fingerprint(
-            ErrorCategory.C, "net::ERR_CONNECTION_REFUSED", "Page.goto",
-            "http://example.com/", "",
+            ErrorCategory.C,
+            "net::ERR_CONNECTION_REFUSED",
+            "Page.goto",
+            "http://example.com/",
+            "",
         )
         assert compare_fingerprints(fp1, fp2) == ComparisonLevel.EXACT
 

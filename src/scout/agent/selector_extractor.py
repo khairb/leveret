@@ -49,47 +49,90 @@ _PAGE_NAVIGATING: set[str] = {"click", "dblclick", "tap"}
 
 # page.METHOD("selector") — mutating (changes element state, page stays)
 _PAGE_MUTATING: set[str] = {
-    "fill", "type", "press", "check", "uncheck", "set_checked",
-    "select_option", "focus", "set_input_files", "dispatch_event",
+    "fill",
+    "type",
+    "press",
+    "check",
+    "uncheck",
+    "set_checked",
+    "select_option",
+    "focus",
+    "set_input_files",
+    "dispatch_event",
 }
 
 # page.METHOD("selector") — passive (read-only)
 _PAGE_PASSIVE: set[str] = {
-    "query_selector", "query_selector_all", "wait_for_selector",
-    "inner_text", "inner_html", "text_content", "get_attribute",
-    "input_value", "is_visible", "is_hidden", "is_enabled",
-    "is_disabled", "is_checked", "is_editable",
-    "eval_on_selector", "eval_on_selector_all",
+    "query_selector",
+    "query_selector_all",
+    "wait_for_selector",
+    "inner_text",
+    "inner_html",
+    "text_content",
+    "get_attribute",
+    "input_value",
+    "is_visible",
+    "is_hidden",
+    "is_enabled",
+    "is_disabled",
+    "is_checked",
+    "is_editable",
+    "eval_on_selector",
+    "eval_on_selector_all",
 }
 
 # page.METHOD("selector") — deferred (creates locator, action from chain)
 _PAGE_DEFERRED: set[str] = {"locator", "frame_locator"}
 
 # All page methods that take a selector as first arg
-_PAGE_SELECTOR_METHODS = (
-    _PAGE_NAVIGATING | _PAGE_MUTATING | _PAGE_PASSIVE | _PAGE_DEFERRED
-)
+_PAGE_SELECTOR_METHODS = _PAGE_NAVIGATING | _PAGE_MUTATING | _PAGE_PASSIVE | _PAGE_DEFERRED
 
 # Locator/element terminal actions — navigating
 _CHAIN_NAVIGATING: set[str] = {"click", "dblclick", "tap"}
 
 # Locator/element terminal actions — mutating
 _CHAIN_MUTATING: set[str] = {
-    "fill", "type", "press", "press_sequentially",
-    "check", "uncheck", "set_checked", "select_option",
-    "set_input_files", "clear", "focus", "blur", "dispatch_event",
+    "fill",
+    "type",
+    "press",
+    "press_sequentially",
+    "check",
+    "uncheck",
+    "set_checked",
+    "select_option",
+    "set_input_files",
+    "clear",
+    "focus",
+    "blur",
+    "dispatch_event",
 }
 
 # Locator/element terminal actions — passive
 _CHAIN_PASSIVE: set[str] = {
-    "inner_text", "inner_html", "text_content", "get_attribute",
-    "input_value", "is_visible", "is_hidden", "is_enabled",
-    "is_disabled", "is_checked", "is_editable",
-    "count", "all", "bounding_box", "wait_for",
-    "evaluate", "evaluate_all", "evaluate_handle",
-    "all_inner_texts", "all_text_contents",
-    "element_handle", "element_handles",
-    "scroll_into_view_if_needed", "highlight",
+    "inner_text",
+    "inner_html",
+    "text_content",
+    "get_attribute",
+    "input_value",
+    "is_visible",
+    "is_hidden",
+    "is_enabled",
+    "is_disabled",
+    "is_checked",
+    "is_editable",
+    "count",
+    "all",
+    "bounding_box",
+    "wait_for",
+    "evaluate",
+    "evaluate_all",
+    "evaluate_handle",
+    "all_inner_texts",
+    "all_text_contents",
+    "element_handle",
+    "element_handles",
+    "scroll_into_view_if_needed",
+    "highlight",
 }
 
 _ALL_CHAIN_TERMINALS = _CHAIN_NAVIGATING | _CHAIN_MUTATING | _CHAIN_PASSIVE
@@ -99,15 +142,20 @@ _HARD_NAV: set[str] = {"goto", "go_back", "go_forward", "reload"}
 
 # get_by_* helpers
 _GET_BY_METHODS: set[str] = {
-    "get_by_text", "get_by_role", "get_by_label",
-    "get_by_placeholder", "get_by_alt_text",
-    "get_by_title", "get_by_test_id",
+    "get_by_text",
+    "get_by_role",
+    "get_by_label",
+    "get_by_placeholder",
+    "get_by_alt_text",
+    "get_by_title",
+    "get_by_test_id",
 }
 
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Helpers
 # ═══════════════════════════════════════════════════════════════════════
+
 
 def _pos_to_line(code: str, pos: int) -> int:
     """Convert a character position to a 1-based line number."""
@@ -156,10 +204,13 @@ _RE_GET_BY = re.compile(
 )
 
 # Regex: VAR = [await] page.(locator|query_selector|...)("sel")
-_ASSIGN_METHODS = "|".join(sorted(
-    _PAGE_DEFERRED | {"query_selector", "query_selector_all"} | _GET_BY_METHODS,
-    key=len, reverse=True,
-))
+_ASSIGN_METHODS = "|".join(
+    sorted(
+        _PAGE_DEFERRED | {"query_selector", "query_selector_all"} | _GET_BY_METHODS,
+        key=len,
+        reverse=True,
+    )
+)
 _RE_ASSIGN = re.compile(
     rf"(\w+)\s*=\s*(?:await\s+)?(?:page|\w+)"
     rf"\.({_ASSIGN_METHODS})\(\s*(?:'([^']*)'|\"([^\"]*)\")",
@@ -173,9 +224,9 @@ _RE_VAR_ACTION = re.compile(
 
 # Regex: page.locator("sel")...TERMINAL() on same expression
 _RE_LOCATOR_CHAIN = re.compile(
-    rf"page\.locator\(\s*(?:'([^']*)'|\"([^\"]*)\")"
-    rf"[^)\n]*\)"           # rest of locator() args
-    rf"((?:\.\w+(?:\([^)]*\))?)*)"  # chain of .method() or .property
+    r"page\.locator\(\s*(?:'([^']*)'|\"([^\"]*)\")"
+    r"[^)\n]*\)"  # rest of locator() args
+    r"((?:\.\w+(?:\([^)]*\))?)*)"  # chain of .method() or .property
 )
 
 # Regex: page.get_by_*("arg")...TERMINAL() on same expression
@@ -192,9 +243,7 @@ _RE_HARD_NAV = re.compile(
 )
 
 # Regex: detect terminal in a chain suffix
-_RE_TERMINAL_IN_CHAIN = re.compile(
-    rf"\.({_ALL_TERMINALS_ALT})\("
-)
+_RE_TERMINAL_IN_CHAIN = re.compile(rf"\.({_ALL_TERMINALS_ALT})\(")
 
 
 def _extract_direct_page_calls(code: str) -> list[ExtractionResult]:
@@ -213,14 +262,16 @@ def _extract_direct_page_calls(code: str) -> list[ExtractionResult]:
         line = _pos_to_line(code, m.start())
         cat = _classify_method(method)
         sel_type: str = "playwright" if ":has-text(" in selector or ">> " in selector else "css"
-        results.append(ExtractionResult(
-            selector=selector,
-            selector_type=sel_type,
-            action_category=cat,
-            action=method,
-            line=line,
-            source="python",
-        ))
+        results.append(
+            ExtractionResult(
+                selector=selector,
+                selector_type=sel_type,
+                action_category=cat,
+                action=method,
+                line=line,
+                source="python",
+            )
+        )
     return results
 
 
@@ -243,14 +294,16 @@ def _extract_locator_chains(code: str) -> list[ExtractionResult]:
         line = _pos_to_line(code, m.start())
         cat = _classify_chain_terminal(terminal)
         sel_type = "playwright" if ":has-text(" in selector or ">> " in selector else "css"
-        results.append(ExtractionResult(
-            selector=selector,
-            selector_type=sel_type,
-            action_category=cat,
-            action=terminal,
-            line=line,
-            source="python",
-        ))
+        results.append(
+            ExtractionResult(
+                selector=selector,
+                selector_type=sel_type,
+                action_category=cat,
+                action=terminal,
+                line=line,
+                source="python",
+            )
+        )
 
     # page.get_by_*("arg")...terminal()
     for m in _RE_GETBY_CHAIN.finditer(code):
@@ -267,14 +320,16 @@ def _extract_locator_chains(code: str) -> list[ExtractionResult]:
         terminal = tm.group(1)
         line = _pos_to_line(code, m.start())
         cat = _classify_chain_terminal(terminal)
-        results.append(ExtractionResult(
-            selector=selector,
-            selector_type="playwright",
-            action_category=cat,
-            action=method,
-            line=line,
-            source="python",
-        ))
+        results.append(
+            ExtractionResult(
+                selector=selector,
+                selector_type="playwright",
+                action_category=cat,
+                action=method,
+                line=line,
+                source="python",
+            )
+        )
 
     return results
 
@@ -309,14 +364,16 @@ def _extract_variable_tracking(
         selector, sel_type, _orig_method = var_dict[var_name]
         line = _pos_to_line(code, m.start())
         cat = _classify_chain_terminal(action)
-        results.append(ExtractionResult(
-            selector=selector,
-            selector_type=sel_type,
-            action_category=cat,
-            action=action,
-            line=line,
-            source="python",
-        ))
+        results.append(
+            ExtractionResult(
+                selector=selector,
+                selector_type=sel_type,
+                action_category=cat,
+                action=action,
+                line=line,
+                source="python",
+            )
+        )
 
     return results, var_dict
 
@@ -426,10 +483,10 @@ def _extract_js_string(code: str, start_pos: int) -> str | None:
         i += 1
     # Triple-quoted
     for triple in ('"""', "'''"):
-        if code[i:i + 3] == triple:
+        if code[i : i + 3] == triple:
             end = code.find(triple, i + 3)
             if end != -1:
-                return code[i + 3:end]
+                return code[i + 3 : end]
             return None
     # Single/double quoted
     if code[i] in "\"'":
@@ -439,14 +496,15 @@ def _extract_js_string(code: str, start_pos: int) -> str | None:
             if code[j] == "\\":
                 j += 2
             elif code[j] == quote:
-                return code[i + 1:j]
+                return code[i + 1 : j]
             else:
                 j += 1
     return None
 
 
 def _extract_js_selectors(
-    js_string: str, line: int,
+    js_string: str,
+    line: int,
 ) -> list[ExtractionResult]:
     """Extract CSS selectors from a JavaScript string."""
     results: list[ExtractionResult] = []
@@ -471,7 +529,7 @@ def _extract_js_selectors(
         if var_name in js_var_sels:
             js_click_selectors.add(js_var_sels[var_name])
 
-    has_js_nav = bool(_RE_JS_NAV.search(js_string))
+    bool(_RE_JS_NAV.search(js_string))
 
     # querySelector / querySelectorAll
     for m in _RE_JS_QS.finditer(js_string):
@@ -480,14 +538,16 @@ def _extract_js_selectors(
             continue
         seen.add(sel)
         cat = "navigating" if sel in js_click_selectors else "passive"
-        results.append(ExtractionResult(
-            selector=sel,
-            selector_type="css",
-            action_category=cat,
-            action="evaluate",
-            line=line,
-            source="evaluate_js",
-        ))
+        results.append(
+            ExtractionResult(
+                selector=sel,
+                selector_type="css",
+                action_category=cat,
+                action="evaluate",
+                line=line,
+                source="evaluate_js",
+            )
+        )
 
     # el.closest("sel"), el.matches("sel")
     for m in _RE_JS_CLOSEST_MATCHES.finditer(js_string):
@@ -495,14 +555,16 @@ def _extract_js_selectors(
         if not sel or sel in seen:
             continue
         seen.add(sel)
-        results.append(ExtractionResult(
-            selector=sel,
-            selector_type="css",
-            action_category="passive",
-            action="evaluate",
-            line=line,
-            source="evaluate_js",
-        ))
+        results.append(
+            ExtractionResult(
+                selector=sel,
+                selector_type="css",
+                action_category="passive",
+                action="evaluate",
+                line=line,
+                source="evaluate_js",
+            )
+        )
 
     # getElementById → #id
     for m in _RE_JS_GET_BY_ID.finditer(js_string):
@@ -513,14 +575,16 @@ def _extract_js_selectors(
         if sel in seen:
             continue
         seen.add(sel)
-        results.append(ExtractionResult(
-            selector=sel,
-            selector_type="css",
-            action_category="passive",
-            action="evaluate",
-            line=line,
-            source="evaluate_js",
-        ))
+        results.append(
+            ExtractionResult(
+                selector=sel,
+                selector_type="css",
+                action_category="passive",
+                action="evaluate",
+                line=line,
+                source="evaluate_js",
+            )
+        )
 
     # getElementsByClassName → .class
     for m in _RE_JS_GET_BY_CLASS.finditer(js_string):
@@ -531,14 +595,16 @@ def _extract_js_selectors(
         if sel in seen:
             continue
         seen.add(sel)
-        results.append(ExtractionResult(
-            selector=sel,
-            selector_type="css",
-            action_category="passive",
-            action="evaluate",
-            line=line,
-            source="evaluate_js",
-        ))
+        results.append(
+            ExtractionResult(
+                selector=sel,
+                selector_type="css",
+                action_category="passive",
+                action="evaluate",
+                line=line,
+                source="evaluate_js",
+            )
+        )
 
     # getElementsByTagName → tag
     for m in _RE_JS_GET_BY_TAG.finditer(js_string):
@@ -548,14 +614,16 @@ def _extract_js_selectors(
         if val in seen:
             continue
         seen.add(val)
-        results.append(ExtractionResult(
-            selector=val,
-            selector_type="css",
-            action_category="passive",
-            action="evaluate",
-            line=line,
-            source="evaluate_js",
-        ))
+        results.append(
+            ExtractionResult(
+                selector=val,
+                selector_type="css",
+                action_category="passive",
+                action="evaluate",
+                line=line,
+                source="evaluate_js",
+            )
+        )
 
     # getElementsByName → [name="..."]
     for m in _RE_JS_GET_BY_NAME.finditer(js_string):
@@ -566,14 +634,16 @@ def _extract_js_selectors(
         if sel in seen:
             continue
         seen.add(sel)
-        results.append(ExtractionResult(
-            selector=sel,
-            selector_type="css",
-            action_category="passive",
-            action="evaluate",
-            line=line,
-            source="evaluate_js",
-        ))
+        results.append(
+            ExtractionResult(
+                selector=sel,
+                selector_type="css",
+                action_category="passive",
+                action="evaluate",
+                line=line,
+                source="evaluate_js",
+            )
+        )
 
     return results
 
@@ -660,10 +730,7 @@ def _analyze_context(
 
     final: list[ExtractionResult] = []
     for r in all_results:
-        in_loop = any(
-            start <= r.line <= end and has_nav
-            for start, end, has_nav in loops
-        )
+        in_loop = any(start <= r.line <= end and has_nav for start, end, has_nav in loops)
         after_nav = any(nav_line < r.line for nav_line in nav_lines)
 
         if in_loop != r.in_loop or after_nav != r.after_navigation:

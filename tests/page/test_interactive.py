@@ -14,10 +14,10 @@ from scout.page.interactive import (
     detect_interactive_elements,
 )
 
-
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Fixtures
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 
 @pytest_asyncio.fixture
 async def page():
@@ -333,9 +333,10 @@ async def test_cleanup_removes_data_iid_from_dom(page):
     # child-div should NOT have data-iid (it was removed)
     # Find the child-div tag and check it has no data-iid
     import re
+
     child_match = re.search(r'<div[^>]*id="child-div"[^>]*>', html)
     assert child_match is not None
-    assert 'data-iid' not in child_match.group(0)
+    assert "data-iid" not in child_match.group(0)
 
 
 @pytest.mark.asyncio
@@ -396,7 +397,7 @@ async def test_hidden_display_none_stamped(page):
     # The root of the hidden subtree should be stamped
     assert 'data-hidden="true"' in html
     # The child should NOT be stamped (parent is already the hide-root)
-    assert html.count('data-hidden=') == 1
+    assert html.count("data-hidden=") == 1
 
 
 @pytest.mark.asyncio
@@ -494,7 +495,7 @@ async def test_selector_uses_data_testid(page):
 async def test_selector_uses_name(page):
     await page.set_content('<input type="text" name="email">')
     elems = await detect_interactive_elements(page)
-    assert 'name=' in elems[0].selector or 'type=' in elems[0].selector
+    assert "name=" in elems[0].selector or "type=" in elems[0].selector
 
 
 @pytest.mark.asyncio
@@ -535,7 +536,7 @@ def test_cleanup_removes_iid():
 
 def test_cleanup_removes_hidden():
     html = '<div data-hidden="true"><p>gone</p></div>'
-    assert cleanup_markers(html) == '<div><p>gone</p></div>'
+    assert cleanup_markers(html) == "<div><p>gone</p></div>"
 
 
 def test_cleanup_removes_both():
@@ -725,7 +726,9 @@ async def test_real_world_detects_all_interactive(page):
 
     # Navigation links detected
     nav_links = [e for e in elems if e.tag == "a" and e.attributes.get("href", "").startswith("/")]
-    assert len(nav_links) >= 7  # home, products, about, product/1, product/2, page 2, page 3, next, terms, contact, privacy
+    assert (
+        len(nav_links) >= 7
+    )  # home, products, about, product/1, product/2, page 2, page 3, next, terms, contact, privacy
 
     # Form elements detected
     assert "input" in tags

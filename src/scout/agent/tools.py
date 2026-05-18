@@ -15,7 +15,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from .param_detector import (
-    detect_url_params, extract_fill_values, format_hint, format_hint_complex,
+    detect_url_params,
+    extract_fill_values,
+    format_hint,
+    format_hint_complex,
 )
 from .timeout_predict import predict_timeout
 
@@ -42,13 +45,16 @@ MAX_TIMEOUT: float = 3000.0
 # Patterns that dump full-page HTML into stdout, wasting tokens.
 _RAW_HTML_PATTERNS = [
     # page.content() — returns entire page HTML.
-    (re.compile(r'\bpage\s*\.\s*content\s*\('), "page.content()"),
+    (re.compile(r"\bpage\s*\.\s*content\s*\("), "page.content()"),
     # page.inner_html("html") / page.inner_html("body") — same effect.
     (re.compile(r'\.\s*inner_html\s*\(\s*["\'](?:html|body)["\']'), '.inner_html("html"/"body")'),
     # document.documentElement.outerHTML inside evaluate().
-    (re.compile(r'document\s*\.\s*documentElement\s*\.\s*outerHTML'), "document.documentElement.outerHTML"),
+    (
+        re.compile(r"document\s*\.\s*documentElement\s*\.\s*outerHTML"),
+        "document.documentElement.outerHTML",
+    ),
     # document.body.innerHTML in evaluate() targeting the whole body.
-    (re.compile(r'document\s*\.\s*body\s*\.\s*innerHTML'), "document.body.innerHTML"),
+    (re.compile(r"document\s*\.\s*body\s*\.\s*innerHTML"), "document.body.innerHTML"),
 ]
 
 _RAW_HTML_REJECTION = (
@@ -96,8 +102,7 @@ TOOL_SCHEMAS: list[dict] = [
                 "code": {
                     "type": "string",
                     "description": (
-                        "Python code to execute. "
-                        "Use `await` for Patchright async calls."
+                        "Python code to execute. Use `await` for Patchright async calls."
                     ),
                 },
                 "timeout": {
@@ -178,6 +183,7 @@ TOOL_SCHEMAS: list[dict] = [
 #  Tool Result
 # ═══════════════════════════════════════════════════════════════
 
+
 @dataclass
 class ToolResult:
     """The outcome of executing a single tool call."""
@@ -192,6 +198,7 @@ class ToolResult:
 # ═══════════════════════════════════════════════════════════════
 #  Execution Dispatch
 # ═══════════════════════════════════════════════════════════════
+
 
 async def execute_tool(
     name: str,
@@ -226,6 +233,7 @@ async def execute_tool(
 
 # ── Individual tool executors ─────────────────────────────────
 
+
 async def _exec_python(
     code: str,
     tool_use_id: str,
@@ -245,7 +253,10 @@ async def _exec_python(
             timeout_info = f"{timeout:.0f}s auto (agent wanted {agent_timeout:.0f}s)"
         logger.info(
             "Timeout: %.1fs [%s] (predicted=%.1fs, agent_requested=%.1fs)",
-            timeout, timeout_info, predicted, agent_timeout,
+            timeout,
+            timeout_info,
+            predicted,
+            agent_timeout,
         )
     else:
         timeout = predicted
@@ -282,13 +293,9 @@ async def _exec_python(
         diag_parts = ["\n--- Timeout Diagnostics ---"]
         diag_parts.append(f"Page URL at timeout: {diag.page_url}")
         if diag.pending_requests:
-            diag_parts.append(
-                f"Pending network requests ({len(diag.pending_requests)}):"
-            )
+            diag_parts.append(f"Pending network requests ({len(diag.pending_requests)}):")
             for req in diag.pending_requests[:5]:
-                diag_parts.append(
-                    f"  {req.get('method', '?')} {req.get('url', '?')[:100]}"
-                )
+                diag_parts.append(f"  {req.get('method', '?')} {req.get('url', '?')[:100]}")
         if diag.console_logs:
             errors = [l for l in diag.console_logs if l.get("level") in ("error", "warning")]
             if errors:
@@ -296,9 +303,7 @@ async def _exec_python(
                 for log in errors[-5:]:
                     diag_parts.append(f"  [{log.get('level')}] {log.get('text', '')[:150]}")
         if runtime.diagnostics_dir:
-            diag_parts.append(
-                f"Full diagnostics saved to: timeout_step_{result.step}"
-            )
+            diag_parts.append(f"Full diagnostics saved to: timeout_step_{result.step}")
         parts.append("\n".join(diag_parts))
 
     # Accumulate fill values across code executions so that
@@ -312,7 +317,8 @@ async def _exec_python(
         runtime._recent_fills.extend(current_fills)
         logger.info(
             "[param_detector] accumulated %d fill(s) this step, %d total",
-            len(current_fills), len(runtime._recent_fills),
+            len(current_fills),
+            len(runtime._recent_fills),
         )
 
     # Notify the agent if the URL changed (navigation occurred).
@@ -325,9 +331,13 @@ async def _exec_python(
         all_fills = runtime._recent_fills if hasattr(runtime, "_recent_fills") else []
         if all_fills or _inputs_dict:
             detection = detect_url_params(
-                url_before, url_after, all_fills, inputs=_inputs_dict,
+                url_before,
+                url_after,
+                all_fills,
+                inputs=_inputs_dict,
             )
             from . import console
+
             if detection and detection.matches:
                 # Tier 1: clean key=value param matches found.
                 parts.append(format_hint(detection))

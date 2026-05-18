@@ -11,11 +11,8 @@ and cover all 3 detection tiers:
 
 from __future__ import annotations
 
-import pytest
-
 from scout.autofix.antibot import detect_antibot
 from tests.autofix.conftest import load_antibot_page
-
 
 # ── Tier 1: Cloudflare ───────────────────────────────────────
 
@@ -226,7 +223,7 @@ class TestImperva:
         assert result.tier == 1
 
     def test_incapsula_resource(self):
-        content = '<script>var _Incapsula_Resource = {};</script>'
+        content = "<script>var _Incapsula_Resource = {};</script>"
         result = detect_antibot(content)
         assert result is not None
         assert result.provider == "imperva"
@@ -300,7 +297,9 @@ class TestAWSWAF:
     def test_waf_header_from_fixture(self):
         """AWS WAF is header-only — load headers directly."""
         import json
+
         from tests.autofix.conftest import ANTIBOT_DIR
+
         headers_path = ANTIBOT_DIR / "aws_waf.headers.json"
         data = json.loads(headers_path.read_text(encoding="utf-8"))
         result = detect_antibot(
@@ -457,10 +456,7 @@ class TestTier3Structural:
         # to avoid Tier 3 Check 2 (empty shell < 500 bytes without content tags).
         text = "This is a very long text that contains enough characters. " * 10
         content = (
-            f"<!DOCTYPE html><html><body>"
-            f"<script>init();</script>"
-            f"<div>{text}</div>"
-            f"</body></html>"
+            f"<!DOCTYPE html><html><body><script>init();</script><div>{text}</div></body></html>"
         )
         assert len(content) >= 500
         result = detect_antibot(content)
@@ -555,10 +551,10 @@ class TestEdgeCases:
     def test_tier1_beats_tier2(self):
         """When both Tier 1 and Tier 2 patterns match, Tier 1 wins."""
         content = (
-            '<html><body>'
-            '<script>var _Incapsula_Resource = {};</script>'
-            '<h1>Request unsuccessful</h1>'
-            '</body></html>'
+            "<html><body>"
+            "<script>var _Incapsula_Resource = {};</script>"
+            "<h1>Request unsuccessful</h1>"
+            "</body></html>"
         )
         result = detect_antibot(content)
         assert result is not None
@@ -568,10 +564,10 @@ class TestEdgeCases:
     def test_multiple_providers_first_wins(self):
         """When multiple Tier 1 providers match, first in priority wins."""
         content = (
-            '<html><head><title>Just a moment...</title></head>'
-            '<body>'
+            "<html><head><title>Just a moment...</title></head>"
+            "<body>"
             '<script>window._pxAppId = "PX123";</script>'
-            '</body></html>'
+            "</body></html>"
         )
         result = detect_antibot(content)
         assert result is not None

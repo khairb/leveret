@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from .nodes import FreestyleDictNode, ListNode, Node, ObjectNode, ScalarNode
 
-
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def render_schema_prompt(root: Node) -> str:
     """Render the complete ``## Output Schema`` section for the agent prompt."""
@@ -29,22 +29,26 @@ def render_schema_prompt(root: Node) -> str:
     ]
 
     if has_optional:
-        parts.extend([
-            "",
-            "For optional fields, return `None` when the value is not available.",
-            "Always include the key \u2014 do not omit it.",
-        ])
+        parts.extend(
+            [
+                "",
+                "For optional fields, return `None` when the value is not available.",
+                "Always include the key \u2014 do not omit it.",
+            ]
+        )
 
-    parts.extend([
-        "",
-        "### Structure",
-        "",
-        structure,
-        "",
-        "### Requirements",
-        "",
-        requirements,
-    ])
+    parts.extend(
+        [
+            "",
+            "### Structure",
+            "",
+            structure,
+            "",
+            "### Requirements",
+            "",
+            requirements,
+        ]
+    )
 
     return "\n".join(parts)
 
@@ -52,6 +56,7 @@ def render_schema_prompt(root: Node) -> str:
 # ---------------------------------------------------------------------------
 # Structure renderer
 # ---------------------------------------------------------------------------
+
 
 def render_structure(node: Node, indent: int = 0) -> str:
     """Render the ``### Structure`` skeleton."""
@@ -90,7 +95,7 @@ def render_structure(node: Node, indent: int = 0) -> str:
                 prefix = f'"{name}": {value_str},'
                 padding = max_prefix_len - len(prefix) + 1
                 comment = _build_comment(field_node, optional)
-                lines.append(f'{pad}    {prefix}{" " * padding}{comment}')
+                lines.append(f"{pad}    {prefix}{' ' * padding}{comment}")
             else:
                 # Nested list or object — multiline, no inline comment
                 lines.append(f'{pad}    "{name}": {value_str},')
@@ -114,6 +119,7 @@ def render_structure(node: Node, indent: int = 0) -> str:
 # ---------------------------------------------------------------------------
 # Requirements renderer
 # ---------------------------------------------------------------------------
+
 
 def render_requirements(node: Node, depth: int = 0) -> str:
     """Render the ``### Requirements`` bullet list."""
@@ -226,7 +232,10 @@ def _list_constraint_comment(node: ListNode) -> str:
 # ---------------------------------------------------------------------------
 
 _PLURAL_TYPE_NAMES = {
-    str: "strings", int: "integers", float: "floats", bool: "booleans",
+    str: "strings",
+    int: "integers",
+    float: "floats",
+    bool: "booleans",
 }
 
 
@@ -273,9 +282,7 @@ def _render_object_fields(node: ObjectNode, depth: int) -> list[str]:
     return lines
 
 
-def _render_field_bullet(
-    name: str, node: Node, optional: bool, indent: str
-) -> str:
+def _render_field_bullet(name: str, node: Node, optional: bool, indent: str) -> str:
     """Render a single field bullet point."""
     if isinstance(node, FreestyleDictNode):
         req = "Required" if not optional else "Optional"
@@ -309,9 +316,7 @@ def _describe_nested_list_type(node: Node) -> str:
     return "list"
 
 
-def _render_scalar_bullet(
-    name: str, node: ScalarNode, optional: bool, indent: str
-) -> str:
+def _render_scalar_bullet(name: str, node: ScalarNode, optional: bool, indent: str) -> str:
     """Render a scalar field bullet with type, required/optional, constraints."""
     type_article = "an" if node.type_ == int else "a"
     type_name = _BOLD_TYPE_NAMES[node.type_]
@@ -345,11 +350,9 @@ def _scalar_constraint_text(node: ScalarNode) -> str:
     if node.type_ == str:
         if node.enum is not None:
             vals = ", ".join(f'"{v}"' for v in node.enum)
-            parts.append(f'Must be one of: {vals}.')
+            parts.append(f"Must be one of: {vals}.")
         if node.min_length is not None and node.max_length is not None:
-            parts.append(
-                f"Between {node.min_length} and {node.max_length} characters."
-            )
+            parts.append(f"Between {node.min_length} and {node.max_length} characters.")
         elif node.min_length is not None:
             char = "character" if node.min_length == 1 else "characters"
             parts.append(f"At least {node.min_length} {char}.")
@@ -380,6 +383,7 @@ def _lowercase_first(s: str) -> str:
 # ---------------------------------------------------------------------------
 # Tree traversal helpers
 # ---------------------------------------------------------------------------
+
 
 def _tree_has_optional(node: Node) -> bool:
     """Check if any ScalarNode in the tree has optional=True."""

@@ -25,12 +25,7 @@ def _save(name: str, result: str, *, html: str = "") -> str:
     path = OUTPUT_DIR / f"{name}.txt"
     content = result
     if html:
-        content = (
-            "=== INPUT HTML ===\n"
-            + html.strip()
-            + "\n\n=== OUTPUT ===\n"
-            + result
-        )
+        content = "=== INPUT HTML ===\n" + html.strip() + "\n\n=== OUTPUT ===\n" + result
     path.write_text(content, encoding="utf-8")
     return result
 
@@ -39,13 +34,19 @@ def _save(name: str, result: str, *, html: str = "") -> str:
 # Helper to build InteractiveElement quickly
 # ---------------------------------------------------------------------------
 
-def ie(iid: int, tag: str, attrs: dict | None = None, text: str = "", selector: str = "") -> InteractiveElement:
-    return InteractiveElement(iid=iid, tag=tag, attributes=attrs or {}, text=text, selector=selector)
+
+def ie(
+    iid: int, tag: str, attrs: dict | None = None, text: str = "", selector: str = ""
+) -> InteractiveElement:
+    return InteractiveElement(
+        iid=iid, tag=tag, attributes=attrs or {}, text=text, selector=selector
+    )
 
 
 # ===========================================================================
 # Test 1: The exact example from the spec
 # ===========================================================================
+
 
 class TestSpecExample:
     HTML = """
@@ -136,6 +137,7 @@ class TestSpecExample:
 # Test 2: Hidden elements
 # ===========================================================================
 
+
 class TestHiddenElements:
     def test_data_hidden_attribute(self):
         html = """
@@ -158,7 +160,9 @@ class TestHiddenElements:
             </div>
         </div>
         """
-        result = _save("02_hidden_aria", html_to_text(html, [ie(1, "a", {"href": "/secret"})]), html=html)
+        result = _save(
+            "02_hidden_aria", html_to_text(html, [ie(1, "a", {"href": "/secret"})]), html=html
+        )
         assert "Visible" in result
         assert "Screen reader" not in result
         assert "Hidden link" not in result
@@ -212,6 +216,7 @@ class TestHiddenElements:
 # Test 3: Nested interactive elements
 # ===========================================================================
 
+
 class TestNestedInteractive:
     def test_link_containing_button(self):
         html = """
@@ -225,10 +230,17 @@ class TestNestedInteractive:
             </a>
         </div>
         """
-        result = _save("03_nested_link_button", html_to_text(html, [
-            ie(1, "a", {"href": "/card"}),
-            ie(2, "button", {"type": "button"}),
-        ]), html=html)
+        result = _save(
+            "03_nested_link_button",
+            html_to_text(
+                html,
+                [
+                    ie(1, "a", {"href": "/card"}),
+                    ie(2, "button", {"type": "button"}),
+                ],
+            ),
+            html=html,
+        )
         assert '<a href="/card">' in result
         assert "</a>" in result
         assert '<button type="button">Add to Cart</button>' in result
@@ -244,11 +256,18 @@ class TestNestedInteractive:
             </a>
         </form>
         """
-        result = _save("03_nested_three_levels", html_to_text(html, [
-            ie(1, "form", {"action": "/submit"}),
-            ie(2, "a", {"href": "/link"}),
-            ie(3, "button", {"type": "submit"}),
-        ]), html=html)
+        result = _save(
+            "03_nested_three_levels",
+            html_to_text(
+                html,
+                [
+                    ie(1, "form", {"action": "/submit"}),
+                    ie(2, "a", {"href": "/link"}),
+                    ie(3, "button", {"type": "submit"}),
+                ],
+            ),
+            html=html,
+        )
         assert '<form action="/submit">' in result
         assert "</form>" in result
         assert '<a href="/link">' in result
@@ -261,6 +280,7 @@ class TestNestedInteractive:
 # Test 4: Malformed HTML
 # ===========================================================================
 
+
 class TestMalformedHTML:
     def test_unclosed_tags(self):
         html = """
@@ -270,7 +290,9 @@ class TestMalformedHTML:
             <a href="/link" data-iid="1">A link</a>
         </div>
         """
-        result = _save("04_malformed_unclosed", html_to_text(html, [ie(1, "a", {"href": "/link"})]), html=html)
+        result = _save(
+            "04_malformed_unclosed", html_to_text(html, [ie(1, "a", {"href": "/link"})]), html=html
+        )
         assert "Paragraph without closing" in result
         assert "Another paragraph" in result
         assert '<a href="/link">A link</a>' in result
@@ -298,6 +320,7 @@ class TestMalformedHTML:
 # Test 5: Image handling
 # ===========================================================================
 
+
 class TestImages:
     def test_image_with_alt(self):
         html = '<div><img src="photo.jpg" alt="A beautiful sunset"></div>'
@@ -324,7 +347,9 @@ class TestImages:
             <span>Product Name</span>
         </a>
         """
-        result = _save("05_img_in_link", html_to_text(html, [ie(1, "a", {"href": "/product"})]), html=html)
+        result = _save(
+            "05_img_in_link", html_to_text(html, [ie(1, "a", {"href": "/product"})]), html=html
+        )
         assert "Product Photo" in result
         assert "Product Name" in result
         assert '<a href="/product">' in result
@@ -334,6 +359,7 @@ class TestImages:
 # Test 6: Attribute filtering
 # ===========================================================================
 
+
 class TestAttributeFiltering:
     def test_class_and_style_stripped(self):
         html = """
@@ -342,7 +368,9 @@ class TestAttributeFiltering:
             Click me
         </a>
         """
-        result = _save("06_attr_filtering", html_to_text(html, [ie(1, "a", {"href": "/link"})]), html=html)
+        result = _save(
+            "06_attr_filtering", html_to_text(html, [ie(1, "a", {"href": "/link"})]), html=html
+        )
         assert 'href="/link"' in result
         assert 'id="main-link"' in result
         assert 'data-testid="nav-link"' in result
@@ -358,7 +386,11 @@ class TestAttributeFiltering:
             Go
         </button>
         """
-        result = _save("06_attr_allowed_only", html_to_text(html, [ie(1, "button", {"type": "submit", "name": "go"})]), html=html)
+        result = _save(
+            "06_attr_allowed_only",
+            html_to_text(html, [ie(1, "button", {"type": "submit", "name": "go"})]),
+            html=html,
+        )
         assert 'type="submit"' in result
         assert 'name="go"' in result
         assert "class=" not in result
@@ -367,11 +399,29 @@ class TestAttributeFiltering:
         assert "onclick" not in result
 
     def test_attributes_sorted_alphabetically(self):
-        html = '<input data-iid="1" type="text" name="query" placeholder="Search..." id="search-box">'
-        result = _save("06_attr_sorted", html_to_text(html, [
-            ie(1, "input", {"type": "text", "name": "query", "placeholder": "Search...", "id": "search-box"})
-        ]), html=html)
-        tag_match = result[result.index("<input"):result.index(">") + 1]
+        html = (
+            '<input data-iid="1" type="text" name="query" placeholder="Search..." id="search-box">'
+        )
+        result = _save(
+            "06_attr_sorted",
+            html_to_text(
+                html,
+                [
+                    ie(
+                        1,
+                        "input",
+                        {
+                            "type": "text",
+                            "name": "query",
+                            "placeholder": "Search...",
+                            "id": "search-box",
+                        },
+                    )
+                ],
+            ),
+            html=html,
+        )
+        tag_match = result[result.index("<input") : result.index(">") + 1]
         attr_positions = {}
         for attr in ["id", "name", "placeholder", "type"]:
             pos = tag_match.find(attr)
@@ -384,6 +434,7 @@ class TestAttributeFiltering:
 # ===========================================================================
 # Test 7: Empty and minimal inputs
 # ===========================================================================
+
 
 class TestEdgeCases:
     def test_empty_string(self):
@@ -439,6 +490,7 @@ class TestEdgeCases:
 # Test 8: Whitespace normalisation
 # ===========================================================================
 
+
 class TestWhitespace:
     def test_collapse_multiple_spaces(self):
         html = "<div><p>Too    many     spaces</p></div>"
@@ -474,6 +526,7 @@ class TestWhitespace:
 # Test 9: Determinism
 # ===========================================================================
 
+
 class TestDeterminism:
     def test_identical_output_on_repeated_calls(self):
         html = """
@@ -505,6 +558,7 @@ class TestDeterminism:
 # Test 10: Performance — large synthetic DOM
 # ===========================================================================
 
+
 class TestPerformance:
     def test_large_page_under_one_second(self):
         """Generate a page with 50,000+ nodes and verify conversion < 1s."""
@@ -528,7 +582,7 @@ class TestPerformance:
         html = f"""
         <html><body>
         <div class="product-list">
-            {''.join(cards)}
+            {"".join(cards)}
         </div>
         </body></html>
         """
@@ -539,7 +593,10 @@ class TestPerformance:
 
         # Save first and last 2000 chars for inspection
         preview = result[:2000] + "\n\n... (truncated) ...\n\n" + result[-2000:]
-        _save("10_performance_50k_nodes", f"Elapsed: {elapsed:.3f}s\nHTML size: {len(html):,} chars\nOutput size: {len(result):,} chars\n\n{preview}")
+        _save(
+            "10_performance_50k_nodes",
+            f"Elapsed: {elapsed:.3f}s\nHTML size: {len(html):,} chars\nOutput size: {len(result):,} chars\n\n{preview}",
+        )
 
         assert elapsed < 1.0, f"Took {elapsed:.3f}s — too slow"
         assert "Product 1" in result
@@ -551,6 +608,7 @@ class TestPerformance:
 # ===========================================================================
 # Test 11: Real-world-like HTML (complex structure)
 # ===========================================================================
+
 
 class TestRealWorldLike:
     def test_complex_ecommerce_page(self):
@@ -714,7 +772,9 @@ class TestRealWorldLike:
             </select>
         </div>
         """
-        result = _save("11_select_options", html_to_text(html, [ie(1, "select", {"name": "color"})]), html=html)
+        result = _save(
+            "11_select_options", html_to_text(html, [ie(1, "select", {"name": "color"})]), html=html
+        )
         assert '<select name="color">' in result
         assert "Red" in result
         assert "Blue" in result
@@ -744,19 +804,28 @@ class TestRealWorldLike:
 # Test 12: Attribute escaping
 # ===========================================================================
 
+
 class TestAttributeEscaping:
     def test_quotes_in_attributes(self):
         html = """<a href='/search?q="test"&page=1' data-iid="1">Search</a>"""
-        result = _save("12_attr_escape_quotes", html_to_text(html, [ie(1, "a", {"href": '/search?q="test"&page=1'})]), html=html)
+        result = _save(
+            "12_attr_escape_quotes",
+            html_to_text(html, [ie(1, "a", {"href": '/search?q="test"&page=1'})]),
+            html=html,
+        )
         assert "Search" in result
         assert "<a" in result
         assert "</a>" in result
 
     def test_ampersand_in_href(self):
         html = """<a href="/filter?color=red&amp;size=L" data-iid="1">Red Large</a>"""
-        result = _save("12_attr_escape_amp", html_to_text(html, [ie(1, "a", {"href": "/filter?color=red&size=L"})]), html=html)
+        result = _save(
+            "12_attr_escape_amp",
+            html_to_text(html, [ie(1, "a", {"href": "/filter?color=red&size=L"})]),
+            html=html,
+        )
         assert "Red Large" in result
-        assert '<a href=' in result
+        assert "<a href=" in result
 
 
 # ===========================================================================

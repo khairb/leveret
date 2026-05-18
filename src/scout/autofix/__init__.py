@@ -14,7 +14,7 @@ Spec reference: docs/specific/AUTO_FIX_ALGORITHM.md
 """
 
 from scout.autofix.diagnosis import diagnose
-from scout.autofix.types import AttemptResult, RegenerateMode, DiagnosisResult
+from scout.autofix.types import AttemptResult, DiagnosisResult, RegenerateMode
 
 # Backward compatibility alias
 AutoFixMode = RegenerateMode

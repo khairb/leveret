@@ -31,7 +31,9 @@ class CompiledSchema:
     prompt: str
 
     def validate(
-        self, data: Any, tolerance: Tolerance | None = None,
+        self,
+        data: Any,
+        tolerance: Tolerance | None = None,
     ) -> tuple[bool, str]:
         """Validate data against this schema.
 
@@ -58,12 +60,14 @@ class CompiledSchema:
             and len(data) == 0
             and (self.root.min is None or self.root.min == 0)
         ):
-            errors = [RawError(
-                "",
-                "list is empty — the scraper must return at least one result",
-                None,
-                "structure",
-            )]
+            errors = [
+                RawError(
+                    "",
+                    "list is empty — the scraper must return at least one result",
+                    None,
+                    "structure",
+                )
+            ]
             total_items = 0
             return False, format_errors(errors, total_items, node_tree=self.root)
 

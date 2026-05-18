@@ -37,6 +37,7 @@ class RawError:
 # Main dispatch
 # ---------------------------------------------------------------------------
 
+
 def validate(data: Any, node: Node, path: str = "") -> list[RawError]:
     """Validate data against a Node tree.
 
@@ -57,19 +58,22 @@ def validate(data: Any, node: Node, path: str = "") -> list[RawError]:
 # List validation
 # ---------------------------------------------------------------------------
 
+
 def _validate_list(data: Any, node: ListNode, path: str) -> list[RawError]:
     errors: list[RawError] = []
 
     # Tier 1: type check
     if not isinstance(data, list):
         if data is None:
-            return [RawError(
-                path,
-                "expected a list, got null. Your function returned None "
-                "\u2014 make sure it has an explicit return statement.",
-                data,
-                "type",
-            )]
+            return [
+                RawError(
+                    path,
+                    "expected a list, got null. Your function returned None "
+                    "\u2014 make sure it has an explicit return statement.",
+                    data,
+                    "type",
+                )
+            ]
         return [RawError(path, f"expected a list, got {_type_name(data)}", data, "type")]
 
     # Tier 2: empty list with min constraint — short-circuit completely
@@ -79,20 +83,24 @@ def _validate_list(data: Any, node: ListNode, path: str) -> list[RawError]:
 
     # Tier 2: count constraints (non-empty — report but continue)
     if node.min is not None and len(data) < node.min:
-        errors.append(RawError(
-            path,
-            f"returned {len(data)} {'item' if len(data) == 1 else 'items'}, "
-            f"minimum is {node.min}",
-            None,
-            "structure",
-        ))
+        errors.append(
+            RawError(
+                path,
+                f"returned {len(data)} {'item' if len(data) == 1 else 'items'}, "
+                f"minimum is {node.min}",
+                None,
+                "structure",
+            )
+        )
     if node.max is not None and len(data) > node.max:
-        errors.append(RawError(
-            path,
-            f"returned {len(data)} items, maximum is {node.max}",
-            None,
-            "structure",
-        ))
+        errors.append(
+            RawError(
+                path,
+                f"returned {len(data)} items, maximum is {node.max}",
+                None,
+                "structure",
+            )
+        )
 
     # Tier 3+: validate each item (cap at first 50 for over-max lists)
     over_max = node.max is not None and len(data) > node.max
@@ -107,6 +115,7 @@ def _validate_list(data: Any, node: ListNode, path: str) -> list[RawError]:
 # ---------------------------------------------------------------------------
 # Object validation
 # ---------------------------------------------------------------------------
+
 
 def _validate_object(data: Any, node: ObjectNode, path: str) -> list[RawError]:
     errors: list[RawError] = []
@@ -129,7 +138,9 @@ def _validate_object(data: Any, node: ObjectNode, path: str) -> list[RawError]:
         # Null value
         if value is None:
             if not optional:
-                errors.append(RawError(field_path, "field is null, but it is required", None, "null"))
+                errors.append(
+                    RawError(field_path, "field is null, but it is required", None, "null")
+                )
             continue  # None for optional → valid, skip constraints
 
         # Field exists and is not null — validate recursively
@@ -143,49 +154,60 @@ def _validate_object(data: Any, node: ObjectNode, path: str) -> list[RawError]:
 # Scalar validation
 # ---------------------------------------------------------------------------
 
+
 def _validate_scalar(data: Any, node: ScalarNode, path: str) -> list[RawError]:
     errors: list[RawError] = []
 
     # Type check with lenient coercion
     if not _check_type(data, node.type_):
-        return [RawError(
-            path,
-            f"expected {node.type_.__name__}, got {_type_name(data)}",
-            data,
-            "type",
-        )]
+        return [
+            RawError(
+                path,
+                f"expected {node.type_.__name__}, got {_type_name(data)}",
+                data,
+                "type",
+            )
+        ]
 
     # Type is correct — check all constraints independently
     if node.type_ == str:
         if node.enum is not None and data not in node.enum:
             vals = ", ".join(f'"{v}"' for v in node.enum)
-            errors.append(RawError(
-                path,
-                f'value "{_truncate(data)}" is not one of the allowed values: {vals}',
-                data,
-                "constraint",
-            ))
+            errors.append(
+                RawError(
+                    path,
+                    f'value "{_truncate(data)}" is not one of the allowed values: {vals}',
+                    data,
+                    "constraint",
+                )
+            )
         if node.min_length is not None and len(data) < node.min_length:
-            errors.append(RawError(
-                path,
-                f"string has {len(data)} characters, minimum is {node.min_length}",
-                data,
-                "constraint",
-            ))
+            errors.append(
+                RawError(
+                    path,
+                    f"string has {len(data)} characters, minimum is {node.min_length}",
+                    data,
+                    "constraint",
+                )
+            )
         if node.max_length is not None and len(data) > node.max_length:
-            errors.append(RawError(
-                path,
-                f"string has {len(data)} characters, maximum is {node.max_length}",
-                data,
-                "constraint",
-            ))
+            errors.append(
+                RawError(
+                    path,
+                    f"string has {len(data)} characters, maximum is {node.max_length}",
+                    data,
+                    "constraint",
+                )
+            )
         if node.pattern is not None and not re.search(node.pattern, data):
-            errors.append(RawError(
-                path,
-                f'string "{_truncate(data)}" does not match pattern {node.pattern}',
-                data,
-                "constraint",
-            ))
+            errors.append(
+                RawError(
+                    path,
+                    f'string "{_truncate(data)}" does not match pattern {node.pattern}',
+                    data,
+                    "constraint",
+                )
+            )
 
     elif node.type_ in (int, float):
         # Coerce int → float for comparison on float fields
@@ -195,20 +217,32 @@ def _validate_scalar(data: Any, node: ScalarNode, path: str) -> list[RawError]:
         if too_low or too_high:
             if node.min is not None and node.max is not None:
                 # Both bounds defined — use "between" phrasing
-                errors.append(RawError(
-                    path,
-                    f"value is {val}, must be between {node.min} and {node.max}",
-                    val,
-                    "constraint",
-                ))
+                errors.append(
+                    RawError(
+                        path,
+                        f"value is {val}, must be between {node.min} and {node.max}",
+                        val,
+                        "constraint",
+                    )
+                )
             elif too_low:
-                errors.append(RawError(
-                    path, f"value is {val}, must be >= {node.min}", val, "constraint",
-                ))
+                errors.append(
+                    RawError(
+                        path,
+                        f"value is {val}, must be >= {node.min}",
+                        val,
+                        "constraint",
+                    )
+                )
             else:
-                errors.append(RawError(
-                    path, f"value is {val}, must be <= {node.max}", val, "constraint",
-                ))
+                errors.append(
+                    RawError(
+                        path,
+                        f"value is {val}, must be <= {node.max}",
+                        val,
+                        "constraint",
+                    )
+                )
 
     return errors
 
@@ -217,9 +251,8 @@ def _validate_scalar(data: Any, node: ScalarNode, path: str) -> list[RawError]:
 # Freestyle dict validation
 # ---------------------------------------------------------------------------
 
-def _validate_freestyle_dict(
-    data: Any, node: FreestyleDictNode, path: str
-) -> list[RawError]:
+
+def _validate_freestyle_dict(data: Any, node: FreestyleDictNode, path: str) -> list[RawError]:
     if not isinstance(data, dict):
         return [RawError(path, f"expected an object, got {_type_name(data)}", data, "type")]
     return []
@@ -228,6 +261,7 @@ def _validate_freestyle_dict(
 # ---------------------------------------------------------------------------
 # Type checking
 # ---------------------------------------------------------------------------
+
 
 def _check_type(data: Any, expected: type) -> bool:
     """Check if data matches the expected type, with lenient coercion.

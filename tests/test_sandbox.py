@@ -12,9 +12,8 @@ from pathlib import Path
 import pytest
 
 from scout.runtime.sandbox import (
-    ALLOWED_MODULES,
-    SandboxError,
     PassthroughPrintCollector,
+    SandboxError,
     _safe_asyncio,
     _safe_import,
     build_restricted_builtins,
@@ -22,7 +21,6 @@ from scout.runtime.sandbox import (
     build_safe_pre_imports,
     compile_restricted_agent_code,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 #  A. Compile existing scrapers
@@ -55,7 +53,12 @@ BLOCKED_COMPILE_PATTERNS = [
     ("from os import *", "star import"),
 ]
 
-@pytest.mark.parametrize("code,desc", BLOCKED_COMPILE_PATTERNS, ids=lambda x: x if isinstance(x, str) and len(x) < 50 else "")
+
+@pytest.mark.parametrize(
+    "code,desc",
+    BLOCKED_COMPILE_PATTERNS,
+    ids=lambda x: x if isinstance(x, str) and len(x) < 50 else "",
+)
 def test_blocked_compile_patterns(code, desc):
     """Patterns blocked at compile time."""
     with pytest.raises(SandboxError):
@@ -63,13 +66,39 @@ def test_blocked_compile_patterns(code, desc):
 
 
 BLOCKED_IMPORT_MODULES = [
-    "os", "subprocess", "sys", "shutil", "tempfile", "pathlib",
-    "socket", "ctypes", "importlib", "pickle", "shelve", "marshal",
-    "inspect", "webbrowser", "multiprocessing", "threading", "signal",
-    "io", "gzip", "bz2", "lzma", "uuid",
-    "urllib", "urllib.request", "http.server", "http.client",
-    "code", "codeop", "ast", "runpy", "gc",
+    "os",
+    "subprocess",
+    "sys",
+    "shutil",
+    "tempfile",
+    "pathlib",
+    "socket",
+    "ctypes",
+    "importlib",
+    "pickle",
+    "shelve",
+    "marshal",
+    "inspect",
+    "webbrowser",
+    "multiprocessing",
+    "threading",
+    "signal",
+    "io",
+    "gzip",
+    "bz2",
+    "lzma",
+    "uuid",
+    "urllib",
+    "urllib.request",
+    "http.server",
+    "http.client",
+    "code",
+    "codeop",
+    "ast",
+    "runpy",
+    "gc",
 ]
+
 
 @pytest.mark.parametrize("module", BLOCKED_IMPORT_MODULES)
 def test_blocked_imports(module):
@@ -100,6 +129,7 @@ def test_blocked_exec_eval_builtins():
 # ═══════════════════════════════════════════════════════════════
 #  B2. Asyncio safety
 # ═══════════════════════════════════════════════════════════════
+
 
 def test_asyncio_proxy_has_safe_functions():
     """Safe asyncio functions are available."""
@@ -344,7 +374,9 @@ ALLOWED_PATTERNS = [
 ]
 
 
-@pytest.mark.parametrize("code,desc", ALLOWED_PATTERNS, ids=lambda x: x if isinstance(x, str) and len(x) < 50 else "")
+@pytest.mark.parametrize(
+    "code,desc", ALLOWED_PATTERNS, ids=lambda x: x if isinstance(x, str) and len(x) < 50 else ""
+)
 def test_allowed_patterns_compile(code, desc):
     """Pattern must compile through sandbox without errors."""
     result = compile_restricted_agent_code(code)
@@ -356,14 +388,40 @@ def test_allowed_patterns_compile(code, desc):
 # ═══════════════════════════════════════════════════════════════
 
 ALLOWED_IMPORT_MODULES = [
-    "json", "re", "math", "collections", "itertools", "functools",
-    "datetime", "time", "calendar",
-    "html", "html.parser", "html.entities",
-    "base64", "hashlib", "csv", "string", "textwrap",
-    "copy", "decimal", "random", "enum", "dataclasses",
-    "typing", "zlib", "pprint", "contextlib", "abc",
-    "statistics", "difflib", "unicodedata", "fractions",
-    "binascii", "hmac", "operator",
+    "json",
+    "re",
+    "math",
+    "collections",
+    "itertools",
+    "functools",
+    "datetime",
+    "time",
+    "calendar",
+    "html",
+    "html.parser",
+    "html.entities",
+    "base64",
+    "hashlib",
+    "csv",
+    "string",
+    "textwrap",
+    "copy",
+    "decimal",
+    "random",
+    "enum",
+    "dataclasses",
+    "typing",
+    "zlib",
+    "pprint",
+    "contextlib",
+    "abc",
+    "statistics",
+    "difflib",
+    "unicodedata",
+    "fractions",
+    "binascii",
+    "hmac",
+    "operator",
     "urllib.parse",
     "collections.abc",  # submodule of allowed parent
 ]
@@ -398,6 +456,7 @@ def test_import_blocked_runtime_in_restricted_globals():
 #  E. Print passthrough
 # ═══════════════════════════════════════════════════════════════
 
+
 def test_print_passthrough():
     """print() in restricted code goes to real stdout."""
     code = compile_restricted_agent_code('print("sandbox_test_output")')
@@ -427,21 +486,56 @@ def test_print_collector_class():
 #  F. Builtins verification
 # ═══════════════════════════════════════════════════════════════
 
+
 def test_builtins_include_essentials():
     """Essential builtins are available."""
     builtins = build_restricted_builtins()
     essentials = [
-        "dict", "list", "set", "frozenset",
-        "enumerate", "filter", "map", "max", "min", "sum",
-        "all", "any", "hasattr", "getattr",
-        "type", "isinstance", "issubclass",
-        "print", "sorted", "zip", "len", "range",
-        "int", "float", "str", "bool", "bytes",
-        "abs", "round", "repr", "ord", "chr",
-        "iter", "next", "reversed",
-        "super", "object", "property",
-        "Exception", "ValueError", "TypeError", "KeyError",
-        "IndexError", "RuntimeError", "StopIteration",
+        "dict",
+        "list",
+        "set",
+        "frozenset",
+        "enumerate",
+        "filter",
+        "map",
+        "max",
+        "min",
+        "sum",
+        "all",
+        "any",
+        "hasattr",
+        "getattr",
+        "type",
+        "isinstance",
+        "issubclass",
+        "print",
+        "sorted",
+        "zip",
+        "len",
+        "range",
+        "int",
+        "float",
+        "str",
+        "bool",
+        "bytes",
+        "abs",
+        "round",
+        "repr",
+        "ord",
+        "chr",
+        "iter",
+        "next",
+        "reversed",
+        "super",
+        "object",
+        "property",
+        "Exception",
+        "ValueError",
+        "TypeError",
+        "KeyError",
+        "IndexError",
+        "RuntimeError",
+        "StopIteration",
     ]
     for name in essentials:
         assert name in builtins, f"Missing essential builtin: {name}"
@@ -450,14 +544,25 @@ def test_builtins_include_essentials():
 def test_builtins_exclude_dangerous():
     """Dangerous builtins are NOT available."""
     builtins = build_restricted_builtins()
-    for name in ("exec", "eval", "compile", "open", "breakpoint",
-                  "globals", "locals", "vars", "dir", "input"):
+    for name in (
+        "exec",
+        "eval",
+        "compile",
+        "open",
+        "breakpoint",
+        "globals",
+        "locals",
+        "vars",
+        "dir",
+        "input",
+    ):
         assert name not in builtins, f"Dangerous builtin present: {name}"
 
 
 # ═══════════════════════════════════════════════════════════════
 #  G. End-to-end execution in restricted globals
 # ═══════════════════════════════════════════════════════════════
+
 
 def test_execute_simple_function():
     """A simple function compiles and executes in the sandbox."""
@@ -548,6 +653,7 @@ def test_execute_inplace_operations():
 #  H. Pre-imports safety
 # ═══════════════════════════════════════════════════════════════
 
+
 def test_safe_pre_imports_no_dangerous_modules():
     """Safe pre-imports do NOT include os, shutil, tempfile."""
     pre = build_safe_pre_imports()
@@ -573,6 +679,7 @@ def test_safe_pre_imports_has_stringio():
 #  I. Security: dunder traversal blocked
 # ═══════════════════════════════════════════════════════════════
 
+
 def test_dunder_traversal_blocked_at_compile():
     """Classic sandbox escape via __class__.__bases__ is blocked at compile time."""
     source = "x = ().__class__.__bases__"
@@ -595,6 +702,7 @@ def test_dunder_globals_blocked_at_compile():
 def test_dunder_via_getattr_blocked_at_runtime():
     """Even if code avoids direct dunder access, runtime guard catches it."""
     from scout.runtime.sandbox import _guarded_getattr
+
     with pytest.raises(AttributeError, match="not allowed"):
         _guarded_getattr((), "__class__")
     with pytest.raises(AttributeError, match="not allowed"):

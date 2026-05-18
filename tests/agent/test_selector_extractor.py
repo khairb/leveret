@@ -6,10 +6,7 @@ with the expected extraction results verified manually.
 
 from __future__ import annotations
 
-import pytest
-
-from scout.agent.selector_extractor import extract_selectors, ExtractionResult
-
+from scout.agent.selector_extractor import extract_selectors
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Test Data — Real code blocks from traces
@@ -382,6 +379,7 @@ await page.goto('https://example.com', wait_until='domcontentloaded')
 # ═══════════════════════════════════════════════════════════════════════
 #  Tests
 # ═══════════════════════════════════════════════════════════════════════
+
 
 class TestSimpleClicks:
     """Test extraction of simple page.click() calls."""

@@ -22,8 +22,7 @@ def _make_page_view_result(
     """Build a tool_result message containing a page view."""
     parts: list[str] = []
     turn_tag = f"__TURN_{turn}__\n" if turn is not None else ""
-    parts.append(f"__PAGE_VIEW_START__\n{turn_tag}"
-                 f"=== Page State #{page_state} | {url} ===")
+    parts.append(f"__PAGE_VIEW_START__\n{turn_tag}=== Page State #{page_state} | {url} ===")
     if sections:
         for sid, role, content in sections:
             parts.append(f"\n--- [{sid}] {role} (0 interactive) ---")
@@ -34,11 +33,13 @@ def _make_page_view_result(
     content = "".join(parts)
     return {
         "role": "user",
-        "content": [{
-            "type": "tool_result",
-            "tool_use_id": f"t-pv-{page_state}",
-            "content": f"Executed in 100ms (step {page_state}).\n\nOutput:\n{content}",
-        }],
+        "content": [
+            {
+                "type": "tool_result",
+                "tool_use_id": f"t-pv-{page_state}",
+                "content": f"Executed in 100ms (step {page_state}).\n\nOutput:\n{content}",
+            }
+        ],
     }
 
 
@@ -57,11 +58,13 @@ def _make_zoom_result(
     )
     return {
         "role": "user",
-        "content": [{
-            "type": "tool_result",
-            "tool_use_id": "t-zoom",
-            "content": content,
-        }],
+        "content": [
+            {
+                "type": "tool_result",
+                "tool_use_id": "t-zoom",
+                "content": content,
+            }
+        ],
     }
 
 
@@ -88,10 +91,14 @@ class TestPageViewStubCollapse:
     def test_page_view_stubbed_after_5_turns(self):
         """A page view created at turn 1 should be stubbed at turn 6."""
         messages = [
-            _make_page_view_result(1, turn=1, sections=[
-                ("nav-main", "navigation", "Home | About"),
-                ("div-content", "content", "<a href='/'>Link</a>"),
-            ]),
+            _make_page_view_result(
+                1,
+                turn=1,
+                sections=[
+                    ("nav-main", "navigation", "Home | About"),
+                    ("div-content", "content", "<a href='/'>Link</a>"),
+                ],
+            ),
         ]
         # Turn 5: still within window.
         _stub_old_page_views_inplace(messages, current_turn=5)
@@ -107,9 +114,13 @@ class TestPageViewStubCollapse:
     def test_page_view_preserved_within_5_turns(self):
         """Page views within the 5-turn window should stay intact."""
         messages = [
-            _make_page_view_result(5, turn=10, sections=[
-                ("s1", "content", "Some text"),
-            ]),
+            _make_page_view_result(
+                5,
+                turn=10,
+                sections=[
+                    ("s1", "content", "Some text"),
+                ],
+            ),
         ]
         _stub_old_page_views_inplace(messages, current_turn=14)
         content = _get_tool_result_content(messages[0])
@@ -119,9 +130,13 @@ class TestPageViewStubCollapse:
     def test_no_turn_tag_treated_as_old(self):
         """Page views without a __TURN_N__ tag should be stubbed."""
         messages = [
-            _make_page_view_result(1, turn=None, sections=[
-                ("s1", "content", "Old page"),
-            ]),
+            _make_page_view_result(
+                1,
+                turn=None,
+                sections=[
+                    ("s1", "content", "Old page"),
+                ],
+            ),
         ]
         _stub_old_page_views_inplace(messages, current_turn=5)
         assert "[stub]" in _get_tool_result_content(messages[0])
@@ -129,9 +144,13 @@ class TestPageViewStubCollapse:
     def test_already_stubbed_not_modified(self):
         """A page view that's already stubbed should not be touched."""
         messages = [
-            _make_page_view_result(1, turn=1, sections=[
-                ("s1", "content", "Text"),
-            ]),
+            _make_page_view_result(
+                1,
+                turn=1,
+                sections=[
+                    ("s1", "content", "Text"),
+                ],
+            ),
         ]
         # First stub.
         _stub_old_page_views_inplace(messages, current_turn=10)
@@ -146,9 +165,14 @@ class TestPageViewStubCollapse:
         """The stub should include the full URL from the header."""
         url = "https://www.airbnb.de/s/Berlin?checkin=2026-04-20&adults=2"
         messages = [
-            _make_page_view_result(9, url=url, turn=1, sections=[
-                ("s1", "content", "Data"),
-            ]),
+            _make_page_view_result(
+                9,
+                url=url,
+                turn=1,
+                sections=[
+                    ("s1", "content", "Data"),
+                ],
+            ),
         ]
         _stub_old_page_views_inplace(messages, current_turn=10)
         content = _get_tool_result_content(messages[0])
@@ -157,11 +181,16 @@ class TestPageViewStubCollapse:
     def test_stub_shows_kept_section_ids(self):
         """The stub should list section IDs that had real content."""
         messages = [
-            _make_page_view_result(1, turn=1, sections=[
-                ("div-search", "content", "Search bar"),
-                ("div-results", "content", "<a href>Link</a>"),
-                ("nav-footer", "navigation", "[omitted]"),
-            ], omitted=50),
+            _make_page_view_result(
+                1,
+                turn=1,
+                sections=[
+                    ("div-search", "content", "Search bar"),
+                    ("div-results", "content", "<a href>Link</a>"),
+                    ("nav-footer", "navigation", "[omitted]"),
+                ],
+                omitted=50,
+            ),
         ]
         _stub_old_page_views_inplace(messages, current_turn=10)
         content = _get_tool_result_content(messages[0])
@@ -172,10 +201,15 @@ class TestPageViewStubCollapse:
     def test_stub_shows_total_section_count(self):
         """The stub should show total sections including omitted ones."""
         messages = [
-            _make_page_view_result(1, turn=1, sections=[
-                ("s1", "content", "Text"),
-                ("s2", "content", "Text"),
-            ], omitted=120),
+            _make_page_view_result(
+                1,
+                turn=1,
+                sections=[
+                    ("s1", "content", "Text"),
+                    ("s2", "content", "Text"),
+                ],
+                omitted=120,
+            ),
         ]
         _stub_old_page_views_inplace(messages, current_turn=10)
         content = _get_tool_result_content(messages[0])
@@ -184,13 +218,21 @@ class TestPageViewStubCollapse:
     def test_multiple_page_views_only_old_ones_stubbed(self):
         """Only page views older than 5 turns should be stubbed."""
         messages = [
-            _make_page_view_result(1, turn=1, sections=[
-                ("s1", "content", "Old page"),
-            ]),
+            _make_page_view_result(
+                1,
+                turn=1,
+                sections=[
+                    ("s1", "content", "Old page"),
+                ],
+            ),
             _make_assistant_msg(),
-            _make_page_view_result(2, turn=5, sections=[
-                ("s2", "content", "Recent page"),
-            ]),
+            _make_page_view_result(
+                2,
+                turn=5,
+                sections=[
+                    ("s2", "content", "Recent page"),
+                ],
+            ),
         ]
         _stub_old_page_views_inplace(messages, current_turn=9)
         # Turn 1 page: age = 9-1 = 8 >= 5 → stubbed.
@@ -252,7 +294,9 @@ class TestZoomStubCollapse:
             _make_zoom_result("s1", turn=1, html="<div>old</div>"),
         ]
         _stub_old_zoom_results_inplace(
-            messages, current_turn=10, protect_last_msg=True,
+            messages,
+            current_turn=10,
+            protect_last_msg=True,
         )
         # Should NOT be stubbed because it's the last message.
         assert "<div>old</div>" in _get_tool_result_content(messages[0])
@@ -346,20 +390,24 @@ class TestTurnTagPreservation:
     def test_replace_preserves_turn_tag(self):
         """replace_last_show_page_result must keep the turn tag."""
         cm = ConversationManager()
-        cm.messages.append({
-            "role": "user",
-            "content": [{
-                "type": "tool_result",
-                "tool_use_id": "t1",
-                "content": (
-                    "Output:\n__PAGE_VIEW_START__\n"
-                    "__TURN_5__\n"
-                    "=== Page State #1 | https://example.com ===\n"
-                    "Full page content here\n"
-                    "__PAGE_VIEW_END__"
-                ),
-            }],
-        })
+        cm.messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "t1",
+                        "content": (
+                            "Output:\n__PAGE_VIEW_START__\n"
+                            "__TURN_5__\n"
+                            "=== Page State #1 | https://example.com ===\n"
+                            "Full page content here\n"
+                            "__PAGE_VIEW_END__"
+                        ),
+                    }
+                ],
+            }
+        )
         cm.replace_last_show_page_result("Filtered content")
         content = cm.messages[0]["content"][0]["content"]
         assert "__TURN_5__" in content
@@ -369,21 +417,25 @@ class TestTurnTagPreservation:
         """A filtered page view should NOT be stubbed if within 5 turns."""
         cm = ConversationManager()
         # Add page view at turn 5.
-        cm.messages.append({
-            "role": "user",
-            "content": [{
-                "type": "tool_result",
-                "tool_use_id": "t1",
-                "content": (
-                    "Output:\n__PAGE_VIEW_START__\n"
-                    "__TURN_5__\n"
-                    "=== Page State #1 | https://example.com ===\n"
-                    "--- [s1] content (0 interactive) ---\n"
-                    "Big content\n"
-                    "__PAGE_VIEW_END__"
-                ),
-            }],
-        })
+        cm.messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "t1",
+                        "content": (
+                            "Output:\n__PAGE_VIEW_START__\n"
+                            "__TURN_5__\n"
+                            "=== Page State #1 | https://example.com ===\n"
+                            "--- [s1] content (0 interactive) ---\n"
+                            "Big content\n"
+                            "__PAGE_VIEW_END__"
+                        ),
+                    }
+                ],
+            }
+        )
         # Filter it (simulates show_page pipeline).
         cm.replace_last_show_page_result(
             "=== Page State #1 | https://example.com ===\n"
@@ -402,21 +454,25 @@ class TestTurnTagPreservation:
     def test_filtered_page_stubbed_after_window(self):
         """A filtered page view SHOULD be stubbed after 5 turns."""
         cm = ConversationManager()
-        cm.messages.append({
-            "role": "user",
-            "content": [{
-                "type": "tool_result",
-                "tool_use_id": "t1",
-                "content": (
-                    "Output:\n__PAGE_VIEW_START__\n"
-                    "__TURN_5__\n"
-                    "=== Page State #1 | https://example.com ===\n"
-                    "--- [s1] content (0 interactive) ---\n"
-                    "Big content\n"
-                    "__PAGE_VIEW_END__"
-                ),
-            }],
-        })
+        cm.messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "t1",
+                        "content": (
+                            "Output:\n__PAGE_VIEW_START__\n"
+                            "__TURN_5__\n"
+                            "=== Page State #1 | https://example.com ===\n"
+                            "--- [s1] content (0 interactive) ---\n"
+                            "Big content\n"
+                            "__PAGE_VIEW_END__"
+                        ),
+                    }
+                ],
+            }
+        )
         cm.replace_last_show_page_result(
             "=== Page State #1 | https://example.com ===\n"
             "--- [s1] content (0 interactive) ---\n"

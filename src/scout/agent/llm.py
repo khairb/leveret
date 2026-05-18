@@ -19,12 +19,16 @@ from pydantic_ai.direct import model_request
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import (
     InstructionPart,
-    ModelRequest as PydanticRequest,
-    ModelResponse as PydanticResponse,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
+)
+from pydantic_ai.messages import (
+    ModelRequest as PydanticRequest,
+)
+from pydantic_ai.messages import (
+    ModelResponse as PydanticResponse,
 )
 from pydantic_ai.models import KnownModelName, ModelRequestParameters
 from pydantic_ai.settings import ModelSettings
@@ -65,7 +69,10 @@ def _normalize_model(model: str) -> str:
             "Model '%s' has no provider prefix — assuming 'anthropic:%s'. "
             "If this is not an Anthropic model, use the full format: "
             "model='provider:%s' (e.g. 'openai:%s').",
-            model, model, model, model,
+            model,
+            model,
+            model,
+            model,
         )
 
     return f"anthropic:{model}"
@@ -164,9 +171,7 @@ def _to_pydantic_messages(
 
         if role == "user":
             if isinstance(content, str):
-                result.append(
-                    PydanticRequest(parts=[UserPromptPart(content=content)])
-                )
+                result.append(PydanticRequest(parts=[UserPromptPart(content=content)]))
             elif isinstance(content, list):
                 parts = []
                 for block in content:
@@ -176,16 +181,15 @@ def _to_pydantic_messages(
                         parts.append(
                             ToolReturnPart(
                                 tool_name=tool_id_to_name.get(
-                                    tool_use_id, "",
+                                    tool_use_id,
+                                    "",
                                 ),
                                 content=block.get("content", ""),
                                 tool_call_id=tool_use_id,
                             )
                         )
                     elif btype == "text":
-                        parts.append(
-                            UserPromptPart(content=block.get("text", ""))
-                        )
+                        parts.append(UserPromptPart(content=block.get("text", "")))
                 if parts:
                     result.append(PydanticRequest(parts=parts))
 
@@ -265,9 +269,7 @@ def _from_pydantic_response(response: PydanticResponse) -> LLMResponse:
     )
 
     raw_reason = response.finish_reason or ""
-    stop_reason = _FINISH_REASON_MAP.get(
-        raw_reason, "tool_use" if has_tool_use else "end_turn"
-    )
+    stop_reason = _FINISH_REASON_MAP.get(raw_reason, "tool_use" if has_tool_use else "end_turn")
 
     return LLMResponse(content=blocks, usage=usage, stop_reason=stop_reason)
 
@@ -347,10 +349,28 @@ def _resolve_model(config: LLMConfig) -> Any:
 
 # Every provider Pydantic AI supports (used for typo suggestions).
 _KNOWN_PROVIDERS = (
-    "anthropic", "openai", "google-gla", "google-vertex", "groq",
-    "mistral", "cohere", "bedrock", "deepseek", "azure", "grok", "xai",
-    "ollama", "together", "fireworks", "cerebras", "huggingface",
-    "openrouter", "github", "sambanova", "nebius", "moonshotai",
+    "anthropic",
+    "openai",
+    "google-gla",
+    "google-vertex",
+    "groq",
+    "mistral",
+    "cohere",
+    "bedrock",
+    "deepseek",
+    "azure",
+    "grok",
+    "xai",
+    "ollama",
+    "together",
+    "fireworks",
+    "cerebras",
+    "huggingface",
+    "openrouter",
+    "github",
+    "sambanova",
+    "nebius",
+    "moonshotai",
 )
 
 
@@ -368,7 +388,7 @@ def _raise_provider_error(config: LLMConfig, exc: Exception) -> NoReturn:
             f"\n"
             f"    pip install {provider}\n"
             f"\n"
-            f"  You passed: model=\"{config.model}\"\n"
+            f'  You passed: model="{config.model}"\n'
         ) from exc
 
     if isinstance(exc, ValueError) and "Unknown provider" in str(exc):
@@ -378,10 +398,8 @@ def _raise_provider_error(config: LLMConfig, exc: Exception) -> NoReturn:
         matches = get_close_matches(provider, _KNOWN_PROVIDERS, n=3, cutoff=0.5)
         suggestion = ""
         if matches:
-            suggestion = (
-                f"\n"
-                f"  Did you mean one of these?\n"
-                + "".join(f"    - {m}\n" for m in matches)
+            suggestion = "\n  Did you mean one of these?\n" + "".join(
+                f"    - {m}\n" for m in matches
             )
 
         raise ValueError(
@@ -394,10 +412,10 @@ def _raise_provider_error(config: LLMConfig, exc: Exception) -> NoReturn:
             f"    bedrock, deepseek, azure, ollama, together, fireworks,\n"
             f"    and more.\n"
             f"\n"
-            f"  Usage: model=\"provider:model-name\"\n"
-            f"  Example: model=\"openai:gpt-4o\"\n"
+            f'  Usage: model="provider:model-name"\n'
+            f'  Example: model="openai:gpt-4o"\n'
             f"\n"
-            f"  You passed: model=\"{config.model}\"\n"
+            f'  You passed: model="{config.model}"\n'
         ) from exc
 
     raise exc
@@ -478,8 +496,7 @@ async def call_llm(
             if attempt < _MAX_RETRIES - 1:
                 delay = min(_INITIAL_DELAY * (2**attempt), _MAX_DELAY)
                 logger.warning(
-                    "LLM call failed (attempt %d/%d): %s. "
-                    "Retrying in %.0fs...",
+                    "LLM call failed (attempt %d/%d): %s. Retrying in %.0fs...",
                     attempt + 1,
                     _MAX_RETRIES,
                     exc,

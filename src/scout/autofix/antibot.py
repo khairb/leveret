@@ -16,7 +16,7 @@ Spec reference: docs/specific/AUTO_FIX_ALGORITHM.md §6
 from __future__ import annotations
 
 import re
-from typing import Sequence
+from collections.abc import Sequence
 
 from scout.autofix.types import AntibotResult
 
@@ -27,8 +27,8 @@ from scout.autofix.types import AntibotResult
 _TIER_2_MAX_SIZE = 10_240  # 10KB
 
 # Tier 3 thresholds for structural integrity checks.
-_TIER_3_EMPTY_THRESHOLD = 100    # < 100 bytes = effectively empty
-_TIER_3_SHELL_THRESHOLD = 500    # < 500 bytes = possible empty shell
+_TIER_3_EMPTY_THRESHOLD = 100  # < 100 bytes = effectively empty
+_TIER_3_SHELL_THRESHOLD = 500  # < 500 bytes = possible empty shell
 
 # ── Tier 1: Provider-specific content patterns ───────────────
 #
@@ -38,7 +38,8 @@ _TIER_3_SHELL_THRESHOLD = 500    # < 500 bytes = possible empty shell
 
 # -- Cloudflare --
 _CF_CHALLENGE_FORM_RE = re.compile(
-    r"challenge-form.*__cf_chl_f_tk=", re.DOTALL,
+    r"challenge-form.*__cf_chl_f_tk=",
+    re.DOTALL,
 )
 _CF_ORCHESTRATE_RE = re.compile(
     r"/cdn-cgi/challenge-platform/\S+orchestrate",
@@ -121,9 +122,13 @@ _GENERIC_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"Checking\s+your\s+browser", re.IGNORECASE), "Checking your browser"),
     (re.compile(r'class=["\']g-recaptcha["\']'), "reCAPTCHA widget"),
     (re.compile(r'class=["\']h-captcha["\']'), "hCaptcha widget"),
-    (re.compile(
-        r"Access\s+to\s+This\s+Page\s+Has\s+Been\s+Blocked", re.IGNORECASE,
-    ), "Access to This Page Has Been Blocked"),
+    (
+        re.compile(
+            r"Access\s+to\s+This\s+Page\s+Has\s+Been\s+Blocked",
+            re.IGNORECASE,
+        ),
+        "Access to This Page Has Been Blocked",
+    ),
     (re.compile(r"blocked\s+by\s+security", re.IGNORECASE), "blocked by security"),
     (re.compile(r"Request\s+unsuccessful", re.IGNORECASE), "Request unsuccessful"),
 ]
@@ -133,7 +138,8 @@ _GENERIC_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 #
 # Content element tags that indicate real page content.
 _CONTENT_TAGS_RE = re.compile(
-    r"<(?:p|h[1-6]|article)[\s>]", re.IGNORECASE,
+    r"<(?:p|h[1-6]|article)[\s>]",
+    re.IGNORECASE,
 )
 
 # Count visible text characters (strip HTML tags, collapse whitespace).
@@ -471,8 +477,7 @@ def _check_tier3_structural(content: str) -> AntibotResult | None:
                 provider=None,
                 tier=3,
                 pattern_matched=(
-                    f"script-only shell ({len(visible_text)} visible chars, "
-                    "no content tags)"
+                    f"script-only shell ({len(visible_text)} visible chars, no content tags)"
                 ),
             )
 
@@ -483,7 +488,9 @@ def _extract_visible_text(html: str) -> str:
     """Extract visible text from HTML by stripping tags and collapsing whitespace."""
     # Remove script and style blocks entirely.
     no_scripts = re.sub(
-        r"<(script|style)[^>]*>.*?</\1>", "", html,
+        r"<(script|style)[^>]*>.*?</\1>",
+        "",
+        html,
         flags=re.DOTALL | re.IGNORECASE,
     )
     # Strip remaining tags.

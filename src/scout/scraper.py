@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import ast
+import asyncio
 import errno
 import hashlib
 import inspect
@@ -22,6 +22,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+from ._logging import logger
+from .agent.llm import ModelName
 from .errors import (
     AutoRegenerateError,
     ConfigError,
@@ -33,20 +35,19 @@ from .errors import (
     ScriptTimeoutError,
     ValidationError,
 )
-from .agent.llm import ModelName
 from .schema.compiler import compile_schema
 from .schema.tolerance import Tolerance
-from ._logging import logger
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from . import Schema
     from .browser import Browser, LaunchOptions
     from .schema.compiler import CompiledSchema
-    from . import Schema
-
-from .autofix.types import RegenerateMode
 
 import signal
+
+from .autofix.types import RegenerateMode
 
 
 async def _kill_process_tree(pid: int) -> None:
@@ -87,6 +88,7 @@ async def _kill_process_tree(pid: int) -> None:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _preview(data: Any) -> str:
     """Format a short preview of data for repr."""
     if isinstance(data, list):
@@ -118,6 +120,7 @@ def _normalize_domain(url: str) -> str:
 # Metadata escaping
 # ---------------------------------------------------------------------------
 
+
 def _escape_metadata(value: str) -> str:
     """Escape a string for inclusion in the metadata docstring.
 
@@ -141,6 +144,7 @@ def _unescape_metadata(value: str) -> str:
 # Pre-import namespace for in-process execution
 # ---------------------------------------------------------------------------
 
+
 def _build_pre_import_namespace(*, sandbox: bool = False) -> dict[str, Any]:
     """Build namespace with pre-imported modules for in-process execution.
 
@@ -152,6 +156,7 @@ def _build_pre_import_namespace(*, sandbox: bool = False) -> dict[str, Any]:
     """
     if sandbox:
         from .runtime.sandbox import build_safe_pre_imports
+
         return build_safe_pre_imports()
 
     import math
@@ -176,10 +181,12 @@ def _build_pre_import_namespace(*, sandbox: bool = False) -> dict[str, Any]:
 # Script version
 # ---------------------------------------------------------------------------
 
+
 def _get_scout_version() -> str:
     """Get the current scout package version."""
     try:
         from importlib.metadata import version
+
         return version("scout")
     except Exception:
         return "unknown"
@@ -189,8 +196,12 @@ def _get_scout_version() -> str:
 # Script save / load
 # ---------------------------------------------------------------------------
 
+
 def _build_metadata_docstring(
-    url: str, task: str, model: str, timestamp: str,
+    url: str,
+    task: str,
+    model: str,
+    timestamp: str,
     schema_hash: str = "",
     content_hash: str = "",
     inputs_meta: str = "",
@@ -258,7 +269,10 @@ def _save_script(
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     content_hash = hashlib.sha256(code.strip().encode()).hexdigest()[:16]
     docstring = _build_metadata_docstring(
-        url, task, model, timestamp,
+        url,
+        task,
+        model,
+        timestamp,
         schema_hash=schema_hash,
         content_hash=content_hash,
         inputs_meta=inputs_meta,
@@ -278,20 +292,15 @@ def _save_script(
         path.parent.mkdir(parents=True, exist_ok=True)
     except FileExistsError:
         raise Error(
-            f'Cannot create directory "{path.parent}" '
-            f"— a file with that name already exists."
+            f'Cannot create directory "{path.parent}" — a file with that name already exists.'
         ) from None
     except OSError as exc:
-        raise Error(
-            f'Could not write script to "{path}" — {_describe_os_error(exc)}.'
-        ) from None
+        raise Error(f'Could not write script to "{path}" — {_describe_os_error(exc)}.') from None
 
     try:
         path.write_text(content, encoding="utf-8")
     except OSError as exc:
-        raise Error(
-            f'Could not write script to "{path}" — {_describe_os_error(exc)}.'
-        ) from None
+        raise Error(f'Could not write script to "{path}" — {_describe_os_error(exc)}.') from None
 
 
 def _describe_os_error(exc: OSError) -> str:
@@ -306,7 +315,9 @@ def _describe_os_error(exc: OSError) -> str:
 
 
 def _load_script(
-    path: Path, *, sandbox: bool = False,
+    path: Path,
+    *,
+    sandbox: bool = False,
 ) -> tuple[Callable[..., Any], dict[str, str]]:
     """Load a saved script file, validate it, and return the scrape function.
 
@@ -322,18 +333,11 @@ def _load_script(
         source = path.read_text(encoding="utf-8")
     except OSError as exc:
         if exc.errno == errno.EACCES:
-            raise ScriptLoadError(
-                f'Could not read script "{path}" — permission denied.'
-            ) from None
-        raise ScriptLoadError(
-            f'Could not read script "{path}" — {exc}.'
-        ) from None
+            raise ScriptLoadError(f'Could not read script "{path}" — permission denied.') from None
+        raise ScriptLoadError(f'Could not read script "{path}" — {exc}.') from None
 
     if not source.strip():
-        raise ScriptLoadError(
-            f'Script "{path}" is empty. '
-            f"Regenerate with scraper.regenerate()."
-        )
+        raise ScriptLoadError(f'Script "{path}" is empty. Regenerate with scraper.regenerate().')
 
     # Syntax check
     try:
@@ -389,19 +393,19 @@ def _load_script(
     # file path is overwritten with new content (e.g. auto_regenerate='always').
     if sandbox:
         from .runtime.sandbox import (
-            compile_restricted_agent_code,
+            SandboxError,
             build_restricted_globals,
             build_safe_pre_imports,
-            SandboxError,
+            compile_restricted_agent_code,
         )
+
         try:
             compiled_code = compile_restricted_agent_code(
-                source, filename=str(path),
+                source,
+                filename=str(path),
             )
         except SandboxError as exc:
-            raise ScriptLoadError(
-                f'Script "{path}" failed sandbox validation: {exc}'
-            ) from None
+            raise ScriptLoadError(f'Script "{path}" failed sandbox validation: {exc}') from None
         namespace = build_restricted_globals(build_safe_pre_imports())
         namespace["__file__"] = str(path)
     else:
@@ -421,9 +425,7 @@ def _load_script(
 
     fn = namespace.get("scrape")
     if fn is None or not callable(fn):
-        raise ScriptLoadError(
-            f'Script "{path}" does not export a callable "scrape" function.'
-        )
+        raise ScriptLoadError(f'Script "{path}" does not export a callable "scrape" function.')
 
     if not inspect.iscoroutinefunction(fn):
         raise ScriptLoadError(
@@ -438,6 +440,7 @@ def _load_script(
 # ---------------------------------------------------------------------------
 # Config mismatch detection
 # ---------------------------------------------------------------------------
+
 
 def _check_domain_mismatch(
     script_path: Path,
@@ -492,7 +495,7 @@ def _is_script_user_edited(path: Path) -> bool:
     # Extract function code (everything after the metadata docstring)
     m = _METADATA_RE.search(source)
     if m:
-        function_code = source[m.end():].strip()
+        function_code = source[m.end() :].strip()
     else:
         function_code = source
 
@@ -506,10 +509,15 @@ _SENTINEL = object()
 def _resolve_deprecated_param(new_val, old_val, new_name, old_name, default):
     """Resolve a renamed parameter, emitting deprecation warning for old name."""
     if old_val is not _SENTINEL and new_val is not _SENTINEL:
-        raise ConfigError(f"Cannot pass both {new_name}= and {old_name}= (they are the same parameter)")
+        raise ConfigError(
+            f"Cannot pass both {new_name}= and {old_name}= (they are the same parameter)"
+        )
     if old_val is not _SENTINEL:
         import warnings
-        warnings.warn(f"{old_name}= is deprecated, use {new_name}= instead", DeprecationWarning, stacklevel=3)
+
+        warnings.warn(
+            f"{old_name}= is deprecated, use {new_name}= instead", DeprecationWarning, stacklevel=3
+        )
         return old_val
     if new_val is not _SENTINEL:
         return new_val
@@ -519,6 +527,7 @@ def _resolve_deprecated_param(new_val, old_val, new_name, old_name, default):
 # ---------------------------------------------------------------------------
 # ScraperResult
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ScraperResult:
@@ -561,11 +570,21 @@ class ScraperResult:
     def __getattr__(self, name):
         if name == "generated":
             import warnings
-            warnings.warn("ScraperResult.generated is deprecated, use script_generated", DeprecationWarning, stacklevel=2)
+
+            warnings.warn(
+                "ScraperResult.generated is deprecated, use script_generated",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             return self.script_generated
         if name == "auto_fixed":
             import warnings
-            warnings.warn("ScraperResult.auto_fixed is deprecated, use auto_regenerated", DeprecationWarning, stacklevel=2)
+
+            warnings.warn(
+                "ScraperResult.auto_fixed is deprecated, use auto_regenerated",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             return self.auto_regenerated
         raise AttributeError(f"'{type(self).__name__}' object has no attribute {name!r}")
 
@@ -573,6 +592,7 @@ class ScraperResult:
 # ---------------------------------------------------------------------------
 # Scraper
 # ---------------------------------------------------------------------------
+
 
 class Scraper:
     """AI-powered web scraper — generate once, run forever.
@@ -660,16 +680,16 @@ class Scraper:
         task: str,
         *,
         # ── Schema ──
-        schema: "Schema",
+        schema: Schema,
         schema_tolerance: Tolerance | str = _SENTINEL,
         # ── Script ──
         script: str | Path | None = None,
         protect_manual_edits: bool = _SENTINEL,
         auto_regenerate: bool | RegenerateMode = _SENTINEL,
         # ── Browser ──
-        browser: "Browser | None" = None,
+        browser: Browser | None = None,
         headless: bool | None = None,
-        launch_options: "LaunchOptions | None" = None,
+        launch_options: LaunchOptions | None = None,
         demo: bool = False,
         # ── AI generation ──
         model: ModelName = "claude-haiku-4-5",
@@ -692,26 +712,41 @@ class Scraper:
         sandbox: bool = _SENTINEL,
     ) -> None:
         # -- Resolve deprecated parameter names --
-        schema_tolerance = _resolve_deprecated_param(schema_tolerance, tolerance, "schema_tolerance", "tolerance", Tolerance.BALANCED)
+        schema_tolerance = _resolve_deprecated_param(
+            schema_tolerance, tolerance, "schema_tolerance", "tolerance", Tolerance.BALANCED
+        )
         run_timeout = _resolve_deprecated_param(run_timeout, timeout, "run_timeout", "timeout", 600)
-        protect_manual_edits = _resolve_deprecated_param(protect_manual_edits, protect_script, "protect_manual_edits", "protect_script", False)
-        auto_regenerate = _resolve_deprecated_param(auto_regenerate, auto_fix, "auto_regenerate", "auto_fix", False)
-        ai_review = _resolve_deprecated_param(ai_review, validator_agent, "ai_review", "validator_agent", False)
+        protect_manual_edits = _resolve_deprecated_param(
+            protect_manual_edits, protect_script, "protect_manual_edits", "protect_script", False
+        )
+        auto_regenerate = _resolve_deprecated_param(
+            auto_regenerate, auto_fix, "auto_regenerate", "auto_fix", False
+        )
+        ai_review = _resolve_deprecated_param(
+            ai_review, validator_agent, "ai_review", "validator_agent", False
+        )
         sandboxed = _resolve_deprecated_param(sandboxed, sandbox, "sandboxed", "sandbox", True)
 
         # Handle max_retries → generation_attempts conversion
         if max_retries is not _SENTINEL and generation_attempts is _SENTINEL:
             import warnings
-            warnings.warn("max_retries= is deprecated, use generation_attempts= instead", DeprecationWarning, stacklevel=2)
+
+            warnings.warn(
+                "max_retries= is deprecated, use generation_attempts= instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             generation_attempts = max_retries + 1  # max_retries=5 → 6 attempts
         elif max_retries is not _SENTINEL and generation_attempts is not _SENTINEL:
-            raise ConfigError("Cannot pass both generation_attempts= and max_retries= (they are the same parameter)")
+            raise ConfigError(
+                "Cannot pass both generation_attempts= and max_retries= (they are the same parameter)"
+            )
         elif generation_attempts is _SENTINEL:
             generation_attempts = 6  # default
 
         # -- url --
         if not isinstance(url, str) or not url.strip():
-            raise Error(f'url must be a valid HTTP(S) URL (got {url!r})')
+            raise Error(f"url must be a valid HTTP(S) URL (got {url!r})")
         url = url.strip()
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
@@ -722,11 +757,9 @@ class Scraper:
                     f"  Got:          {url!r}\n"
                     f"  Did you mean: 'https://{url}'?"
                 )
-            raise Error(
-                f"url must start with https:// or http:// (got {url!r})"
-            )
+            raise Error(f"url must start with https:// or http:// (got {url!r})")
         if not parsed.hostname:
-            raise Error(f'url must include a hostname (got {url!r})')
+            raise Error(f"url must include a hostname (got {url!r})")
 
         # -- task --
         if not isinstance(task, str) or not task.strip():
@@ -751,21 +784,14 @@ class Scraper:
         if script is not None:
             path = Path(script).expanduser().resolve()
             if path.is_dir():
-                raise Error(
-                    f'script must be a file path, not a directory '
-                    f'(got {str(script)!r})'
-                )
+                raise Error(f"script must be a file path, not a directory (got {str(script)!r})")
             if path.suffix != ".py":
-                raise Error(
-                    f'script must be a .py file path (got {str(script)!r})'
-                )
+                raise Error(f"script must be a .py file path (got {str(script)!r})")
             script_path = path
 
         # -- run_timeout --
         if not isinstance(run_timeout, int) or run_timeout <= 0:
-            raise Error(
-                f"run_timeout must be a positive integer (got {run_timeout!r})"
-            )
+            raise Error(f"run_timeout must be a positive integer (got {run_timeout!r})")
 
         # -- generation_attempts --
         if not isinstance(generation_attempts, int) or generation_attempts < 1:
@@ -892,7 +918,7 @@ class Scraper:
         return self._script_path
 
     @property
-    def schema(self) -> "CompiledSchema":
+    def schema(self) -> CompiledSchema:
         """The compiled schema used for validation and prompt generation."""
         return self._compiled_schema
 
@@ -920,15 +946,16 @@ class Scraper:
 
         Used to detect when the user changed the schema after generation.
         """
-        return hashlib.sha256(
-            self._compiled_schema.prompt.encode()
-        ).hexdigest()[:16]
+        return hashlib.sha256(self._compiled_schema.prompt.encode()).hexdigest()[:16]
 
     def _get_resolved_launch_options(self) -> dict:
         """Resolve launch options, merging user options with stealth defaults."""
         from .browser import resolve_launch_options
+
         return resolve_launch_options(
-            self._launch_options, headless=self._headless, demo=self._demo,
+            self._launch_options,
+            headless=self._headless,
+            demo=self._demo,
         )
 
     # -- Auto-fix mode resolution --
@@ -1008,8 +1035,7 @@ class Scraper:
         mode = Scraper._VALID_TOLERANCE.get(value)
         if mode is None:
             raise ConfigError(
-                f"schema_tolerance must be 'strict', 'balanced', or 'lenient' "
-                f"(got {value!r})"
+                f"schema_tolerance must be 'strict', 'balanced', or 'lenient' (got {value!r})"
             )
         return mode
 
@@ -1136,15 +1162,23 @@ class Scraper:
 
         # Normalize dynamic inputs.
         from .inputs import normalize_inputs
+
         input_values, input_defs = normalize_inputs(inputs)
 
         # Resolve deprecated auto_fix → auto_regenerate
         if auto_fix is not _SENTINEL and auto_regenerate is _SENTINEL:
             import warnings
-            warnings.warn("auto_fix= is deprecated, use auto_regenerate= instead", DeprecationWarning, stacklevel=2)
+
+            warnings.warn(
+                "auto_fix= is deprecated, use auto_regenerate= instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             auto_regenerate = auto_fix
         elif auto_fix is not _SENTINEL and auto_regenerate is not _SENTINEL:
-            raise ConfigError("Cannot pass both auto_regenerate= and auto_fix= (they are the same parameter)")
+            raise ConfigError(
+                "Cannot pass both auto_regenerate= and auto_fix= (they are the same parameter)"
+            )
         elif auto_regenerate is _SENTINEL:
             auto_regenerate = None
 
@@ -1157,13 +1191,15 @@ class Scraper:
         else:
             effective_mode = self._auto_regenerate_mode
 
-        force_regenerate = (effective_mode == RegenerateMode.ALWAYS)
+        force_regenerate = effective_mode == RegenerateMode.ALWAYS
 
         # -- Cached path: load from disk or memory --
         if not force_regenerate and (self._cached_fn is not None or self._has_script_on_disk()):
             return await self._run_cached(
-                effective_url, effective_mode,
-                input_values=input_values, input_defs=input_defs,
+                effective_url,
+                effective_mode,
+                input_values=input_values,
+                input_defs=input_defs,
             )
 
         # -- Generation path --
@@ -1185,22 +1221,17 @@ class Scraper:
                     self._script_path,
                     self._script_path,
                 )
-            logger.info(
-                "Regenerating script (overwriting %s)", self._script_path
-            )
+            logger.info("Regenerating script (overwriting %s)", self._script_path)
         elif self._script_path:
             logger.info(
                 "No cached script found. Generating with %s...",
                 self._model,
             )
             logger.info(
-                "Note: First run calls the AI model API. "
-                "Subsequent runs use the cached script."
+                "Note: First run calls the AI model API. Subsequent runs use the cached script."
             )
         else:
-            logger.info(
-                "Generating scraping function with %s...", self._model
-            )
+            logger.info("Generating scraping function with %s...", self._model)
 
         # Clear in-memory cache when regenerating
         if force_regenerate:
@@ -1212,8 +1243,10 @@ class Scraper:
         self._check_playwright()
 
         return await self._run_generate(
-            effective_url, start_time,
-            input_values=input_values, input_defs=input_defs,
+            effective_url,
+            start_time,
+            input_values=input_values,
+            input_defs=input_defs,
         )
 
     def run(
@@ -1267,10 +1300,9 @@ class Scraper:
             # Try nest_asyncio to make run() work seamlessly in notebooks.
             try:
                 import nest_asyncio
+
                 nest_asyncio.apply()
-                return loop.run_until_complete(
-                    self.async_run(**_kw)
-                )
+                return loop.run_until_complete(self.async_run(**_kw))
             except ImportError:
                 raise Error(
                     "scraper.run() cannot be used inside a running event "
@@ -1286,7 +1318,10 @@ class Scraper:
         return asyncio.run(self.async_run(**_kw))
 
     async def async_regenerate(
-        self, *, url: str | None = None, force: bool = False,
+        self,
+        *,
+        url: str | None = None,
+        force: bool = False,
         inputs: dict[str, Any] | None = None,
     ) -> ScraperResult:
         """Force-regenerate the scraping script, discarding any cached version.
@@ -1304,7 +1339,10 @@ class Scraper:
         return await self.async_run(url=url, auto_regenerate=RegenerateMode.ALWAYS, inputs=inputs)
 
     def regenerate(
-        self, *, url: str | None = None, force: bool = False,
+        self,
+        *,
+        url: str | None = None,
+        force: bool = False,
         inputs: dict[str, Any] | None = None,
     ) -> ScraperResult:
         """Force-regenerate the scraping script, discarding any cached version.
@@ -1338,10 +1376,7 @@ class Scraper:
             overwrite: Allow overwriting an existing file.
         """
         if self._script_path is None:
-            raise Error(
-                "Cannot export — Scraper has no script= path. "
-                "Generate a script first."
-            )
+            raise Error("Cannot export — Scraper has no script= path. Generate a script first.")
         if not self._script_path.exists():
             raise Error(
                 f"Cannot export — script not found at {self._script_path}. "
@@ -1350,35 +1385,30 @@ class Scraper:
 
         target = Path(path).expanduser().resolve()
         if target.suffix != ".py":
-            raise Error(
-                f"Export path must be a .py file (got {str(path)!r})"
-            )
+            raise Error(f"Export path must be a .py file (got {str(path)!r})")
         if target.exists() and not overwrite:
-            raise Error(
-                f"File already exists: {target}. "
-                "Pass overwrite=True to replace it."
-            )
+            raise Error(f"File already exists: {target}. Pass overwrite=True to replace it.")
 
         from .agent.wrapper import generate_standalone_script
 
         function_source = self._get_function_source()
         standalone = generate_standalone_script(
-            function_source, self._url, self._task,
+            function_source,
+            self._url,
+            self._task,
         )
 
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             raise Error(
-                f'Could not create directory "{target.parent}" — '
-                f"{_describe_os_error(exc)}."
+                f'Could not create directory "{target.parent}" — {_describe_os_error(exc)}.'
             ) from None
         try:
             target.write_text(standalone, encoding="utf-8")
         except OSError as exc:
             raise Error(
-                f'Could not write export to "{target}" — '
-                f"{_describe_os_error(exc)}."
+                f'Could not write export to "{target}" — {_describe_os_error(exc)}.'
             ) from None
 
         logger.info("Exported standalone script → %s", target)
@@ -1391,9 +1421,7 @@ class Scraper:
             return self._url
 
         if not isinstance(override_url, str) or not override_url.strip():
-            raise Error(
-                f"url must be a valid HTTP(S) URL (got {override_url!r})"
-            )
+            raise Error(f"url must be a valid HTTP(S) URL (got {override_url!r})")
         override_url = override_url.strip()
         parsed = urlparse(override_url)
         if parsed.scheme not in ("http", "https"):
@@ -1403,13 +1431,9 @@ class Scraper:
                     f"  Got:          {override_url!r}\n"
                     f"  Did you mean: 'https://{override_url}'?"
                 )
-            raise Error(
-                f"url must start with https:// or http:// (got {override_url!r})"
-            )
+            raise Error(f"url must start with https:// or http:// (got {override_url!r})")
         if not parsed.hostname:
-            raise Error(
-                f"url must include a hostname (got {override_url!r})"
-            )
+            raise Error(f"url must include a hostname (got {override_url!r})")
         return override_url
 
     # -- Internal: disk check --
@@ -1474,11 +1498,7 @@ class Scraper:
             return
 
         # Determine which env var to check based on the model provider.
-        provider = (
-            self._model.split(":")[0]
-            if ":" in self._model
-            else "anthropic"
-        )
+        provider = self._model.split(":")[0] if ":" in self._model else "anthropic"
         env_var = self._API_KEY_ENV_VARS.get(
             provider,
             f"{provider.upper().replace('-', '_')}_API_KEY",
@@ -1511,11 +1531,15 @@ class Scraper:
         # expected install location, then verify it exists.
         try:
             import subprocess
+
             from patchright._impl._driver import compute_driver_executable
+
             node, cli_js = compute_driver_executable()
             result = subprocess.run(
                 [str(node), str(cli_js), "install", "--dry-run", "chromium"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             if result.returncode == 0 and "Install location:" in result.stdout:
                 # Parse the first install location line
@@ -1563,14 +1587,16 @@ class Scraper:
             if count > 0:
                 logger.info(
                     "Browser closed (scraped %d pages in %ds)",
-                    count, int(elapsed),
+                    count,
+                    int(elapsed),
                 )
 
     def _sync_close_browser(self) -> None:
         """Close browser from sync context via the background loop."""
         if self._browser_mgr is not None and self._bg_loop is not None:
             future = asyncio.run_coroutine_threadsafe(
-                self._close_browser(), self._bg_loop,
+                self._close_browser(),
+                self._bg_loop,
             )
             try:
                 future.result(timeout=10)
@@ -1591,17 +1617,21 @@ class Scraper:
         if self._cached_fn is None:
             assert self._script_path is not None
             fn, metadata = _load_script(
-                self._script_path, sandbox=self._sandboxed,
+                self._script_path,
+                sandbox=self._sandboxed,
             )
 
             # Config mismatch checks
             script_url = metadata.get("url", "")
             if script_url:
                 _check_domain_mismatch(
-                    self._script_path, script_url, effective_url,
+                    self._script_path,
+                    script_url,
+                    effective_url,
                 )
             _check_task_mismatch(
-                metadata.get("task", ""), self._task,
+                metadata.get("task", ""),
+                self._task,
             )
 
             # Check for schema changes since generation
@@ -1617,8 +1647,10 @@ class Scraper:
 
             # Validate dynamic inputs against script metadata.
             from .inputs import validate_inputs_against_metadata
+
             validate_inputs_against_metadata(
-                input_values, metadata.get("inputs"),
+                input_values,
+                metadata.get("inputs"),
             )
 
             self._cached_fn = fn
@@ -1630,26 +1662,21 @@ class Scraper:
         # Branch: in-process (context-managed or shared browser) vs subprocess
         if self._context_managed or self._shared_browser is not None:
             if self._browser_mgr is None and self._shared_browser is None:
-                logger.info(
-                    "Running cached script → %s", self._script_path
-                )
+                logger.info("Running cached script → %s", self._script_path)
             else:
                 logger.info("Scraping → %s", effective_url)
 
             return_value_json = await self._run_in_process(
-                effective_url, inputs=input_values,
+                effective_url,
+                inputs=input_values,
             )
         else:
-            logger.info(
-                "Running cached script → %s", self._script_path
-            )
+            logger.info("Running cached script → %s", self._script_path)
 
-            stdout, return_value_json, stderr, returncode = (
-                await self._execute_function(
-                    self._get_function_source(),
-                    effective_url,
-                    inputs=input_values,
-                )
+            stdout, return_value_json, stderr, returncode = await self._execute_function(
+                self._get_function_source(),
+                effective_url,
+                inputs=input_values,
             )
 
             if returncode == -1 and "timed out" in stderr:
@@ -1673,9 +1700,7 @@ class Scraper:
         # Validate return value against schema
         data = self._validate_return_value(return_value_json)
 
-        timestamp = datetime.now(timezone.utc).strftime(
-            "%Y-%m-%dT%H:%M:%S.%fZ"
-        )
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         return ScraperResult(
             data=data,
             url=effective_url,
@@ -1710,13 +1735,15 @@ class Scraper:
         if self._context_managed:
             if self._browser_mgr is None:
                 logger.info(
-                    "Running cached script → %s", self._script_path,
+                    "Running cached script → %s",
+                    self._script_path,
                 )
             else:
                 logger.info("Scraping → %s", effective_url)
         else:
             logger.info(
-                "Running cached script → %s", self._script_path,
+                "Running cached script → %s",
+                self._script_path,
             )
 
         # Build execute_fn adapter for the current execution mode
@@ -1732,7 +1759,9 @@ class Scraper:
 
         # §7: Diagnosis loop — up to 3 attempts with signals
         result = await diagnose(
-            execute_fn, effective_url, auto_regenerate_mode,
+            execute_fn,
+            effective_url,
+            auto_regenerate_mode,
         )
 
         # Success on any attempt — return data
@@ -1788,7 +1817,8 @@ class Scraper:
         start_time = time.monotonic()
         try:
             regen_result = await self._run_generate(
-                effective_url, start_time,
+                effective_url,
+                start_time,
             )
         except GenerationError as exc:
             # Agent could not produce a valid script at all
@@ -1832,9 +1862,7 @@ class Scraper:
 
         category = result.category
         message = (
-            f"Cached script failed.\n\n"
-            f"{result.message}\n\n"
-            f"  To regenerate: scraper.regenerate()"
+            f"Cached script failed.\n\n{result.message}\n\n  To regenerate: scraper.regenerate()"
         )
 
         if category in (ErrorCategory.D, ErrorCategory.F2):
@@ -1849,7 +1877,9 @@ class Scraper:
     # -- Internal: in-process execution --
 
     async def _run_in_process(
-        self, effective_url: str, inputs: dict[str, Any] | None = None,
+        self,
+        effective_url: str,
+        inputs: dict[str, Any] | None = None,
     ) -> str | None:
         """Execute cached function in-process with shared browser.
 
@@ -1868,19 +1898,14 @@ class Scraper:
                     launch_options=self._get_resolved_launch_options(),
                 )
                 await self._browser_mgr.start()
-                logger.info(
-                    "Launching browser (will reuse for subsequent runs)"
-                )
+                logger.info("Launching browser (will reuse for subsequent runs)")
             page = await self._browser_mgr.new_page()
         try:
             await page.goto(effective_url, wait_until="domcontentloaded")
 
             # Lightweight checkpoint for cached runs
             async def checkpoint(label: str, data_preview: Any = None) -> None:
-                dp = (
-                    f" | {len(data_preview)} items"
-                    if data_preview else ""
-                )
+                dp = f" | {len(data_preview)} items" if data_preview else ""
                 logger.debug("[checkpoint] %s%s", label, dp)
 
             try:
@@ -1900,13 +1925,15 @@ class Scraper:
 
             try:
                 rv_json = json.dumps(
-                    data, ensure_ascii=False, indent=2, default=str,
+                    data,
+                    ensure_ascii=False,
+                    indent=2,
+                    default=str,
                 )
             except TypeError as exc:
                 type_name = type(data).__name__
                 raise ScriptRuntimeError(
-                    f"scrape() returned type '{type_name}' which is not "
-                    f"JSON-serializable: {exc}"
+                    f"scrape() returned type '{type_name}' which is not JSON-serializable: {exc}"
                 ) from None
 
             return rv_json
@@ -1939,7 +1966,7 @@ class Scraper:
         # Strip the metadata docstring to get just the function code
         m = _METADATA_RE.search(source)
         if m:
-            return source[m.end():].strip()
+            return source[m.end() :].strip()
         return source
 
     async def _execute_function(
@@ -1968,7 +1995,9 @@ class Scraper:
         script_dir = Path(tempfile.mkdtemp(prefix="scrape_run_"))
         try:
             wrapper_code = generate_subprocess_wrapper(
-                function_source, url, cp_dir,
+                function_source,
+                url,
+                cp_dir,
                 sandbox=self._sandboxed,
                 launch_options=resolved_opts,
                 profile_dir=profile_dir,
@@ -1978,14 +2007,16 @@ class Scraper:
             script_path.write_text(wrapper_code, encoding="utf-8")
 
             proc = await asyncio.create_subprocess_exec(
-                sys.executable, str(script_path),
+                sys.executable,
+                str(script_path),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,  # Own process group for clean kill
             )
             try:
                 stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                    proc.communicate(), timeout=self._run_timeout,
+                    proc.communicate(),
+                    timeout=self._run_timeout,
                 )
             except asyncio.TimeoutError:
                 # Kill the entire process group (Python + Chrome children)
@@ -2018,7 +2049,8 @@ class Scraper:
                 shutil.rmtree(profile_dir, ignore_errors=True)
 
     def _validate_return_value(
-        self, return_value_json: str | None,
+        self,
+        return_value_json: str | None,
     ) -> Any:
         """Parse and validate the return value against the schema.
 
@@ -2035,7 +2067,8 @@ class Scraper:
 
         # Schema validation always runs when a schema is provided.
         valid, feedback = self._compiled_schema.validate(
-            data, tolerance=self._schema_tolerance,
+            data,
+            tolerance=self._schema_tolerance,
         )
         if not valid:
             if self._schema_changed:
@@ -2090,7 +2123,9 @@ class Scraper:
             script_dir = Path(tempfile.mkdtemp(prefix="scrape_run_"))
             try:
                 wrapper_code = generate_subprocess_wrapper(
-                    function_source, effective_url, cp_dir,
+                    function_source,
+                    effective_url,
+                    cp_dir,
                     collect_page_signals=True,
                     launch_options=resolved_opts,
                     profile_dir=profile_dir,
@@ -2099,29 +2134,29 @@ class Scraper:
                 script_path.write_text(wrapper_code, encoding="utf-8")
 
                 proc = await asyncio.create_subprocess_exec(
-                    sys.executable, str(script_path),
+                    sys.executable,
+                    str(script_path),
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     start_new_session=True,
                 )
                 try:
                     stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                        proc.communicate(), timeout=self._run_timeout,
+                        proc.communicate(),
+                        timeout=self._run_timeout,
                     )
                 except asyncio.TimeoutError:
                     await _kill_process_tree(proc.pid)
                     try:
                         await asyncio.wait_for(
-                            proc.communicate(), timeout=5.0,
+                            proc.communicate(),
+                            timeout=5.0,
                         )
                     except asyncio.TimeoutError:
                         pass
                     return AttemptResult(
                         success=False,
-                        error=(
-                            f"Function timed out after "
-                            f"{self._run_timeout} seconds"
-                        ),
+                        error=(f"Function timed out after {self._run_timeout} seconds"),
                         exit_code=-1,
                     )
 
@@ -2166,7 +2201,8 @@ class Scraper:
 
                 # Schema validation (Category G)
                 valid, feedback = self._compiled_schema.validate(
-                    data, tolerance=self._schema_tolerance,
+                    data,
+                    tolerance=self._schema_tolerance,
                 )
                 if not valid:
                     return AttemptResult(
@@ -2210,9 +2246,7 @@ class Scraper:
                     launch_options=self._get_resolved_launch_options(),
                 )
                 await self._browser_mgr.start()
-                logger.info(
-                    "Launching browser (will reuse for subsequent runs)"
-                )
+                logger.info("Launching browser (will reuse for subsequent runs)")
 
             page = await self._browser_mgr.new_page()
             document_responses: list[Any] = []
@@ -2231,17 +2265,16 @@ class Scraper:
                 page.on("response", on_response)
 
                 await page.goto(
-                    effective_url, wait_until="domcontentloaded",
+                    effective_url,
+                    wait_until="domcontentloaded",
                 )
 
                 # Lightweight checkpoint
                 async def checkpoint(
-                    label: str, data_preview: Any = None,
+                    label: str,
+                    data_preview: Any = None,
                 ) -> None:
-                    dp = (
-                        f" | {len(data_preview)} items"
-                        if data_preview else ""
-                    )
+                    dp = f" | {len(data_preview)} items" if data_preview else ""
                     logger.debug("[checkpoint] %s%s", label, dp)
 
                 try:
@@ -2252,37 +2285,38 @@ class Scraper:
                 except asyncio.TimeoutError:
                     # Collect signals before returning failure
                     page_signals = await self._collect_in_process_signals(
-                        page, document_responses,
+                        page,
+                        document_responses,
                     )
                     return AttemptResult(
                         success=False,
-                        error=(
-                            f"Script execution timed out after "
-                            f"{self._run_timeout} seconds"
-                        ),
+                        error=(f"Script execution timed out after {self._run_timeout} seconds"),
                         page_signals=page_signals,
                     )
 
                 # Serialize return value
                 try:
                     rv_json = json.dumps(
-                        data, ensure_ascii=False, indent=2, default=str,
+                        data,
+                        ensure_ascii=False,
+                        indent=2,
+                        default=str,
                     )
                 except TypeError as exc:
                     return AttemptResult(
                         success=False,
-                        error=(
-                            f"scrape() returned non-serializable type: {exc}"
-                        ),
+                        error=(f"scrape() returned non-serializable type: {exc}"),
                         page_signals=await self._collect_in_process_signals(
-                            page, document_responses,
+                            page,
+                            document_responses,
                         ),
                     )
 
                 # Schema validation (Category G)
                 parsed = json.loads(rv_json)
                 valid, feedback = self._compiled_schema.validate(
-                    parsed, tolerance=self._schema_tolerance,
+                    parsed,
+                    tolerance=self._schema_tolerance,
                 )
                 if not valid:
                     return AttemptResult(
@@ -2290,7 +2324,8 @@ class Scraper:
                         data=parsed,
                         schema_error=feedback,
                         page_signals=await self._collect_in_process_signals(
-                            page, document_responses,
+                            page,
+                            document_responses,
                         ),
                     )
 
@@ -2300,7 +2335,8 @@ class Scraper:
             except Exception as exc:
                 # Script or navigation failure
                 page_signals = await self._collect_in_process_signals(
-                    page, document_responses,
+                    page,
+                    document_responses,
                 )
                 return AttemptResult(
                     success=False,
@@ -2346,7 +2382,8 @@ class Scraper:
 
         try:
             content = await asyncio.wait_for(
-                page.content(), timeout=5.0,
+                page.content(),
+                timeout=5.0,
             )
         except Exception:
             pass
@@ -2365,10 +2402,7 @@ class Scraper:
         try:
             context = page.context
             raw_cookies = await context.cookies()
-            cookies = [
-                {"name": c["name"], "value": c.get("value", "")}
-                for c in raw_cookies
-            ]
+            cookies = [{"name": c["name"], "value": c.get("value", "")} for c in raw_cookies]
         except Exception:
             pass
 
@@ -2390,8 +2424,8 @@ class Scraper:
         input_defs: list[dict[str, Any]] | None = None,
     ) -> ScraperResult:
         """Generate a scraping function via the AI agent."""
-        from .agent.loop import AgentLoop
         from .agent.llm import LLMConfig
+        from .agent.loop import AgentLoop
 
         llm_config = LLMConfig(
             model=self._model,
@@ -2430,9 +2464,11 @@ class Scraper:
                     '    model="claude-sonnet-4-5"'
                 )
             raise GenerationError(
-                (result.error
-                or "AI failed to generate a valid scraping function "
-                f"after {self._generation_attempts} attempts.")
+                (
+                    result.error
+                    or "AI failed to generate a valid scraping function "
+                    f"after {self._generation_attempts} attempts."
+                )
                 + model_hint
             )
 
@@ -2444,6 +2480,7 @@ class Scraper:
             inputs_meta = ""
             if input_defs:
                 from .inputs import format_inputs_metadata
+
                 inputs_meta = format_inputs_metadata(input_defs)
             _save_script(
                 result.final_script,
@@ -2466,8 +2503,7 @@ class Scraper:
         else:
             elapsed = time.monotonic() - start_time
             logger.info(
-                "Done (%ds). Pass script= to cache the function "
-                "for future runs.",
+                "Done (%ds). Pass script= to cache the function for future runs.",
                 int(elapsed),
             )
 
@@ -2475,7 +2511,8 @@ class Scraper:
         self._cached_source = result.final_script
         if self._script_path:
             fn, _meta = _load_script(
-                self._script_path, sandbox=self._sandboxed,
+                self._script_path,
+                sandbox=self._sandboxed,
             )
             self._cached_fn = fn
         else:
@@ -2483,10 +2520,11 @@ class Scraper:
             try:
                 if self._sandboxed:
                     from .runtime.sandbox import (
-                        compile_restricted_agent_code,
                         build_restricted_globals,
                         build_safe_pre_imports,
+                        compile_restricted_agent_code,
                     )
+
                     ns = build_restricted_globals(build_safe_pre_imports())
                     ns["__file__"] = "<scout-generated>"
                     exec(  # noqa: S102
@@ -2509,9 +2547,7 @@ class Scraper:
                 # Caching failed but data is already validated — skip silently
                 pass
 
-        timestamp = datetime.now(timezone.utc).strftime(
-            "%Y-%m-%dT%H:%M:%S.%fZ"
-        )
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         return ScraperResult(
             data=data,
             url=effective_url,
@@ -2528,8 +2564,7 @@ class Scraper:
             status = exc.status_code
             if status == 429:
                 return GenerationError(
-                    "API rate limit exceeded. "
-                    "Retry in a few minutes.",
+                    "API rate limit exceeded. Retry in a few minutes.",
                     status_code=429,
                 )
             if status == 401:
@@ -2550,8 +2585,5 @@ class Scraper:
                 status_code=status,
             )
         if isinstance(exc, ConnectionError):
-            return GenerationError(
-                "Could not reach the API. "
-                "Check your network connection."
-            )
+            return GenerationError("Could not reach the API. Check your network connection.")
         return GenerationError(str(exc))

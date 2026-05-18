@@ -27,7 +27,6 @@ Usage::
 from __future__ import annotations
 
 import ast
-from typing import Union
 
 # ── Constants ────────────────────────────────────────────────────
 
@@ -121,8 +120,8 @@ _TIMEOUT_KWARG_COSTS: dict[str, float] = {
 
 # These calls take an explicit duration as their first positional arg.
 _DURATION_ARG_COSTS: dict[str, str] = {
-    "wait_for_timeout": "ms",   # first arg in milliseconds
-    "sleep": "s",               # asyncio.sleep — seconds
+    "wait_for_timeout": "ms",  # first arg in milliseconds
+    "sleep": "s",  # asyncio.sleep — seconds
 }
 
 # Scroll helper with ``max_scrolls`` kwarg.
@@ -140,6 +139,7 @@ _MAX_AWAIT_MULTIPLIER: int = 50
 
 
 # ── Helpers ──────────────────────────────────────────────────────
+
 
 def _resolve_constant(node: ast.expr) -> float | int | None:
     """Try to resolve a node to a numeric constant.
@@ -211,6 +211,7 @@ def _call_name(node: ast.Call) -> tuple[str | None, str]:
 
 
 # ── AST Scoring engine ──────────────────────────────────────────
+
 
 def _score_call(node: ast.Call) -> float:
     """Score a single call node."""
@@ -368,6 +369,7 @@ def _score_expr(node: ast.expr) -> float:
 
 # ── Await counter (safety floor) ────────────────────────────────
 
+
 def _count_await_floor(tree: ast.Module) -> float:
     """Walk the *entire* AST and sum a flat cost per ``await``.
 
@@ -412,10 +414,9 @@ def _count_await_floor(tree: ast.Module) -> float:
             return
 
         # Comprehensions: each generator acts as a loop level.
-        if isinstance(node, (ast.ListComp, ast.SetComp,
-                             ast.DictComp, ast.GeneratorExp)):
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
             comp_mul = loop_mul
-            for gen in node.generators:
+            for _gen in node.generators:
                 comp_mul *= _DEFAULT_FOR_ITERATIONS
             # Element expression(s) run inside all generators.
             if isinstance(node, ast.DictComp):
@@ -441,6 +442,7 @@ def _count_await_floor(tree: ast.Module) -> float:
 
 
 # ── Public API ───────────────────────────────────────────────────
+
 
 def _build_context_code(
     code: str,

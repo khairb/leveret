@@ -9,7 +9,6 @@ Track 1 of the Scraper class implementation. Tests cover:
 - Edge cases and real-world usage patterns
 """
 
-import os
 from pathlib import Path
 
 import pytest
@@ -17,7 +16,6 @@ import pytest
 from scout.errors import ScoutConfigError, ScoutError, ScoutSchemaError
 from scout.schema.types import Field, List
 from scout.scraper import Scraper, ScraperResult, _normalize_domain
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -42,6 +40,7 @@ def _make(**overrides):
 # ═══════════════════════════════════════════════════════════════════════════
 # Constructor — happy paths
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestConstructorHappyPath:
     """Valid inputs are accepted and stored correctly."""
@@ -112,27 +111,33 @@ class TestConstructorHappyPath:
 
     def test_complex_schema_compiled(self):
         """Complex schema is compiled at construction time."""
-        schema = List({
-            "title": Field(str, min_length=1),
-            "price": Field(float, min=0),
-            "currency": Field(str, enum=["USD", "EUR"]),
-            "tags": [str],
-            "details": {
-                "brand": str,
-                "sku": Field(str, optional=True),
+        schema = List(
+            {
+                "title": Field(str, min_length=1),
+                "price": Field(float, min=0),
+                "currency": Field(str, enum=["USD", "EUR"]),
+                "tags": [str],
+                "details": {
+                    "brand": str,
+                    "sku": Field(str, optional=True),
+                },
             },
-        }, min_items=20)
+            min_items=20,
+        )
         s = _make(schema=schema)
         assert s._compiled_schema.prompt  # non-empty prompt
-        valid, _ = s._compiled_schema.validate([
-            {
-                "title": "T",
-                "price": 1.0,
-                "currency": "USD",
-                "tags": ["a"],
-                "details": {"brand": "B", "sku": None},
-            }
-        ] * 20)
+        valid, _ = s._compiled_schema.validate(
+            [
+                {
+                    "title": "T",
+                    "price": 1.0,
+                    "currency": "USD",
+                    "tags": ["a"],
+                    "details": {"brand": "B", "sku": None},
+                }
+            ]
+            * 20
+        )
         assert valid is True
 
 
@@ -140,14 +145,14 @@ class TestConstructorHappyPath:
 # URL validation
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestURLValidation:
 
+class TestURLValidation:
     def test_empty_string(self):
-        with pytest.raises(ScoutError, match=r'url must be a valid HTTP\(S\) URL \(got'):
+        with pytest.raises(ScoutError, match=r"url must be a valid HTTP\(S\) URL \(got"):
             _make(url="")
 
     def test_whitespace_only(self):
-        with pytest.raises(ScoutError, match=r'url must be a valid HTTP\(S\) URL'):
+        with pytest.raises(ScoutError, match=r"url must be a valid HTTP\(S\) URL"):
             _make(url="   ")
 
     def test_no_scheme(self):
@@ -167,11 +172,11 @@ class TestURLValidation:
             _make(url="https://")
 
     def test_not_a_string(self):
-        with pytest.raises(ScoutError, match=r'url must be a valid HTTP\(S\) URL'):
+        with pytest.raises(ScoutError, match=r"url must be a valid HTTP\(S\) URL"):
             _make(url=42)
 
     def test_none_url(self):
-        with pytest.raises(ScoutError, match=r'url must be a valid HTTP\(S\) URL'):
+        with pytest.raises(ScoutError, match=r"url must be a valid HTTP\(S\) URL"):
             _make(url=None)
 
 
@@ -179,8 +184,8 @@ class TestURLValidation:
 # Task validation
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestTaskValidation:
 
+class TestTaskValidation:
     def test_empty_string(self):
         with pytest.raises(ScoutError, match="task must not be empty"):
             _make(task="")
@@ -202,8 +207,8 @@ class TestTaskValidation:
 # Schema validation
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestSchemaValidation:
 
+class TestSchemaValidation:
     def test_none_schema(self):
         with pytest.raises(
             ScoutSchemaError,
@@ -241,8 +246,8 @@ class TestSchemaValidation:
 # Script path validation and normalization
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestScriptPathValidation:
 
+class TestScriptPathValidation:
     def test_none_script(self):
         s = _make(script=None)
         assert s._script_path is None
@@ -298,8 +303,8 @@ class TestScriptPathValidation:
 # Timeout validation
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestRunTimeoutValidation:
 
+class TestRunTimeoutValidation:
     def test_zero(self):
         with pytest.raises(ScoutError, match="run_timeout must be a positive integer"):
             _make(run_timeout=0)
@@ -330,8 +335,8 @@ class TestRunTimeoutValidation:
 # generation_attempts validation
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestGenerationAttemptsValidation:
 
+class TestGenerationAttemptsValidation:
     def test_negative(self):
         with pytest.raises(ScoutError, match="generation_attempts must be a positive integer"):
             _make(generation_attempts=-1)
@@ -353,8 +358,8 @@ class TestGenerationAttemptsValidation:
 # Model validation
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestModelValidation:
 
+class TestModelValidation:
     def test_empty_string(self):
         with pytest.raises(ScoutError, match="model must not be empty"):
             _make(model="")
@@ -405,8 +410,8 @@ class TestModelValidation:
 # api_key — stored, not validated at construction
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestApiKey:
 
+class TestApiKey:
     def test_none_default(self):
         s = _make()
         assert s._api_key is None
@@ -426,8 +431,8 @@ class TestApiKey:
 # _normalize_domain
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestNormalizeDomain:
 
+class TestNormalizeDomain:
     def test_strips_www(self):
         assert _normalize_domain("https://www.example.com") == "example.com"
 
@@ -465,24 +470,32 @@ class TestNormalizeDomain:
 
     # Spec table cases
     def test_spec_case_www_vs_plain(self):
-        assert _normalize_domain("https://www.example.com/a") == _normalize_domain("https://example.com/b")
+        assert _normalize_domain("https://www.example.com/a") == _normalize_domain(
+            "https://example.com/b"
+        )
 
     def test_spec_case_plain_vs_www(self):
-        assert _normalize_domain("https://example.com/a") == _normalize_domain("https://www.example.com/b")
+        assert _normalize_domain("https://example.com/a") == _normalize_domain(
+            "https://www.example.com/b"
+        )
 
     def test_spec_case_m_subdomain_differs(self):
-        assert _normalize_domain("https://m.example.com/a") != _normalize_domain("https://example.com/b")
+        assert _normalize_domain("https://m.example.com/a") != _normalize_domain(
+            "https://example.com/b"
+        )
 
     def test_spec_case_different_subdomains(self):
-        assert _normalize_domain("https://api.example.com") != _normalize_domain("https://app.example.com")
+        assert _normalize_domain("https://api.example.com") != _normalize_domain(
+            "https://app.example.com"
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # __repr__
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestScraperRepr:
 
+class TestScraperRepr:
     def test_minimal(self):
         s = _make()
         r = repr(s)
@@ -542,8 +555,8 @@ class TestScraperResultRepr:
 # Edge cases and real-world patterns
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestEdgeCases:
 
+class TestEdgeCases:
     def test_very_long_url(self):
         url = "https://example.com/" + "a" * 2000
         s = _make(url=url)
@@ -617,6 +630,7 @@ class TestEdgeCases:
 # Real-world quickstart patterns from spec
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestSpecExamples:
     """Verify the exact examples from the spec work."""
 
@@ -625,11 +639,14 @@ class TestSpecExamples:
         scraper = Scraper(
             "https://news.ycombinator.com",
             "Extract the top stories",
-            schema=List({
-                "title": str,
-                "url": str,
-                "points": int,
-            }, min_items=20),
+            schema=List(
+                {
+                    "title": str,
+                    "url": str,
+                    "points": int,
+                },
+                min_items=20,
+            ),
             script=str(script),
         )
         assert scraper._url == "https://news.ycombinator.com"
@@ -647,13 +664,16 @@ class TestSpecExamples:
         scraper = Scraper(
             "https://example.com",
             "Extract listings",
-            schema=List({
-                "title": Field(str, min_length=1),
-                "price": Field(float, min=0),
-                "currency": Field(str, enum=["USD", "EUR", "GBP"]),
-                "rating": Field(int, min=1, max=5, optional=True),
-                "in_stock": bool,
-            }, min_items=20),
+            schema=List(
+                {
+                    "title": Field(str, min_length=1),
+                    "price": Field(float, min=0),
+                    "currency": Field(str, enum=["USD", "EUR", "GBP"]),
+                    "rating": Field(int, min=1, max=5, optional=True),
+                    "in_stock": bool,
+                },
+                min_items=20,
+            ),
         )
         assert scraper._compiled_schema is not None
 
@@ -662,11 +682,13 @@ class TestSpecExamples:
 # Round 3: RegenerateMode export, List deprecation, protect_manual_edits, warnings
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestRegenerateModeExport:
     """RegenerateMode enum is importable and usable."""
 
     def test_import_from_scout(self):
         from scout import RegenerateMode
+
         assert hasattr(RegenerateMode, "BALANCED")
         assert hasattr(RegenerateMode, "CAUTIOUS")
         assert hasattr(RegenerateMode, "EAGER")
@@ -674,11 +696,13 @@ class TestRegenerateModeExport:
 
     def test_usable_in_constructor(self):
         from scout import RegenerateMode
+
         s = _make(
             auto_regenerate=RegenerateMode.BALANCED,
             script="test.py",
         )
         from scout.autofix.types import RegenerateMode as RGM
+
         assert s._auto_regenerate_mode == RGM.BALANCED
 
 
@@ -687,17 +711,21 @@ class TestListDeprecation:
 
     def test_list_warns(self):
         import warnings
+
         from scout.schema.types import List
+
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            result = List({"title": str}, min_items=5)
+            List({"title": str}, min_items=5)
             assert len(w) == 1
             assert issubclass(w[0].category, DeprecationWarning)
             assert "Items" in str(w[0].message)
 
     def test_list_returns_items(self):
         import warnings
+
         from scout.schema.types import Items, List
+
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             result = List({"title": str}, min_items=5)
@@ -722,13 +750,9 @@ class TestScriptNoneWarning:
 
     def test_warns_on_no_script(self, caplog):
         import logging
+
         with caplog.at_level(logging.WARNING, logger="scout"):
             _make(script=None)
-        assert any(
-            "No script= path set" in r.message for r in caplog.records
-        )
-        warning_records = [
-            r for r in caplog.records
-            if "No script= path set" in r.message
-        ]
+        assert any("No script= path set" in r.message for r in caplog.records)
+        warning_records = [r for r in caplog.records if "No script= path set" in r.message]
         assert warning_records[0].levelno == logging.WARNING

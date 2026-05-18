@@ -18,15 +18,13 @@ import pytest
 
 from scout.errors import ScoutConfigError, ScoutSchemaError
 from scout.schema.parse import parse_schema
-from scout.schema.types import Field, Items
+from scout.schema.types import Field
 from scout.scraper import (
     Scraper,
-    _build_metadata_docstring,
     _is_script_user_edited,
     _parse_script_metadata,
     _save_script,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -45,8 +43,9 @@ def _make(**overrides):
     return Scraper(url, task, **kwargs)
 
 
-def _write_script(path: Path, code: str, url: str = VALID_URL,
-                  task: str = VALID_TASK, schema_hash: str = "") -> None:
+def _write_script(
+    path: Path, code: str, url: str = VALID_URL, task: str = VALID_TASK, schema_hash: str = ""
+) -> None:
     """Write a script file with metadata using Scout's save function."""
     _save_script(code, path, url, task, "test-model", schema_hash=schema_hash)
 
@@ -60,6 +59,7 @@ SCRAPE_FUNCTION = textwrap.dedent("""\
 # ═══════════════════════════════════════════════════════════════════════════
 # Schema change detection
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestSchemaHashInMetadata:
     """Schema hash is stored in script metadata when saving."""
@@ -110,6 +110,7 @@ class TestSchemaChangeWarning:
 # Content hash and user-edit detection
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestContentHash:
     """content_hash is stored in metadata for edit detection."""
 
@@ -153,7 +154,8 @@ class TestIsScriptUserEdited:
         """Pre-Round-3 scripts without content_hash are not flagged."""
         path = tmp_path / "test.py"
         # Write a script without the content_hash field (manual metadata)
-        path.write_text(textwrap.dedent('''\
+        path.write_text(
+            textwrap.dedent('''\
             """
             Scout Script
 
@@ -166,13 +168,15 @@ class TestIsScriptUserEdited:
 
             async def scrape(page, start_url, checkpoint):
                 return []
-        '''))
+        ''')
+        )
         assert _is_script_user_edited(path) is False
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Script protection
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestScriptProtection:
     """protect_manual_edits blocks automatic overwriting of user-edited scripts."""
@@ -232,6 +236,7 @@ class TestScriptProtection:
 # Field(str, min=10) improved error message
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestFieldStrMinError:
     """Field(str, min=N) error suggests min_length with correct code."""
 
@@ -257,6 +262,7 @@ class TestFieldStrMinError:
 # ═══════════════════════════════════════════════════════════════════════════
 # Generation failure model suggestion
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestModelSuggestion:
     """Generation failure for weak models suggests upgrading."""

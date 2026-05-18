@@ -5,24 +5,20 @@ These tests verify the filtering logic, threshold boundaries, and
 interactions with structural constraints.
 """
 
-import pytest
-
 from scout.schema.compiler import compile_schema
 from scout.schema.parse import parse_schema
 from scout.schema.tolerance import (
     Tolerance,
-    TOLERANCE_THRESHOLDS,
-    apply_tolerance,
     _find_list_positions,
     _partition_and_count,
 )
 from scout.schema.types import Field, Items
-from scout.schema.validate import RawError, validate
-
+from scout.schema.validate import RawError
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_items(good: int, bad: int) -> list[dict]:
     """Build a list with `good` valid items and `bad` invalid items.
@@ -36,7 +32,9 @@ def _make_items(good: int, bad: int) -> list[dict]:
 
 
 def _validate_with_tolerance(
-    schema, data, tolerance: Tolerance,
+    schema,
+    data,
+    tolerance: Tolerance,
 ) -> tuple[bool, str]:
     """Compile schema and validate with tolerance."""
     cs = compile_schema(schema)
@@ -46,6 +44,7 @@ def _validate_with_tolerance(
 # ---------------------------------------------------------------------------
 # Strict — current behavior preserved
 # ---------------------------------------------------------------------------
+
 
 class TestStrict:
     """Strict tolerance: 100% of items must pass."""
@@ -82,6 +81,7 @@ class TestStrict:
 # ---------------------------------------------------------------------------
 # Balanced — 80% threshold
 # ---------------------------------------------------------------------------
+
 
 class TestBalanced:
     """Balanced tolerance: 80% of items must pass."""
@@ -152,6 +152,7 @@ class TestBalanced:
 # Lenient — 50% threshold
 # ---------------------------------------------------------------------------
 
+
 class TestLenient:
     """Lenient tolerance: 50% of items must pass."""
 
@@ -186,6 +187,7 @@ class TestLenient:
 # ---------------------------------------------------------------------------
 # Structural constraints — always enforced
 # ---------------------------------------------------------------------------
+
 
 class TestStructuralConstraints:
     """min/max on Items are never filtered by tolerance."""
@@ -225,6 +227,7 @@ class TestStructuralConstraints:
 # Non-list schemas — tolerance has no effect
 # ---------------------------------------------------------------------------
 
+
 class TestNonListSchemas:
     """Tolerance only applies to lists."""
 
@@ -248,6 +251,7 @@ class TestNonListSchemas:
 # ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
+
 
 class TestEdgeCases:
     """Boundary conditions and special cases."""
@@ -322,6 +326,7 @@ class TestEdgeCases:
 # Nested lists
 # ---------------------------------------------------------------------------
 
+
 class TestNestedLists:
     """Tolerance applies at each list level independently."""
 
@@ -366,10 +371,7 @@ class TestNestedLists:
             {"name": f"Good {i}", "reviews": [{"text": f"r{j}"} for j in range(5)]}
             for i in range(5)
         ]
-        data += [
-            {"name": f"Bad {i}", "reviews": [{"text": "only one"}]}
-            for i in range(5)
-        ]
+        data += [{"name": f"Bad {i}", "reviews": [{"text": "only one"}]} for i in range(5)]
         valid, _ = _validate_with_tolerance(schema, data, Tolerance.BALANCED)
         assert not valid
 
@@ -377,6 +379,7 @@ class TestNestedLists:
 # ---------------------------------------------------------------------------
 # apply_tolerance internals
 # ---------------------------------------------------------------------------
+
 
 class TestApplyToleranceInternals:
     """Unit tests for internal helper functions."""
@@ -437,6 +440,7 @@ class TestApplyToleranceInternals:
 # ---------------------------------------------------------------------------
 # CompiledSchema.validate() integration
 # ---------------------------------------------------------------------------
+
 
 class TestCompiledSchemaIntegration:
     """Test tolerance through the CompiledSchema.validate() API."""

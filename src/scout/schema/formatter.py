@@ -13,7 +13,6 @@ from typing import Any
 
 from .validate import RawError
 
-
 # Sort priority — lower number = shown first.
 _KIND_ORDER = {"type": 0, "missing": 0, "null": 1, "structure": 2, "constraint": 3}
 
@@ -41,6 +40,7 @@ class ErrorGroup:
 # ---------------------------------------------------------------------------
 # Grouping
 # ---------------------------------------------------------------------------
+
 
 def group_errors(errors: list[RawError]) -> list[ErrorGroup]:
     """Group errors by pattern path + message."""
@@ -73,6 +73,7 @@ def group_errors(errors: list[RawError]) -> list[ErrorGroup]:
 # Value display
 # ---------------------------------------------------------------------------
 
+
 def _display_value(value: Any) -> str:
     """Format a value for display in error messages."""
     if value is None:
@@ -94,6 +95,7 @@ def _display_value(value: Any) -> str:
 # ---------------------------------------------------------------------------
 # Formatting
 # ---------------------------------------------------------------------------
+
 
 def format_errors(
     errors: list[RawError],
@@ -146,43 +148,37 @@ def format_errors(
         # Examples (only if values are not None AND path is not empty)
         if group.examples and group.examples[0][1] is not None and path:
             example_parts = [
-                f"{ex_path} = {_display_value(ex_value)}"
-                for ex_path, ex_value in group.examples
+                f"{ex_path} = {_display_value(ex_value)}" for ex_path, ex_value in group.examples
             ]
             if len(example_parts) == 1:
                 lines.append(f"      Examples: {example_parts[0]}")
             elif len(example_parts) == 2:
-                lines.append(
-                    f"      Examples: {example_parts[0]}, {example_parts[1]}"
-                )
+                lines.append(f"      Examples: {example_parts[0]}, {example_parts[1]}")
             else:
                 # First two comma-joined, third on continuation line
-                lines.append(
-                    f"      Examples: {example_parts[0]},"
-                )
+                lines.append(f"      Examples: {example_parts[0]},")
                 lines.append(f"                {example_parts[1]},")
                 lines.append(f"                {example_parts[2]}")
 
         # Optional field note for constraint violations
-        if (
-            group.error_kind == "constraint"
-            and _pattern_is_optional(group.pattern, optional_paths)
-        ):
-            bad_vals = list(dict.fromkeys(
-                _display_value(val) for _, val in group.examples
-                if val is not None
-            ))[:3]  # deduplicate, preserve order, cap at 3
+        if group.error_kind == "constraint" and _pattern_is_optional(group.pattern, optional_paths):
+            bad_vals = list(
+                dict.fromkeys(_display_value(val) for _, val in group.examples if val is not None)
+            )[:3]  # deduplicate, preserve order, cap at 3
             if bad_vals:
-                joined = " and ".join(bad_vals) if len(bad_vals) <= 2 else \
-                    ", ".join(bad_vals[:-1]) + ", and " + bad_vals[-1]
+                joined = (
+                    " and ".join(bad_vals)
+                    if len(bad_vals) <= 2
+                    else ", ".join(bad_vals[:-1]) + ", and " + bad_vals[-1]
+                )
                 lines.append(
                     f"      Note: this field is optional \u2014 null is valid, "
                     f"but {joined} {'is' if len(bad_vals) == 1 else 'are'} not."
                 )
             else:
                 lines.append(
-                    f"      Note: this field is optional \u2014 null is valid, "
-                    f"but the above values are not."
+                    "      Note: this field is optional \u2014 null is valid, "
+                    "but the above values are not."
                 )
 
     if remaining:
@@ -210,9 +206,10 @@ def _count_context(group: ErrorGroup, total_items: int | None) -> str:
 # Optional field detection
 # ---------------------------------------------------------------------------
 
+
 def _collect_optional_paths(node: Any, prefix: str = "") -> set[str]:
     """Collect all paths to optional fields in the tree, with [*] for lists."""
-    from .nodes import ListNode, ObjectNode, ScalarNode
+    from .nodes import ListNode, ObjectNode
 
     paths: set[str] = set()
 

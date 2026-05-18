@@ -17,14 +17,20 @@ Security layers:
 from __future__ import annotations
 
 import asyncio
+import datetime as _datetime_module
 import io
 import operator
 import types
-import datetime as _datetime_module
 import xml.etree.ElementTree as _real_ET
 from typing import Any
 from urllib.parse import (
-    parse_qs, quote, quote_plus, unquote, urlencode, urljoin, urlparse,
+    parse_qs,
+    quote,
+    quote_plus,
+    unquote,
+    urlencode,
+    urljoin,
+    urlparse,
 )
 
 from RestrictedPython import compile_restricted_exec, safe_builtins
@@ -34,10 +40,10 @@ from RestrictedPython.Guards import (
 )
 from RestrictedPython.transformer import RestrictingNodeTransformer
 
-
 # ═══════════════════════════════════════════════════════════════
 #  Exceptions
 # ═══════════════════════════════════════════════════════════════
+
 
 class SandboxError(Exception):
     """Raised when agent code fails sandbox validation."""
@@ -46,6 +52,7 @@ class SandboxError(Exception):
 # ═══════════════════════════════════════════════════════════════
 #  Custom AST Transformer
 # ═══════════════════════════════════════════════════════════════
+
 
 class ScoutTransformer(RestrictingNodeTransformer):
     """RestrictedPython policy tuned for async browser automation code.
@@ -138,6 +145,7 @@ class ScoutTransformer(RestrictingNodeTransformer):
 #  Print Passthrough
 # ═══════════════════════════════════════════════════════════════
 
+
 class PassthroughPrintCollector:
     """Drop-in replacement for RestrictedPython's PrintCollector.
 
@@ -160,31 +168,61 @@ class PassthroughPrintCollector:
 #  Module Whitelist (security-audited)
 # ═══════════════════════════════════════════════════════════════
 
-ALLOWED_MODULES = frozenset({
-    # Pure computation — no I/O
-    "json", "re", "math", "itertools", "functools",
-    "decimal", "fractions", "statistics",
-    # Pure string/text manipulation
-    "string", "textwrap", "unicodedata", "difflib", "fnmatch",
-    # HTML handling — pure parsing
-    "html", "html.parser", "html.entities",
-    # Date/time — _strptime is a CPython internal used by datetime.strptime()
-    "datetime", "calendar", "time", "_strptime",
-    # URL handling (NOT urllib.request — that does HTTP)
-    "urllib.parse",
-    # Encoding/hashing — bytes in/out
-    "base64", "binascii", "hashlib", "hmac", "struct",
-    # Data formats — works with file-like objects only
-    "csv",
-    # Type system — no runtime behavior
-    "typing", "enum", "dataclasses", "numbers",
-    # Data structures
-    "collections", "operator", "copy", "heapq",
-    # Compression — in-memory only (no file functions)
-    "zlib",
-    # Misc safe
-    "random", "pprint", "contextlib", "abc",
-})
+ALLOWED_MODULES = frozenset(
+    {
+        # Pure computation — no I/O
+        "json",
+        "re",
+        "math",
+        "itertools",
+        "functools",
+        "decimal",
+        "fractions",
+        "statistics",
+        # Pure string/text manipulation
+        "string",
+        "textwrap",
+        "unicodedata",
+        "difflib",
+        "fnmatch",
+        # HTML handling — pure parsing
+        "html",
+        "html.parser",
+        "html.entities",
+        # Date/time — _strptime is a CPython internal used by datetime.strptime()
+        "datetime",
+        "calendar",
+        "time",
+        "_strptime",
+        # URL handling (NOT urllib.request — that does HTTP)
+        "urllib.parse",
+        # Encoding/hashing — bytes in/out
+        "base64",
+        "binascii",
+        "hashlib",
+        "hmac",
+        "struct",
+        # Data formats — works with file-like objects only
+        "csv",
+        # Type system — no runtime behavior
+        "typing",
+        "enum",
+        "dataclasses",
+        "numbers",
+        # Data structures
+        "collections",
+        "operator",
+        "copy",
+        "heapq",
+        # Compression — in-memory only (no file functions)
+        "zlib",
+        # Misc safe
+        "random",
+        "pprint",
+        "contextlib",
+        "abc",
+    }
+)
 
 # asyncio is handled specially via proxy (see _safe_asyncio below).
 # uuid is denied: uuid1()/getnode() spawn subprocesses.
@@ -249,7 +287,9 @@ _PROXY_MODULES: dict[str, Any] = {
     "xml.etree.ElementTree": _safe_xml_et,
 }
 
-_real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__  # type: ignore[union-attr]
+_real_import = (
+    __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__
+)  # type: ignore[union-attr]
 
 
 def _safe_import(
@@ -298,22 +338,42 @@ def _safe_import(
 
 _EXTRA_BUILTINS: dict[str, Any] = {
     # Data structures
-    "dict": dict, "list": list, "set": set, "frozenset": frozenset,
+    "dict": dict,
+    "list": list,
+    "set": set,
+    "frozenset": frozenset,
     # Iteration
-    "enumerate": enumerate, "filter": filter, "map": map,
-    "iter": iter, "next": next, "reversed": reversed,
+    "enumerate": enumerate,
+    "filter": filter,
+    "map": map,
+    "iter": iter,
+    "next": next,
+    "reversed": reversed,
     # Aggregation
-    "max": max, "min": min, "sum": sum, "all": all, "any": any,
+    "max": max,
+    "min": min,
+    "sum": sum,
+    "all": all,
+    "any": any,
     # Introspection
-    "hasattr": hasattr, "getattr": getattr,
-    "type": type, "isinstance": isinstance, "issubclass": issubclass,
+    "hasattr": hasattr,
+    "getattr": getattr,
+    "type": type,
+    "isinstance": isinstance,
+    "issubclass": issubclass,
     # OOP
-    "super": super, "object": object,
-    "property": property, "staticmethod": staticmethod,
+    "super": super,
+    "object": object,
+    "property": property,
+    "staticmethod": staticmethod,
     "classmethod": classmethod,
     # Output and formatting
-    "print": print, "sorted": sorted, "zip": zip,
-    "bin": bin, "ascii": ascii, "format": format,
+    "print": print,
+    "sorted": sorted,
+    "zip": zip,
+    "bin": bin,
+    "ascii": ascii,
+    "format": format,
     # Import (our whitelist version)
     "__import__": _safe_import,
 }
@@ -363,6 +423,7 @@ def _inplacevar(op: str, x: Any, y: Any) -> Any:
 #  Restricted Globals (execution namespace)
 # ═══════════════════════════════════════════════════════════════
 
+
 def build_safe_pre_imports() -> dict[str, Any]:
     """Build the safe pre-import namespace.
 
@@ -393,22 +454,61 @@ def build_safe_pre_imports() -> dict[str, Any]:
 
 # Dunder attributes allowed for normal Python operations.
 # These are needed for iteration, context managers, containers, etc.
-_ALLOWED_DUNDERS = frozenset({
-    "__init__", "__len__", "__str__", "__repr__", "__bool__",
-    "__iter__", "__next__", "__aiter__", "__anext__",
-    "__getitem__", "__setitem__", "__delitem__", "__contains__",
-    "__enter__", "__exit__", "__aenter__", "__aexit__",
-    "__call__", "__hash__", "__eq__", "__ne__",
-    "__lt__", "__le__", "__gt__", "__ge__",
-    "__add__", "__radd__", "__sub__", "__mul__", "__truediv__",
-    "__floordiv__", "__mod__", "__pow__",
-    "__and__", "__or__", "__xor__", "__invert__",
-    "__neg__", "__pos__", "__abs__",
-    "__int__", "__float__", "__complex__",
-    "__index__", "__format__",
-    "__name__", "__doc__", "__module__", "__qualname__",
-    "__wrapped__", "__slots__",
-})
+_ALLOWED_DUNDERS = frozenset(
+    {
+        "__init__",
+        "__len__",
+        "__str__",
+        "__repr__",
+        "__bool__",
+        "__iter__",
+        "__next__",
+        "__aiter__",
+        "__anext__",
+        "__getitem__",
+        "__setitem__",
+        "__delitem__",
+        "__contains__",
+        "__enter__",
+        "__exit__",
+        "__aenter__",
+        "__aexit__",
+        "__call__",
+        "__hash__",
+        "__eq__",
+        "__ne__",
+        "__lt__",
+        "__le__",
+        "__gt__",
+        "__ge__",
+        "__add__",
+        "__radd__",
+        "__sub__",
+        "__mul__",
+        "__truediv__",
+        "__floordiv__",
+        "__mod__",
+        "__pow__",
+        "__and__",
+        "__or__",
+        "__xor__",
+        "__invert__",
+        "__neg__",
+        "__pos__",
+        "__abs__",
+        "__int__",
+        "__float__",
+        "__complex__",
+        "__index__",
+        "__format__",
+        "__name__",
+        "__doc__",
+        "__module__",
+        "__qualname__",
+        "__wrapped__",
+        "__slots__",
+    }
+)
 
 
 def _guarded_getattr(obj: Any, name: str) -> Any:
@@ -421,9 +521,7 @@ def _guarded_getattr(obj: Any, name: str) -> Any:
     """
     if name.startswith("__") and name.endswith("__"):
         if name not in _ALLOWED_DUNDERS:
-            raise AttributeError(
-                f"Access to '{name}' is not allowed in sandbox mode"
-            )
+            raise AttributeError(f"Access to '{name}' is not allowed in sandbox mode")
     return getattr(obj, name)
 
 
@@ -434,27 +532,21 @@ def _guarded_write(obj: Any) -> Any:
     prevents patching module attributes.
     """
     if isinstance(obj, types.ModuleType):
-        raise AttributeError(
-            "Cannot modify module attributes in sandbox mode"
-        )
+        raise AttributeError("Cannot modify module attributes in sandbox mode")
     return obj
 
 
 def _guarded_setattr(obj: Any, name: str, value: Any) -> None:
     """Setattr guard — blocks attribute writes to modules."""
     if isinstance(obj, types.ModuleType):
-        raise AttributeError(
-            "Cannot modify module attributes in sandbox mode"
-        )
+        raise AttributeError("Cannot modify module attributes in sandbox mode")
     setattr(obj, name, value)
 
 
 def _guarded_delattr(obj: Any, name: str) -> None:
     """Delattr guard — blocks attribute deletion on modules."""
     if isinstance(obj, types.ModuleType):
-        raise AttributeError(
-            "Cannot modify module attributes in sandbox mode"
-        )
+        raise AttributeError("Cannot modify module attributes in sandbox mode")
     delattr(obj, name)
 
 
@@ -492,6 +584,7 @@ def build_restricted_globals(
 #  Entry Point
 # ═══════════════════════════════════════════════════════════════
 
+
 def compile_restricted_agent_code(
     source: str,
     filename: str = "<agent>",
@@ -518,8 +611,6 @@ def compile_restricted_agent_code(
 
     if result.errors:
         errors_str = "\n".join(f"  - {e}" for e in result.errors)
-        raise SandboxError(
-            f"Agent code failed sandbox validation:\n{errors_str}"
-        )
+        raise SandboxError(f"Agent code failed sandbox validation:\n{errors_str}")
 
     return result.code

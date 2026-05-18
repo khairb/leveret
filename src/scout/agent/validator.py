@@ -58,10 +58,7 @@ VALIDATOR_TOOL_SCHEMAS = [
                 },
                 "context_lines": {
                     "type": "integer",
-                    "description": (
-                        "Lines of context before and after each match "
-                        "(default: 3)"
-                    ),
+                    "description": ("Lines of context before and after each match (default: 3)"),
                     "default": 3,
                 },
             },
@@ -100,9 +97,7 @@ VALIDATOR_TOOL_SCHEMAS = [
             "properties": {
                 "approved": {
                     "type": "boolean",
-                    "description": (
-                        "True if the output is correct, False if not"
-                    ),
+                    "description": ("True if the output is correct, False if not"),
                 },
                 "reasoning": {
                     "type": "string",
@@ -339,7 +334,7 @@ def _sample_output(
 
     if total <= threshold:
         # Small output — show everything.
-        numbered = [f"[L{i+1}] {line}" for i, line in enumerate(lines)]
+        numbered = [f"[L{i + 1}] {line}" for i, line in enumerate(lines)]
         return "\n".join(numbered)
 
     # Large output — sample slices.
@@ -355,14 +350,11 @@ def _sample_output(
 
         # Gap marker.
         if prev_end >= 0 and start > prev_end:
-            parts.append(
-                f"--- lines {prev_end + 1}-{start} omitted "
-                f"({start - prev_end} lines) ---"
-            )
+            parts.append(f"--- lines {prev_end + 1}-{start} omitted ({start - prev_end} lines) ---")
 
         # Slice with line numbers.
         for i in range(start, end):
-            parts.append(f"[L{i+1}] {lines[i]}")
+            parts.append(f"[L{i + 1}] {lines[i]}")
 
         prev_end = end
 
@@ -402,7 +394,7 @@ def _execute_validator_tool(
                     matches.append("---")
                 for j in range(start, end):
                     marker = " >> " if j == i else "    "
-                    matches.append(f"{marker}[L{j+1}] {stdout_lines[j]}")
+                    matches.append(f"{marker}[L{j + 1}] {stdout_lines[j]}")
 
         if match_count == 0:
             return f"No matches found for '{query}'."
@@ -425,13 +417,8 @@ def _execute_validator_tool(
         if start > total:
             return f"Output only has {total} lines."
 
-        result_lines = [
-            f"[L{i+1}] {stdout_lines[i]}" for i in range(start - 1, end)
-        ]
-        return (
-            f"Lines {start}-{end} of {total}:\n\n"
-            + "\n".join(result_lines)
-        )
+        result_lines = [f"[L{i + 1}] {stdout_lines[i]}" for i in range(start - 1, end)]
+        return f"Lines {start}-{end} of {total}:\n\n" + "\n".join(result_lines)
 
     return f"Unknown tool: {name}"
 
@@ -448,8 +435,7 @@ def _build_attempt_history(
 ) -> str:
     """Format previous attempts for the validator's context."""
     parts = [
-        f"## Previous Attempts "
-        f"(you are reviewing attempt {current_attempt} of {max_attempts})\n",
+        f"## Previous Attempts (you are reviewing attempt {current_attempt} of {max_attempts})\n",
     ]
 
     for rec in history:
@@ -458,9 +444,7 @@ def _build_attempt_history(
         script_preview = rec.script
         if len(script_preview) > 1500:
             script_preview = (
-                script_preview[:750]
-                + "\n# ... (truncated) ...\n"
-                + script_preview[-750:]
+                script_preview[:750] + "\n# ... (truncated) ...\n" + script_preview[-750:]
             )
 
         sample_lines = rec.stdout_sample.split("\n")[:15]
@@ -484,11 +468,11 @@ def _build_attempt_history(
         f"For example, if three different pagination strategies all "
         f"yield ~199 items when 200 was expected, the site simply "
         f"serves fewer items than its header claims — no code change "
-        f"will produce 200. Or if a field like \"rating\" is null on "
+        f'will produce 200. Or if a field like "rating" is null on '
         f"~10% of items across every attempt, those listings "
         f"genuinely have no rating on the page — the script is "
         f"extracting correctly, the data just does not exist for "
-        f"every item. Or if a \"description\" field always cuts off "
+        f'every item. Or if a "description" field always cuts off '
         f"at exactly 150 characters, the website itself truncates it "
         f"in the listing view and the full text only lives on the "
         f"detail page.\n\n"
@@ -531,29 +515,31 @@ def _build_user_message(
     if requirements:
         parts.append(f"## Success Criteria\n\n{requirements}\n")
 
-    parts.extend([
-        f"## Generated Script (attempt {attempt_number} of "
-        f"{max_attempts})\n\n```python\n{script}\n```\n",
-        f"## Execution Result\n\n"
-        f"**Exit code:** {returncode}\n",
-    ])
+    parts.extend(
+        [
+            f"## Generated Script (attempt {attempt_number} of "
+            f"{max_attempts})\n\n```python\n{script}\n```\n",
+            f"## Execution Result\n\n**Exit code:** {returncode}\n",
+        ]
+    )
 
     if stderr.strip():
         stderr_display = stderr.strip()[:2000]
         parts.append(f"**Stderr:**\n```\n{stderr_display}\n```\n")
 
-    parts.append(
-        f"## Output Overview ({total_lines} lines, {total_bytes:,} bytes)\n\n"
-        f"{sampled}\n"
-    )
+    parts.append(f"## Output Overview ({total_lines} lines, {total_bytes:,} bytes)\n\n{sampled}\n")
 
     if checkpoints_summary:
         parts.append(f"\n{checkpoints_summary}\n")
 
     if attempt_history:
-        parts.append(_build_attempt_history(
-            attempt_history, attempt_number, max_attempts,
-        ))
+        parts.append(
+            _build_attempt_history(
+                attempt_history,
+                attempt_number,
+                max_attempts,
+            )
+        )
 
     return "\n".join(parts)
 
@@ -572,8 +558,7 @@ class _ValidatorTrace:
         if trace_dir and trace_dir.exists():
             self._path = trace_dir / "validator_trace.md"
             self._path.write_text(
-                f"# Validator Trace — "
-                f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n",
+                f"# Validator Trace — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n",
                 encoding="utf-8",
             )
 
@@ -581,10 +566,7 @@ class _ValidatorTrace:
         return f"{time.time() - self._start_time:.1f}s"
 
     def log_user_message(self, content: str) -> None:
-        self._append(
-            f"## [{self._elapsed()}] User Message\n\n"
-            f"````\n{content[:5000]}\n````\n\n"
-        )
+        self._append(f"## [{self._elapsed()}] User Message\n\n````\n{content[:5000]}\n````\n\n")
 
     def log_assistant(self, content_blocks: list[dict]) -> None:
         parts = [f"## [{self._elapsed()}] Assistant\n\n"]
@@ -605,13 +587,13 @@ class _ValidatorTrace:
         preview = content[:3000]
         if len(content) > 3000:
             preview += f"\n... ({len(content) - 3000} more chars)"
-        self._append(
-            f"### [{self._elapsed()}] Tool result: `{name}`\n\n"
-            f"````\n{preview}\n````\n\n"
-        )
+        self._append(f"### [{self._elapsed()}] Tool result: `{name}`\n\n````\n{preview}\n````\n\n")
 
     def log_decision(
-        self, approved: bool, reasoning: str, feedback: str,
+        self,
+        approved: bool,
+        reasoning: str,
+        feedback: str,
     ) -> None:
         status = "APPROVED" if approved else "REJECTED"
         self._append(
@@ -673,8 +655,14 @@ async def validate_output(
     trace = _ValidatorTrace(trace_dir)
 
     user_message = _build_user_message(
-        task, script, stdout, stderr, returncode,
-        stdout_lines, attempt_history, requirements,
+        task,
+        script,
+        stdout,
+        stderr,
+        returncode,
+        stdout_lines,
+        attempt_history,
+        requirements,
         checkpoints_summary,
         attempt_number=attempt_number,
         max_attempts=max_attempts,
@@ -702,12 +690,14 @@ async def validate_output(
             if block.type == "text":
                 serialized.append({"type": "text", "text": block.text})
             elif block.type == "tool_use":
-                serialized.append({
-                    "type": "tool_use",
-                    "id": block.id,
-                    "name": block.name,
-                    "input": block.input,
-                })
+                serialized.append(
+                    {
+                        "type": "tool_use",
+                        "id": block.id,
+                        "name": block.name,
+                        "input": block.input,
+                    }
+                )
         messages.append({"role": "assistant", "content": serialized})
         trace.log_assistant(serialized)
 
@@ -742,21 +732,24 @@ async def validate_output(
 
             # Execute search_output or view_lines.
             result = _execute_validator_tool(
-                block.name, block.input, stdout_lines,
+                block.name,
+                block.input,
+                stdout_lines,
             )
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": result,
-            })
+            tool_results.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": result,
+                }
+            )
             trace.log_tool_result(block.name, result)
 
         # Budget warning on penultimate turn.
         if turn == max_turns - 2 and tool_results:
             for tr in tool_results:
                 tr["content"] = (
-                    str(tr["content"])
-                    + "\n\n⚠️ You have 1 turn remaining. "
+                    str(tr["content"]) + "\n\n⚠️ You have 1 turn remaining. "
                     "You MUST call the `decide` tool on your next turn."
                 )
 

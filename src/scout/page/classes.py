@@ -92,15 +92,15 @@ _CSS_WORDS = frozenset(
 # ---------------------------------------------------------------------------
 _FRAMEWORK_PREFIX_RE = re.compile(
     r"^("
-    r"css-[a-zA-Z0-9]|"            # Emotion / generic CSS-in-JS: css-1a2b3c
-    r"sc-[a-zA-Z]{3,}|"            # Styled Components: sc-bdVTJa (NOT sc-sm etc.)
-    r"emotion-[0-9]|"              # Emotion: emotion-0, emotion-12
-    r"jss\d|"                      # JSS: jss123, jss45
-    r"styled-[a-zA-Z0-9]{4,}|"    # styled-hR83ls
-    r"__next|"                     # Next.js internals
-    r"svelte-[a-z0-9]{4,}|"       # Svelte scoped: svelte-1hjk32
-    r"astro-[a-zA-Z0-9]{4,}|"     # Astro scoped
-    r"v-[a-f0-9]{6,}"             # Vue scoped (v- + hex hash, not v-if etc.)
+    r"css-[a-zA-Z0-9]|"  # Emotion / generic CSS-in-JS: css-1a2b3c
+    r"sc-[a-zA-Z]{3,}|"  # Styled Components: sc-bdVTJa (NOT sc-sm etc.)
+    r"emotion-[0-9]|"  # Emotion: emotion-0, emotion-12
+    r"jss\d|"  # JSS: jss123, jss45
+    r"styled-[a-zA-Z0-9]{4,}|"  # styled-hR83ls
+    r"__next|"  # Next.js internals
+    r"svelte-[a-z0-9]{4,}|"  # Svelte scoped: svelte-1hjk32
+    r"astro-[a-zA-Z0-9]{4,}|"  # Astro scoped
+    r"v-[a-f0-9]{6,}"  # Vue scoped (v- + hex hash, not v-if etc.)
     r")"
 )
 
@@ -120,7 +120,9 @@ _PURE_HASH_RE = re.compile(r"^(?=.*[a-zA-Z])(?=.*[0-9])[a-zA-Z0-9]{6,}$")
 _HASH_SUFFIX_RE = re.compile(r"^.+[_-](?=.*[0-9])[a-zA-Z0-9]{5,}$")
 
 # Underscore-prefixed hash (CSS Modules default): _3xk2F, _a8Bz2K
-_UNDERSCORE_HASH_RE = re.compile(r"^_(?=.*[0-9])[a-zA-Z0-9]{4,}$|^_(?=.*[A-Z])(?=.*[a-z])[a-zA-Z]{5,}$")
+_UNDERSCORE_HASH_RE = re.compile(
+    r"^_(?=.*[0-9])[a-zA-Z0-9]{4,}$|^_(?=.*[A-Z])(?=.*[a-z])[a-zA-Z]{5,}$"
+)
 
 # Tailwind-style utilities — these are STABLE, protect them
 _TAILWIND_RE = re.compile(
@@ -215,8 +217,7 @@ def _has_mixed_case_no_camel(s: str) -> bool:
         return False
     # Count case transitions
     transitions = sum(
-        1 for i in range(1, len(alpha))
-        if alpha[i].isupper() != alpha[i - 1].isupper()
+        1 for i in range(1, len(alpha)) if alpha[i].isupper() != alpha[i - 1].isupper()
     )
     # High transition rate relative to length → random-looking
     return transitions / len(alpha) > 0.4
@@ -319,10 +320,12 @@ def is_unstable_class(class_name: str, threshold: float = 0.45) -> bool:
 
     # Signal 7: any segment looks like a hash (has digits + letters, not a word)
     for seg in segments:
-        if (len(seg) >= 5
-                and seg not in _CSS_WORDS
-                and any(c.isdigit() for c in seg)
-                and any(c.isalpha() for c in seg)):
+        if (
+            len(seg) >= 5
+            and seg not in _CSS_WORDS
+            and any(c.isdigit() for c in seg)
+            and any(c.isalpha() for c in seg)
+        ):
             score += 0.35
             break
 
@@ -375,13 +378,12 @@ def clean_html(html: str) -> str:
 if __name__ == "__main__":
     test_cases = [
         # (class_name, expected_unstable)
-
         # ---- STABLE classes (should return False) ----
         ("product-card", False),
         ("main-nav", False),
         ("sidebar-menu", False),
         ("btn-primary", False),
-        ("header__logo", False),            # BEM without hash
+        ("header__logo", False),  # BEM without hash
         ("text-lg", False),
         ("flex", False),
         ("mt-4", False),
@@ -394,18 +396,18 @@ if __name__ == "__main__":
         ("nav-container", False),
         ("sidebar_content", False),
         ("user_profile", False),
-        ("ProductCard", False),             # PascalCase component
-        ("is-active", False),               # state class (semantic)
+        ("ProductCard", False),  # PascalCase component
+        ("is-active", False),  # state class (semantic)
         ("has-error", False),
         ("page-title", False),
-        ("col-md-6", False),                # Bootstrap grid
-        ("ant-btn", False),                 # Ant Design (stable component lib)
+        ("col-md-6", False),  # Bootstrap grid
+        ("ant-btn", False),  # Ant Design (stable component lib)
         ("ant-modal-header", False),
-        ("el-input", False),                # Element UI
-        ("mat-button", False),              # Angular Material
-        ("form-control", False),            # Bootstrap
+        ("el-input", False),  # Element UI
+        ("mat-button", False),  # Angular Material
+        ("form-control", False),  # Bootstrap
         ("list-group-item", False),
-        ("d-flex", False),                  # Bootstrap utility
+        ("d-flex", False),  # Bootstrap utility
         ("text-center", False),
         ("bg-primary", False),
         ("alert-danger", False),
@@ -444,7 +446,7 @@ if __name__ == "__main__":
         ("jss123", True),
         ("styled-hR83ls", True),
         ("_3xk2F", True),
-        ("_next-data", False),              # Actually this is an attr, not class
+        ("_next-data", False),  # Actually this is an attr, not class
         ("__next", True),
         ("MuiButton-root", True),
         ("styles__container--a8f2d", True),
@@ -452,15 +454,15 @@ if __name__ == "__main__":
         ("v-4af2c3", True),
         ("css-14el2xx", True),
         ("sc-AxjAm", True),
-        ("kJHsdf8", True),                  # pure hash with mixed case + digit
-        ("a3kF8x2Z", True),                 # pure hash
+        ("kJHsdf8", True),  # pure hash with mixed case + digit
+        ("a3kF8x2Z", True),  # pure hash
         ("hashed_8faj3k2lx", True),
         ("component_a3b8c2d1f", True),
         ("emotion-12", True),
         ("jss45", True),
         ("svelte-ab12cd", True),
         ("astro-J7PkDi3T", True),
-        ("v-a1b2c3d4", True),               # Vue scoped hash
+        ("v-a1b2c3d4", True),  # Vue scoped hash
     ]
 
     print(f"{'Class Name':<40} {'Expected':<10} {'Got':<10} {'OK?'}")
@@ -478,12 +480,12 @@ if __name__ == "__main__":
 
     print(f"\n{correct}/{len(test_cases)} correct")
     if failures:
-        print(f"\nFailed cases:")
+        print("\nFailed cases:")
         for name, expected, got in failures:
             print(f"  {name}: expected {expected}, got {got}")
 
     # Demo: clean HTML
-    sample_html = '''
+    sample_html = """
     <div class="css-1a2b3c container flex items-center">
         <nav class="sc-bdVTJa main-nav">
             <a class='emotion-0 btn-primary hover:bg-blue-500' href="/">Home</a>
@@ -493,7 +495,7 @@ if __name__ == "__main__":
         </div>
         <button class="ant-btn ant-btn-primary MuiButton-root">Click</button>
     </div>
-    '''
+    """
     print("\n\n--- HTML Cleaning Demo ---")
     print("BEFORE:")
     print(sample_html)

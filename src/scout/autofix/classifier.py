@@ -98,9 +98,7 @@ _F3_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"libnss3\.so|libatk-1\.0\.so|libxss\.so"),
     re.compile(r"Cannot create directory"),
     re.compile(r"mkdtemp"),
-    re.compile(
-        r"BrowserType\.launch|BrowserType\.launch_persistent_context"
-    ),
+    re.compile(r"BrowserType\.launch|BrowserType\.launch_persistent_context"),
 ]
 
 # Exit code 137 (SIGKILL/OOM) is F3, not F1.
@@ -112,13 +110,15 @@ _NET_ERR_RE = re.compile(r"net::ERR_\w+")
 
 # Navigation methods whose timeouts are Category C (closed set).
 # Patchright always uses PascalCase in error messages (Page.goto, not page.goto).
-_NAVIGATION_METHODS: frozenset[str] = frozenset({
-    "Page.goto",
-    "Page.reload",
-    "Page.go_back",
-    "Page.go_forward",
-    "Frame.goto",
-})
+_NAVIGATION_METHODS: frozenset[str] = frozenset(
+    {
+        "Page.goto",
+        "Page.reload",
+        "Page.go_back",
+        "Page.go_forward",
+        "Frame.goto",
+    }
+)
 
 # General timeout pattern: "{Method}: Timeout {N}ms exceeded"
 # Captures the method prefix (e.g., "Page.click", "Locator.wait_for").
@@ -274,7 +274,8 @@ def _check_category_a(stderr: str) -> bool:
 
 
 def _check_category_f(
-    stderr: str, exit_code: int | None,
+    stderr: str,
+    exit_code: int | None,
 ) -> ErrorCategory | None:
     """Check for Category F process/browser death.
 
@@ -366,7 +367,9 @@ def _check_category_d(stderr: str) -> bool:
 
 
 def _check_category_b_output(
-    stderr: str, stdout: str, exit_code: int | None,
+    stderr: str,
+    stdout: str,
+    exit_code: int | None,
 ) -> bool:
     """Check for Category B output-stage errors.
 
@@ -382,7 +385,7 @@ def _check_category_b_output(
     # None return: exit code 0, no stderr, but no valid output in stdout.
     # The subprocess wrapper writes output between markers. If the markers
     # are absent or contain "null", the script returned None.
-    if (exit_code is not None and exit_code == 0 and not stderr.strip()):
+    if exit_code is not None and exit_code == 0 and not stderr.strip():
         # Check if stdout has the return value markers with null/empty
         if not stdout.strip():
             return True

@@ -30,7 +30,6 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass, field
-from typing import Optional
 
 from lxml import html as lxml_html
 from lxml.html import HtmlElement
@@ -40,16 +39,13 @@ from lxml.html import tostring as html_tostring
 # Sibling imports (within the page package)
 # ---------------------------------------------------------------------------
 from .converter import (
-    ALLOWED_ATTRIBUTES,
     BLOCK_ELEMENTS,
     EXCLUDED_TAGS,
     VOID_ELEMENTS,
     InteractiveElement,
     RenderedInteractiveElement,
-    html_to_text,
     html_to_text_with_elements,
 )
-
 from .patterns import (
     GroupAnnotations,
     detect_all_groups,
@@ -60,21 +56,60 @@ from .patterns import (
 # ═══════════════════════════════════════════════════════════════════════════
 
 # Semantic tags that are good section boundaries.
-SEMANTIC_TAGS: frozenset[str] = frozenset({
-    "main", "nav", "header", "footer", "section", "article",
-    "aside", "form", "table", "ul", "ol",
-})
+SEMANTIC_TAGS: frozenset[str] = frozenset(
+    {
+        "main",
+        "nav",
+        "header",
+        "footer",
+        "section",
+        "article",
+        "aside",
+        "form",
+        "table",
+        "ul",
+        "ol",
+    }
+)
 
 # Tags we prefer to split at (semantic + div as a major container).
 SPLIT_PREFERRED_TAGS: frozenset[str] = SEMANTIC_TAGS | {"div"}
 
 # Inline elements — avoid splitting inside these.
-INLINE_TAGS: frozenset[str] = frozenset({
-    "a", "abbr", "b", "bdi", "bdo", "br", "cite", "code",
-    "data", "dfn", "em", "i", "kbd", "mark", "q", "rp", "rt",
-    "ruby", "s", "samp", "small", "span", "strong", "sub", "sup",
-    "time", "u", "var", "wbr", "label",
-})
+INLINE_TAGS: frozenset[str] = frozenset(
+    {
+        "a",
+        "abbr",
+        "b",
+        "bdi",
+        "bdo",
+        "br",
+        "cite",
+        "code",
+        "data",
+        "dfn",
+        "em",
+        "i",
+        "kbd",
+        "mark",
+        "q",
+        "rp",
+        "rt",
+        "ruby",
+        "s",
+        "samp",
+        "small",
+        "span",
+        "strong",
+        "sub",
+        "sup",
+        "time",
+        "u",
+        "var",
+        "wbr",
+        "label",
+    }
+)
 
 # Regex for inline hidden detection (mirrors converter).
 _INLINE_HIDDEN_RE = re.compile(
@@ -87,6 +122,7 @@ _INLINE_HIDDEN_RE = re.compile(
 #  Data Structures
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class ElementReference:
     """A DOM element reference with multiple location strategies.
@@ -96,10 +132,10 @@ class ElementReference:
     strategy is most robust for their use case.
     """
 
-    xpath: str                                    # lxml-generated XPath
-    css_selector: str                             # path-based CSS selector
-    tag: str                                      # element tag name
-    dom_index: int                                # depth-first traversal index
+    xpath: str  # lxml-generated XPath
+    css_selector: str  # path-based CSS selector
+    tag: str  # element tag name
+    dom_index: int  # depth-first traversal index
     attributes: dict[str, str] = field(default_factory=dict)
 
 
@@ -127,15 +163,15 @@ class Section:
     end_element: ElementReference
 
     # ── Fingerprints for cross-state matching ──
-    content_hash: str          # SHA-256 prefix (16 hex chars) of text
-    interactive_hash: str      # SHA-256 prefix of interactive structure
+    content_hash: str  # SHA-256 prefix (16 hex chars) of text
+    interactive_hash: str  # SHA-256 prefix of interactive structure
 
     # ── Structural metadata ──
-    depth: int                 # nesting depth from content root
-    is_interactive: bool       # contains ≥ 1 interactive element
-    interactive_count: int     # number of interactive elements
-    parent_tag: str            # tag of the DOM parent element
-    semantic_role: str         # "navigation", "content", "form", …
+    depth: int  # nesting depth from content root
+    is_interactive: bool  # contains ≥ 1 interactive element
+    interactive_count: int  # number of interactive elements
+    parent_tag: str  # tag of the DOM parent element
+    semantic_role: str  # "navigation", "content", "form", …
 
     # ── Fallback character positions ──
     # Avoid relying on these — prefer element references.
@@ -144,13 +180,15 @@ class Section:
 
     # ── Sidecar: rendered interactive elements ──
     rendered_interactive_elements: list[RenderedInteractiveElement] = field(
-        default_factory=list, repr=False,
+        default_factory=list,
+        repr=False,
     )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Hidden Element Detection
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def _is_hidden(el: HtmlElement) -> bool:
     """Return *True* if the element should be treated as hidden.
@@ -180,6 +218,7 @@ def _is_hidden(el: HtmlElement) -> bool:
 #
 # The ``_ElementMap`` helper provides a thin wrapper around this pattern.
 
+
 class _ElementMap:
     """Identity-safe per-element storage for lxml proxy objects.
 
@@ -208,6 +247,7 @@ class _ElementMap:
 # ═══════════════════════════════════════════════════════════════════════════
 #  Size Estimation
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def _compute_sizes(el: HtmlElement, emap: _ElementMap) -> int:
     """Recursively estimate HTML size for *el* and descendants.
@@ -269,6 +309,7 @@ def _compute_sizes(el: HtmlElement, emap: _ElementMap) -> int:
 #  DOM Index Map
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def _build_dom_index_map(el: HtmlElement, emap: _ElementMap) -> None:
     """Assign depth-first indices to all elements via ``emap.dom_indices``."""
     counter = 0
@@ -281,6 +322,7 @@ def _build_dom_index_map(el: HtmlElement, emap: _ElementMap) -> None:
 # ═══════════════════════════════════════════════════════════════════════════
 #  Element Reference Builders
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def _build_css_selector(el: HtmlElement) -> str:
     """Build a CSS selector path that identifies *el*."""
@@ -296,7 +338,7 @@ def _build_css_selector(el: HtmlElement) -> str:
 
     # Strategy 3: tag path from root.
     parts: list[str] = []
-    current: Optional[HtmlElement] = el
+    current: HtmlElement | None = el
     while current is not None and isinstance(current.tag, str):
         tag = current.tag
         if tag in ("html", "body"):
@@ -361,6 +403,7 @@ def _make_element_ref(
 # ═══════════════════════════════════════════════════════════════════════════
 #  Section ID Generation
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def _slugify(text: str, max_len: int = 20) -> str:
     """Convert *text* to a URL-friendly slug, truncated to *max_len*."""
@@ -500,11 +543,26 @@ _STRICT_TAG_ROLES: dict[str, str] = {
 
 # ARIA roles we trust (WAI-ARIA landmark + widget roles).
 # Anything not in this set is ignored — too many sites misuse ARIA.
-_TRUSTED_ARIA_ROLES: frozenset[str] = frozenset({
-    "navigation", "banner", "contentinfo", "complementary",
-    "main", "form", "search", "region", "alert", "alertdialog",
-    "dialog", "tablist", "toolbar", "menu", "menubar", "listbox",
-})
+_TRUSTED_ARIA_ROLES: frozenset[str] = frozenset(
+    {
+        "navigation",
+        "banner",
+        "contentinfo",
+        "complementary",
+        "main",
+        "form",
+        "search",
+        "region",
+        "alert",
+        "alertdialog",
+        "dialog",
+        "tablist",
+        "toolbar",
+        "menu",
+        "menubar",
+        "listbox",
+    }
+)
 
 
 def _classify_semantic_role(
@@ -542,6 +600,7 @@ def _classify_semantic_role(
 #  Section Text Extraction
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def _elements_to_html(elements: list[HtmlElement]) -> str:
     """Serialize element(s) to HTML for passing through the converter.
 
@@ -555,9 +614,7 @@ def _elements_to_html(elements: list[HtmlElement]) -> str:
     for i, el in enumerate(elements):
         include_tail = i < len(elements) - 1
         try:
-            parts.append(
-                html_tostring(el, encoding="unicode", with_tail=include_tail)
-            )
+            parts.append(html_tostring(el, encoding="unicode", with_tail=include_tail))
         except Exception:
             # Fallback: raw text content.
             parts.append(el.text_content() or "")
@@ -568,6 +625,7 @@ def _elements_to_html(elements: list[HtmlElement]) -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 #  Interactive Element Helpers
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def _count_interactive(elements: list[HtmlElement]) -> int:
     """Count elements with ``data-iid`` in the subtree(s)."""
@@ -613,6 +671,7 @@ def _collect_interactive_sig(el: HtmlElement, out: list[str]) -> None:
 #  Sectioning Algorithm
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class _Candidate:
     """Internal: a candidate section produced during recursive sectioning."""
@@ -638,10 +697,7 @@ def _is_dropdown_menu(el: HtmlElement) -> bool:
     children = _ElementMap.element_children(el)
     if len(children) >= 3:
         menu_roles = {"menuitem", "menuitemradio", "menuitemcheckbox", "option"}
-        child_roles = [
-            (c.get("role") or "").lower() for c in children
-            if isinstance(c.tag, str)
-        ]
+        child_roles = [(c.get("role") or "").lower() for c in children if isinstance(c.tag, str)]
         if child_roles and all(r in menu_roles for r in child_roles if r):
             # At least half the children have menu-item roles.
             menu_count = sum(1 for r in child_roles if r in menu_roles)
@@ -651,7 +707,10 @@ def _is_dropdown_menu(el: HtmlElement) -> bool:
 
 
 def _should_recurse_despite_size(
-    el: HtmlElement, emap: _ElementMap, min_size: int, preferred_max: int,
+    el: HtmlElement,
+    emap: _ElementMap,
+    min_size: int,
+    preferred_max: int,
 ) -> bool:
     """True if a within-range element should still be recursed into.
 
@@ -667,13 +726,9 @@ def _should_recurse_despite_size(
     if _is_dropdown_menu(el):
         return False
     # Generic containers with multiple visible block-level children.
-    children = [
-        c for c in _ElementMap.element_children(el)
-        if emap.sizes.get(id(c), 0) > 0
-    ]
+    children = [c for c in _ElementMap.element_children(el) if emap.sizes.get(id(c), 0) > 0]
     block_children = [
-        c for c in children
-        if (c.tag if isinstance(c.tag, str) else "") in BLOCK_ELEMENTS
+        c for c in children if (c.tag if isinstance(c.tag, str) else "") in BLOCK_ELEMENTS
     ]
     # 3+ block children → definitely a wrapper.
     if len(block_children) >= 3:
@@ -688,6 +743,7 @@ def _should_recurse_despite_size(
 
 
 # ── Children-with-groups sectioning ──────────────────────────────────────
+
 
 def _section_children_with_groups(
     el: HtmlElement,
@@ -706,10 +762,7 @@ def _section_children_with_groups(
     together, but elements from different groups or non-group elements
     are never merged.
     """
-    children = [
-        c for c in _ElementMap.element_children(el)
-        if emap.sizes.get(id(c), 0) > 0
-    ]
+    children = [c for c in _ElementMap.element_children(el) if emap.sizes.get(id(c), 0) > 0]
     if not children:
         size = emap.sizes.get(id(el), 0)
         return [_Candidate(elements=[el], size=size, depth=depth)]
@@ -733,21 +786,23 @@ def _section_children_with_groups(
         if gkey is not None:
             # ── Group member: keep atomic ──
             if child_size <= hard_max:
-                candidates.append(_Candidate(
-                    elements=[child], size=child_size,
-                    depth=depth, group_key=gkey,
-                ))
+                candidates.append(
+                    _Candidate(
+                        elements=[child],
+                        size=child_size,
+                        depth=depth,
+                        group_key=gkey,
+                    )
+                )
             else:
                 # Exceeds hard_max — recurse inside (sub-groups may exist)
                 candidates.extend(
-                    _section_element(child, emap, min_size, preferred_max,
-                                     hard_max, depth)
+                    _section_element(child, emap, min_size, preferred_max, hard_max, depth)
                 )
         else:
             # ── Non-group child: normal recursive sectioning ──
             candidates.extend(
-                _section_element(child, emap, min_size, preferred_max,
-                                 hard_max, depth)
+                _section_element(child, emap, min_size, preferred_max, hard_max, depth)
             )
 
     if not candidates:
@@ -760,6 +815,7 @@ def _section_children_with_groups(
 
 
 # ── Core recursive sectioning ────────────────────────────────────────────
+
 
 def _section_element(
     el: HtmlElement,
@@ -796,10 +852,14 @@ def _section_element(
     # we never recurse into an element that fits within hard_max).
     if emap.annotations.is_atomic(el) and size <= hard_max:
         group = emap.annotations.get_group(el)
-        return [_Candidate(
-            elements=[el], size=size, depth=depth,
-            group_key=id(group) if group else None,
-        )]
+        return [
+            _Candidate(
+                elements=[el],
+                size=size,
+                depth=depth,
+                group_key=id(group) if group else None,
+            )
+        ]
 
     # html/body are structural wrappers — always recurse, never section.
     is_structural_wrapper = tag in ("html", "body")
@@ -817,13 +877,15 @@ def _section_element(
         parent_groups = emap.annotations.get_groups_for_parent(el)
         if parent_groups:
             return _section_children_with_groups(
-                el, emap, min_size, preferred_max, hard_max, depth + 1,
+                el,
+                emap,
+                min_size,
+                preferred_max,
+                hard_max,
+                depth + 1,
             )
 
-        children = [
-            c for c in _ElementMap.element_children(el)
-            if emap.sizes.get(id(c), 0) > 0
-        ]
+        children = [c for c in _ElementMap.element_children(el) if emap.sizes.get(id(c), 0) > 0]
 
         if not children:
             # All content is direct text on this element; can't split further.
@@ -833,15 +895,19 @@ def _section_element(
         child_tags = {c.tag for c in children if isinstance(c.tag, str)}
         if len(child_tags) == 1 and len(children) >= 2:
             return _section_uniform_siblings(
-                children, emap, min_size, preferred_max, hard_max, depth + 1,
+                children,
+                emap,
+                min_size,
+                preferred_max,
+                hard_max,
+                depth + 1,
             )
 
         # Mixed children — recurse each individually.
         child_candidates: list[_Candidate] = []
         for child in children:
             child_candidates.extend(
-                _section_element(child, emap, min_size, preferred_max,
-                                 hard_max, depth + 1)
+                _section_element(child, emap, min_size, preferred_max, hard_max, depth + 1)
             )
 
         if not child_candidates:
@@ -881,8 +947,7 @@ def _section_uniform_siblings(
         if size > hard_max:
             # Oversized child — recurse into it.
             candidates.extend(
-                _section_element(child, emap, min_size, preferred_max,
-                                 hard_max, depth)
+                _section_element(child, emap, min_size, preferred_max, hard_max, depth)
             )
         else:
             candidates.append(_Candidate(elements=[child], size=size, depth=depth))
@@ -905,6 +970,7 @@ def _section_uniform_siblings(
 # ═══════════════════════════════════════════════════════════════════════════
 #  Candidate Grouping
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def _group_candidates(
     candidates: list[_Candidate],
@@ -1041,6 +1107,7 @@ def _merge_candidates(candidates: list[_Candidate]) -> _Candidate:
 #  Public API
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def section_page(
     html_string: str,
     interactive_elements: list[InteractiveElement] | None = None,
@@ -1111,7 +1178,12 @@ def section_page(
 
     # ── Phase 4: run sectioning algorithm ──
     candidates = _section_element(
-        root, emap, min_size, preferred_max, hard_max, depth=0,
+        root,
+        emap,
+        min_size,
+        preferred_max,
+        hard_max,
+        depth=0,
     )
 
     # ── Phase 5: build Section objects ──
@@ -1127,7 +1199,8 @@ def section_page(
         # interactive elements for the sidecar data (Task 1).
         section_html = _elements_to_html(candidate.elements)
         section_text, rendered_elements = html_to_text_with_elements(
-            section_html, interactive_elements,
+            section_html,
+            interactive_elements,
         )
 
         if not section_text.strip():
@@ -1142,7 +1215,10 @@ def section_page(
 
         # ID.
         section_id = _generate_section_id(
-            candidate.elements, i, used_ids, group_index=group_index,
+            candidate.elements,
+            i,
+            used_ids,
+            group_index=group_index,
         )
 
         # Element references.
@@ -1157,11 +1233,7 @@ def section_page(
         # Metadata.
         i_count = _count_interactive(candidate.elements)
         parent = candidate.elements[0].getparent()
-        parent_tag = (
-            parent.tag
-            if parent is not None and isinstance(parent.tag, str)
-            else ""
-        )
+        parent_tag = parent.tag if parent is not None and isinstance(parent.tag, str) else ""
 
         char_end = char_offset + len(section_text)
 
@@ -1178,7 +1250,8 @@ def section_page(
                 interactive_count=i_count,
                 parent_tag=parent_tag,
                 semantic_role=_classify_semantic_role(
-                    candidate.elements, emap,
+                    candidate.elements,
+                    emap,
                 ),
                 char_start=char_offset,
                 char_end=char_end,

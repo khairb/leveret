@@ -16,8 +16,8 @@ from scout.agent.prompt import (
 from scout.schema.compiler import compile_schema
 from scout.schema.types import Field, List
 
-
 # ── Helpers ──────────────────────────────────────────────────────
+
 
 def _build_prompt_with_schema(schema):
     """Compile a schema and build the system prompt with it."""
@@ -27,8 +27,8 @@ def _build_prompt_with_schema(schema):
 
 # ── Change 1: build_system_prompt requires schema_prompt ─────────
 
-class TestBuildSystemPromptSignature:
 
+class TestBuildSystemPromptSignature:
     def test_requires_schema_prompt_keyword(self):
         """schema_prompt is keyword-only — cannot pass positionally."""
         with pytest.raises(TypeError):
@@ -43,8 +43,8 @@ class TestBuildSystemPromptSignature:
 
 # ── Change 2: Function comment references schema ─────────────────
 
-class TestFunctionComment:
 
+class TestFunctionComment:
     def test_return_value_must_match_schema(self):
         prompt = _build_prompt_with_schema([{"title": str}])
         assert "Return value must match the output schema below." in prompt
@@ -57,8 +57,8 @@ class TestFunctionComment:
 
 # ── Change 3: Output subsection references schema validation ─────
 
-class TestOutputSubsection:
 
+class TestOutputSubsection:
     def test_schema_validation_mentioned(self):
         prompt = _build_prompt_with_schema([{"x": str}])
         assert "validates the return value against the schema" in prompt
@@ -70,8 +70,8 @@ class TestOutputSubsection:
 
 # ── Change 4: Schema section injected between sections ───────────
 
-class TestSchemaInjection:
 
+class TestSchemaInjection:
     def test_output_schema_heading_present(self):
         prompt = _build_prompt_with_schema([{"title": str, "price": float}])
         assert "## Output Schema" in prompt
@@ -91,26 +91,30 @@ class TestSchemaInjection:
         assert robust_pos < schema_pos < rules_pos
 
     def test_schema_fields_appear_in_prompt(self):
-        prompt = _build_prompt_with_schema([{
-            "title": str,
-            "price": Field(float, min=0),
-            "currency": Field(str, enum=["USD", "EUR"]),
-        }])
+        prompt = _build_prompt_with_schema(
+            [
+                {
+                    "title": str,
+                    "price": Field(float, min=0),
+                    "currency": Field(str, enum=["USD", "EUR"]),
+                }
+            ]
+        )
         for field in ["title", "price", "currency"]:
             assert field in prompt
 
     def test_constraints_appear_in_prompt(self):
-        prompt = _build_prompt_with_schema(
-            List({"x": Field(int, min=1, max=5)}, min_items=10)
-        )
+        prompt = _build_prompt_with_schema(List({"x": Field(int, min=1, max=5)}, min_items=10))
         assert "minimum 10" in prompt or "at least **10" in prompt
         assert "between 1 and 5" in prompt.lower() or "Between 1 and 5" in prompt
 
     def test_optional_paragraph_when_optional_fields(self):
-        prompt = _build_prompt_with_schema({
-            "name": str,
-            "bio": Field(str, optional=True),
-        })
+        prompt = _build_prompt_with_schema(
+            {
+                "name": str,
+                "bio": Field(str, optional=True),
+            }
+        )
         assert "For optional fields" in prompt
 
     def test_no_optional_paragraph_when_all_required(self):
@@ -122,8 +126,8 @@ class TestSchemaInjection:
 
 # ── Change 5: Rule 9 references schema ───────────────────────────
 
-class TestRule9:
 
+class TestRule9:
     def test_rule_9_mentions_output_schema(self):
         prompt = _build_prompt_with_schema([{"x": str}])
         # Find rule 9 text
@@ -135,8 +139,8 @@ class TestRule9:
 
 # ── Change 6: Post-workflow paragraph ─────────────────────────────
 
-class TestPostWorkflow:
 
+class TestPostWorkflow:
     def test_validated_against_schema(self):
         prompt = _build_prompt_with_schema([{"x": str}])
         assert "validates the return value against the schema" in prompt
@@ -148,8 +152,8 @@ class TestPostWorkflow:
 
 # ── Change 7: Reasoning point 3 ──────────────────────────────────
 
-class TestReasoningSection:
 
+class TestReasoningSection:
     def test_designing_mentions_schema(self):
         prompt = _build_prompt_with_schema([{"x": str}])
         assert "how it shapes the data to match the output schema" in prompt
@@ -157,14 +161,15 @@ class TestReasoningSection:
 
 # ── Change 8: Don't ship broken fields ────────────────────────────
 
-class TestDontShipBrokenFields:
 
+class TestDontShipBrokenFields:
     def test_checklist_sentence(self):
         prompt = _build_prompt_with_schema([{"x": str}])
         assert "use it as your checklist" in prompt
 
 
 # ── Prompt coherence: full end-to-end checks ─────────────────────
+
 
 class TestPromptCoherence:
     """Verifies the prompt reads naturally for an AI agent."""
@@ -186,13 +191,16 @@ class TestPromptCoherence:
 
     def test_complex_schema_produces_readable_prompt(self):
         """A real-world schema should produce a prompt an agent can follow."""
-        schema = List({
-            "title": Field(str, min_length=1),
-            "price": Field(float, min=0),
-            "currency": Field(str, enum=["USD", "EUR", "GBP"]),
-            "rating": Field(int, min=1, max=5, optional=True),
-            "in_stock": bool,
-        }, min_items=20)
+        schema = List(
+            {
+                "title": Field(str, min_length=1),
+                "price": Field(float, min=0),
+                "currency": Field(str, enum=["USD", "EUR", "GBP"]),
+                "rating": Field(int, min=1, max=5, optional=True),
+                "in_stock": bool,
+            },
+            min_items=20,
+        )
         prompt = _build_prompt_with_schema(schema)
 
         # Agent sees the schema heading
@@ -216,12 +224,11 @@ class TestPromptCoherence:
         prompt = _build_prompt_with_schema([{"x": str}])
         # Count references to "output schema" (case-insensitive)
         import re
+
         refs = re.findall(r"output schema", prompt, re.IGNORECASE)
         # At least: Change 2, Change 3, Change 4, Change 5, Change 6,
         # Change 7, Change 8 = multiple references
-        assert len(refs) >= 5, (
-            f"Expected at least 5 'output schema' references, got {len(refs)}"
-        )
+        assert len(refs) >= 5, f"Expected at least 5 'output schema' references, got {len(refs)}"
 
     def test_heading_hierarchy_is_correct(self):
         """All major sections use ## headings, subsections use ###."""
@@ -241,6 +248,7 @@ class TestPromptCoherence:
 
 # ── Edge case schemas ─────────────────────────────────────────────
 
+
 class TestEdgeCaseSchemas:
     """Unusual but valid schemas should produce usable prompts."""
 
@@ -257,14 +265,22 @@ class TestEdgeCaseSchemas:
         assert "freestyle" in req_section.lower()
 
     def test_deeply_nested_schema_all_fields_present(self):
-        prompt = _build_prompt_with_schema([{
-            "categories": [{
-                "products": [{
-                    "title": str,
-                    "variants": [{"color": str, "size": str}],
-                }],
-            }],
-        }])
+        prompt = _build_prompt_with_schema(
+            [
+                {
+                    "categories": [
+                        {
+                            "products": [
+                                {
+                                    "title": str,
+                                    "variants": [{"color": str, "size": str}],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        )
         for field in ["categories", "products", "title", "variants", "color", "size"]:
             assert field in prompt, f"Missing field {field!r}"
 
@@ -278,8 +294,8 @@ class TestEdgeCaseSchemas:
 
 # ── build_initial_user_message is unchanged ───────────────────────
 
-class TestInitialUserMessage:
 
+class TestInitialUserMessage:
     def test_contains_task_and_url(self):
         msg = build_initial_user_message("Extract prices", "https://example.com")
         assert "Extract prices" in msg
@@ -291,6 +307,7 @@ class TestInitialUserMessage:
 
 
 # ── Show-page analysis prompts (Task 5) ─────────────────────────
+
 
 class TestShowPageAnalysisPromptA:
     """Variant A — full analysis prompt."""

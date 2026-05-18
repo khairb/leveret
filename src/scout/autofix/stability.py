@@ -43,8 +43,7 @@ def assess_stability(fingerprints: list[Fingerprint]) -> StabilityLevel:
     """
     if len(fingerprints) < 2:
         raise ValueError(
-            f"Need at least 2 fingerprints for stability assessment, "
-            f"got {len(fingerprints)}"
+            f"Need at least 2 fingerprints for stability assessment, got {len(fingerprints)}"
         )
 
     # Count distinct categories across all fingerprints.

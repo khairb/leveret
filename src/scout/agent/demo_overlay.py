@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .selector_extractor import ExtractionResult
@@ -2862,6 +2862,7 @@ _OVERLAY_JS = r"""
 #  Python API
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class DemoOverlay:
     """Manages a separate browser window that shows agent actions.
 
@@ -2895,7 +2896,8 @@ class DemoOverlay:
         self._main_page = main_page
         try:
             await overlay_page.set_content(
-                _OVERLAY_HTML, wait_until="load",
+                _OVERLAY_HTML,
+                wait_until="load",
             )
             # Playwright's set_content() doesn't execute <script> tags,
             # so we inject the JS controller via evaluate().
@@ -2921,8 +2923,7 @@ class DemoOverlay:
                 "window.__scout_expand = (x) => __scout_expand_cb(x)",
             )
         except Exception:
-            logger.debug("[overlay] expose __scout_expand_cb failed",
-                         exc_info=True)
+            logger.debug("[overlay] expose __scout_expand_cb failed", exc_info=True)
 
         if main_page is not None:
             await self._setup_highlight_host()
@@ -2931,24 +2932,30 @@ class DemoOverlay:
     # replay — they carry supplementary UI content, not critical
     # state.  Excluding them keeps the replay buffer lean and
     # prevents Playwright serialisation failures.
-    _SKIP_BUFFER_TYPES = frozenset({
-        "page_update", "zoom_view", "results",
-        "thinking_start", "thinking_end",
-    })
+    _SKIP_BUFFER_TYPES = frozenset(
+        {
+            "page_update",
+            "zoom_view",
+            "results",
+            "thinking_start",
+            "thinking_end",
+        }
+    )
 
     async def push(self, event: dict[str, Any]) -> None:
         """Buffer the event and push it to the overlay."""
         if event.get("type") not in self._SKIP_BUFFER_TYPES:
             self._events.append(event)
             if len(self._events) > self._MAX_BUFFER:
-                self._events = self._events[-self._MAX_BUFFER:]
+                self._events = self._events[-self._MAX_BUFFER :]
 
         if not self._injected or self._overlay_page is None:
             return
 
         try:
             await self._overlay_page.evaluate(
-                "ev => window.__scout.pushEvent(ev)", event,
+                "ev => window.__scout.pushEvent(ev)",
+                event,
             )
         except Exception:
             logger.debug(
@@ -2963,7 +2970,8 @@ class DemoOverlay:
             return
         try:
             await self._overlay_page.set_content(
-                _OVERLAY_HTML, wait_until="load",
+                _OVERLAY_HTML,
+                wait_until="load",
             )
             await self._overlay_page.evaluate(_OVERLAY_JS)
             # Re-establish the JS→Python bridge for the expand callback.
@@ -3010,14 +3018,16 @@ class DemoOverlay:
         label: str = "",
         timeout_budget: str = "",
     ) -> None:
-        await self.push({
-            "type": "tool_call",
-            "code": code,
-            "step": step,
-            "max_steps": max_steps,
-            "label": label,
-            "timeout_budget": timeout_budget,
-        })
+        await self.push(
+            {
+                "type": "tool_call",
+                "code": code,
+                "step": step,
+                "max_steps": max_steps,
+                "label": label,
+                "timeout_budget": timeout_budget,
+            }
+        )
 
     async def push_tool_result(
         self,
@@ -3028,14 +3038,16 @@ class DemoOverlay:
         error: str = "",
         timeout_info: str = "",
     ) -> None:
-        await self.push({
-            "type": "tool_result",
-            "is_error": is_error,
-            "duration_s": duration_s,
-            "output": output,
-            "error": error,
-            "timeout_info": timeout_info,
-        })
+        await self.push(
+            {
+                "type": "tool_result",
+                "is_error": is_error,
+                "duration_s": duration_s,
+                "output": output,
+                "error": error,
+                "timeout_info": timeout_info,
+            }
+        )
 
     async def push_page_update(
         self,
@@ -3043,24 +3055,29 @@ class DemoOverlay:
         sections: int,
         section_data: list[dict] | None = None,
     ) -> None:
-        await self.push({
-            "type": "page_update",
-            "url": url,
-            "sections": sections,
-            "section_data": section_data or [],
-        })
+        await self.push(
+            {
+                "type": "page_update",
+                "url": url,
+                "sections": sections,
+                "section_data": section_data or [],
+            }
+        )
 
     async def push_zoom_view(self, ids: str, html: str) -> None:
-        await self.push({
-            "type": "zoom_view",
-            "ids": ids,
-            "html": html,
-        })
+        await self.push(
+            {
+                "type": "zoom_view",
+                "ids": ids,
+                "html": html,
+            }
+        )
 
     # ── Full-viewport "show_page" overlay ────────────────────────
 
     async def show_page_overlay(
-        self, message: str = "Looking at the page\u2026",
+        self,
+        message: str = "Looking at the page\u2026",
     ) -> None:
         """Draw a full-viewport overlay with marching-ants border while the AI reads."""
         if not self._main_page:
@@ -3210,35 +3227,49 @@ class DemoOverlay:
             pass
 
     async def push_script_found(
-        self, valid: bool, error: str = "",
+        self,
+        valid: bool,
+        error: str = "",
     ) -> None:
-        await self.push({
-            "type": "script_found",
-            "valid": valid,
-            "error": error,
-        })
+        await self.push(
+            {
+                "type": "script_found",
+                "valid": valid,
+                "error": error,
+            }
+        )
 
     async def push_script_running(
-        self, *, timeout_budget: str = "",
+        self,
+        *,
+        timeout_budget: str = "",
     ) -> None:
-        await self.push({
-            "type": "script_running",
-            "timeout_budget": timeout_budget,
-        })
+        await self.push(
+            {
+                "type": "script_running",
+                "timeout_budget": timeout_budget,
+            }
+        )
 
     async def push_script_output(
-        self, output: str, returncode: int,
-        *, duration_s: str = "", timeout_s: str = "",
+        self,
+        output: str,
+        returncode: int,
+        *,
+        duration_s: str = "",
+        timeout_s: str = "",
         sandbox_blocked: bool = False,
     ) -> None:
-        await self.push({
-            "type": "script_output",
-            "output": output,
-            "returncode": returncode,
-            "duration_s": duration_s,
-            "timeout_s": timeout_s,
-            "sandbox_blocked": sandbox_blocked,
-        })
+        await self.push(
+            {
+                "type": "script_output",
+                "output": output,
+                "returncode": returncode,
+                "duration_s": duration_s,
+                "timeout_s": timeout_s,
+                "sandbox_blocked": sandbox_blocked,
+            }
+        )
 
     async def push_approved(self) -> None:
         await self.push({"type": "approved"})
@@ -3247,13 +3278,17 @@ class DemoOverlay:
         await self.push({"type": "rejected", "feedback": feedback})
 
     async def push_done(
-        self, success: bool, error: str = "",
+        self,
+        success: bool,
+        error: str = "",
     ) -> None:
-        await self.push({
-            "type": "done",
-            "success": success,
-            "error": error,
-        })
+        await self.push(
+            {
+                "type": "done",
+                "success": success,
+                "error": error,
+            }
+        )
 
     async def push_system(self, message: str) -> None:
         await self.push({"type": "system", "message": message})
@@ -3268,8 +3303,10 @@ class DemoOverlay:
     ) -> None:
         """Push a validation step card (loading, ok, or err)."""
         ev: dict[str, Any] = {
-            "type": "validation", "id": vid,
-            "label": label, "status": status,
+            "type": "validation",
+            "id": vid,
+            "label": label,
+            "status": status,
         }
         if detail:
             ev["detail"] = detail
@@ -3285,7 +3322,9 @@ class DemoOverlay:
     ) -> None:
         """Update an existing validation step in-place."""
         ev: dict[str, Any] = {
-            "type": "validation_update", "id": vid, "status": status,
+            "type": "validation_update",
+            "id": vid,
+            "status": status,
         }
         if label:
             ev["label"] = label
@@ -3366,38 +3405,48 @@ class DemoOverlay:
                 cdp = await page.context.new_cdp_session(page)
                 target = await cdp.send("Browser.getWindowForTarget")
                 wid = target["windowId"]
-                await cdp.send("Browser.setWindowBounds", {
-                    "windowId": wid,
-                    "bounds": {
-                        "left": x, "top": y,
-                        "width": w, "height": h,
-                        "windowState": "normal",
+                await cdp.send(
+                    "Browser.setWindowBounds",
+                    {
+                        "windowId": wid,
+                        "bounds": {
+                            "left": x,
+                            "top": y,
+                            "width": w,
+                            "height": h,
+                            "windowState": "normal",
+                        },
                     },
-                })
+                )
                 await cdp.detach()
                 logger.info(
                     "[overlay] CDP setWindowBounds %s: x=%d w=%d",
-                    label, x, w,
+                    label,
+                    x,
+                    w,
                 )
             except Exception:
                 logger.info(
-                    "[overlay] CDP setWindowBounds %s failed, "
-                    "falling back to JS",
-                    label, exc_info=True,
+                    "[overlay] CDP setWindowBounds %s failed, falling back to JS",
+                    label,
+                    exc_info=True,
                 )
                 # Fallback to JS resize.
                 try:
                     await page.evaluate(
-                        f"window.moveTo({x},{y});"
-                        f"window.resizeTo({w},{h})",
+                        f"window.moveTo({x},{y});window.resizeTo({w},{h})",
                     )
                 except Exception:
                     pass
 
         logger.info(
-            "[overlay] _resize_windows expanded=%s → "
-            "main(0,0,%d,%d) overlay(%d,0,%d,%d)",
-            expanded, pw, ph, panelx, panelw, ph,
+            "[overlay] _resize_windows expanded=%s → main(0,0,%d,%d) overlay(%d,0,%d,%d)",
+            expanded,
+            pw,
+            ph,
+            panelx,
+            panelw,
+            ph,
         )
         await _cdp_set_bounds(self._main_page, 0, 0, pw, ph, "main")
         await _cdp_set_bounds(self._overlay_page, panelx, 0, panelw, ph, "overlay")
@@ -3458,15 +3507,12 @@ class DemoOverlay:
         async def _await_js_dismiss() -> None:
             try:
                 await self._overlay_page.evaluate(
-                    "new Promise(resolve => {"
-                    "  window.__scout_dismiss = resolve;"
-                    "})",
+                    "new Promise(resolve => {  window.__scout_dismiss = resolve;})",
                 )
                 _resolve("finish_clicked")
             except Exception:
                 # Page closed or crashed — the close handlers will deal with it.
-                logger.debug("[overlay] JS dismiss promise rejected",
-                             exc_info=True)
+                logger.debug("[overlay] JS dismiss promise rejected", exc_info=True)
 
         dismiss_task = asyncio.ensure_future(_await_js_dismiss())
 
@@ -3474,7 +3520,8 @@ class DemoOverlay:
             await asyncio.wait_for(dismiss_future, timeout=timeout_s)
         except asyncio.TimeoutError:
             logger.info(
-                "[overlay] results viewer timed out after %.0fs", timeout_s,
+                "[overlay] results viewer timed out after %.0fs",
+                timeout_s,
             )
         finally:
             dismiss_task.cancel()
@@ -3509,7 +3556,8 @@ class DemoOverlay:
 
         try:
             await main_page.expose_function(
-                "__scout_pill_dismiss", _pill_dismiss,
+                "__scout_pill_dismiss",
+                _pill_dismiss,
             )
         except Exception:
             # May fail if already registered from a previous overlay close.
@@ -3829,7 +3877,8 @@ class DemoOverlay:
     _MAX_QSA_HIGHLIGHTS = None  # unlimited
 
     async def _resolve_css_path(
-        self, selector: str,
+        self,
+        selector: str,
     ) -> tuple[dict[str, float] | None, str | None]:
         """Resolve a Playwright selector to ``(bounding_box, css_path)``.
 
@@ -3862,10 +3911,12 @@ class DemoOverlay:
             if fallback is None:
                 fallback = (el, box)
             # Prefer element that overlaps the viewport
-            if (box["y"] + box["height"] > 0
-                    and box["y"] < vp_h
-                    and box["x"] + box["width"] > 0
-                    and box["x"] < vp_w):
+            if (
+                box["y"] + box["height"] > 0
+                and box["y"] < vp_h
+                and box["x"] + box["width"] > 0
+                and box["x"] < vp_w
+            ):
                 try:
                     css_path = await el.evaluate(_CSS_PATH_JS)
                     return box, css_path
@@ -3882,7 +3933,8 @@ class DemoOverlay:
         return None, None
 
     async def highlight_interactions(
-        self, results: list[ExtractionResult],
+        self,
+        results: list[ExtractionResult],
         *,
         _deferred: bool = False,
     ) -> dict[str, Any]:
@@ -3927,26 +3979,22 @@ class DemoOverlay:
             filtered = list(results)
             deferred = []
         else:
-            filtered = [
-                r for r in results
-                if not r.after_navigation
-            ]
-            deferred = [
-                r for r in results
-                if r.after_navigation
-            ]
+            filtered = [r for r in results if not r.after_navigation]
+            deferred = [r for r in results if r.after_navigation]
 
         # Track per-selector status for logging
         details: list[dict[str, str]] = []
         for r in deferred:
-            details.append({
-                "selector": r.selector,
-                "category": r.action_category,
-                "action": r.action,
-                "source": r.source,
-                "status": "deferred",
-                "reason": "after_nav",
-            })
+            details.append(
+                {
+                    "selector": r.selector,
+                    "category": r.action_category,
+                    "action": r.action,
+                    "source": r.source,
+                    "status": "deferred",
+                    "reason": "after_nav",
+                }
+            )
 
         if not filtered:
             return {**empty_stats, "details": details, "deferred": deferred}
@@ -3965,13 +4013,15 @@ class DemoOverlay:
                         )
                         total_count = len(elements)
                         if not elements:
-                            details.append({
-                                "selector": r.selector,
-                                "category": r.action_category,
-                                "action": r.action,
-                                "source": r.source,
-                                "status": "not_found",
-                            })
+                            details.append(
+                                {
+                                    "selector": r.selector,
+                                    "category": r.action_category,
+                                    "action": r.action,
+                                    "source": r.source,
+                                    "status": "not_found",
+                                }
+                            )
                             continue
                         for el in elements:
                             try:
@@ -3997,14 +4047,16 @@ class DemoOverlay:
                                     item["trackSelector"] = css_path
                                 payload.append(item)
                                 idx += 1
-                        details.append({
-                            "selector": r.selector,
-                            "category": r.action_category,
-                            "action": r.action,
-                            "source": r.source,
-                            "status": "resolved",
-                            "count": str(total_count),
-                        })
+                        details.append(
+                            {
+                                "selector": r.selector,
+                                "category": r.action_category,
+                                "action": r.action,
+                                "source": r.source,
+                                "status": "resolved",
+                                "count": str(total_count),
+                            }
+                        )
                     else:
                         # Resolve to bounding box + CSS path for rAF
                         box, css_path = await self._resolve_css_path(
@@ -4023,50 +4075,60 @@ class DemoOverlay:
                                 item["trackSelector"] = css_path
                             payload.append(item)
                             idx += 1
-                            details.append({
-                                "selector": r.selector,
-                                "category": r.action_category,
-                                "action": r.action,
-                                "source": r.source,
-                                "status": "resolved",
-                            })
+                            details.append(
+                                {
+                                    "selector": r.selector,
+                                    "category": r.action_category,
+                                    "action": r.action,
+                                    "source": r.source,
+                                    "status": "resolved",
+                                }
+                            )
                         else:
-                            details.append({
-                                "selector": r.selector,
-                                "category": r.action_category,
-                                "action": r.action,
-                                "source": r.source,
-                                "status": "not_found",
-                            })
+                            details.append(
+                                {
+                                    "selector": r.selector,
+                                    "category": r.action_category,
+                                    "action": r.action,
+                                    "source": r.source,
+                                    "status": "not_found",
+                                }
+                            )
                 else:
                     # CSS selector — pass as trackSelector for rAF
-                    payload.append({
-                        "selector": r.selector,
-                        "trackSelector": r.selector,
-                        "category": r.action_category,
-                        "action": r.action,
-                        "totalCount": 0,
-                        "index": idx,
-                        "totalItems": total_items,
-                    })
+                    payload.append(
+                        {
+                            "selector": r.selector,
+                            "trackSelector": r.selector,
+                            "category": r.action_category,
+                            "action": r.action,
+                            "totalCount": 0,
+                            "index": idx,
+                            "totalItems": total_items,
+                        }
+                    )
                     idx += 1
-                    details.append({
+                    details.append(
+                        {
+                            "selector": r.selector,
+                            "category": r.action_category,
+                            "action": r.action,
+                            "source": r.source,
+                            "status": "resolved",
+                            "note": "css (JS-side)",
+                        }
+                    )
+            except Exception:
+                details.append(
+                    {
                         "selector": r.selector,
                         "category": r.action_category,
                         "action": r.action,
                         "source": r.source,
-                        "status": "resolved",
-                        "note": "css (JS-side)",
-                    })
-            except Exception:
-                details.append({
-                    "selector": r.selector,
-                    "category": r.action_category,
-                    "action": r.action,
-                    "source": r.source,
-                    "status": "not_found",
-                    "reason": "error",
-                })
+                        "status": "not_found",
+                        "reason": "error",
+                    }
+                )
                 continue  # graceful degradation
 
         if not payload:
@@ -4081,10 +4143,13 @@ class DemoOverlay:
         # ── Single page.evaluate() to draw all overlays ─────────
         js_stats: dict[str, int] = {}
         try:
-            js_stats = await self._main_page.evaluate(
-                _INTERACTION_HIGHLIGHT_JS,
-                payload,
-            ) or {}
+            js_stats = (
+                await self._main_page.evaluate(
+                    _INTERACTION_HIGHLIGHT_JS,
+                    payload,
+                )
+                or {}
+            )
             self._hl_ready = True
         except Exception:
             logger.debug("Interaction highlight draw failed", exc_info=True)

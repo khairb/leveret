@@ -128,14 +128,14 @@ class ShowPageState:
 # Weights reflect how strongly each attribute type identifies an element.
 # Higher weight = more unique, more identifying.
 ATTRIBUTE_WEIGHTS: dict[str, float] = {
-    "data-testid": 1.0,   # Almost always unique on the page
-    "aria-label": 0.8,    # Usually descriptive, fairly unique
-    "id": 1.0,            # Unique by definition
-    "name": 0.6,          # Moderately identifying
-    "href": 0.7,          # Links are usually unique by destination
-    "placeholder": 0.5,   # Somewhat identifying for inputs
-    "type": 0.1,          # Too common ("button", "submit", "text")
-    "role": 0.1,          # Too common ("button", "tab", "link")
+    "data-testid": 1.0,  # Almost always unique on the page
+    "aria-label": 0.8,  # Usually descriptive, fairly unique
+    "id": 1.0,  # Unique by definition
+    "name": 0.6,  # Moderately identifying
+    "href": 0.7,  # Links are usually unique by destination
+    "placeholder": 0.5,  # Somewhat identifying for inputs
+    "type": 0.1,  # Too common ("button", "submit", "text")
+    "role": 0.1,  # Too common ("button", "tab", "link")
 }
 
 # Minimum score for an element to be considered a match.
@@ -145,14 +145,20 @@ MATCH_THRESHOLD: float = 0.5
 MAX_SECTIONS_PER_ELEMENT: int = 3
 
 # Attributes used to group structurally identical elements across sections.
-STRUCTURAL_ATTRS: frozenset[str] = frozenset({
-    "data-testid", "role", "type", "name",
-})
+STRUCTURAL_ATTRS: frozenset[str] = frozenset(
+    {
+        "data-testid",
+        "role",
+        "type",
+        "name",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
 # Section reference extraction — data structures
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ElementMatchResult:
@@ -171,14 +177,15 @@ class IndirectMatchResult:
     """Result of matching a section via ID token or content keyword overlap."""
 
     section_id: str
-    score: float                 # IDF-weighted, 0.0–1.0 normalised
+    score: float  # IDF-weighted, 0.0–1.0 normalised
     matched_tokens: list[str]
-    match_source: str            # "id_tokens" or "content"
+    match_source: str  # "id_tokens" or "content"
 
 
 # ---------------------------------------------------------------------------
 # Section reference extraction — word boundary matching
 # ---------------------------------------------------------------------------
+
 
 @lru_cache(maxsize=1024)
 def _compile_boundary_pattern(value: str) -> _re.Pattern[str]:
@@ -223,6 +230,7 @@ def _word_boundary_match(value: str, text: str) -> bool:
 # Section reference extraction — element scoring
 # ---------------------------------------------------------------------------
 
+
 def score_element(
     element: RenderedInteractiveElement,
     reasoning: str,
@@ -239,8 +247,14 @@ def score_element(
     # Fast path: full tag match (agent copied the whole thing).
     if element.full_tag_str and len(element.full_tag_str) > 20:
         if element.full_tag_str in reasoning:
-            return 2.0, [{"attr": "full-tag", "value": element.full_tag_str,
-                          "match": "exact-tag", "weight": 2.0}]
+            return 2.0, [
+                {
+                    "attr": "full-tag",
+                    "value": element.full_tag_str,
+                    "match": "exact-tag",
+                    "weight": 2.0,
+                }
+            ]
 
     # Check each attribute.
     for attr_name, attr_value in element.attributes.items():
@@ -253,46 +267,58 @@ def score_element(
         full_attr = f'{attr_name}="{attr_value}"'
         if full_attr in reasoning:
             score += weight
-            matched_attrs.append({
-                "attr": attr_name, "value": attr_value,
-                "match": "full", "weight": weight,
-            })
+            matched_attrs.append(
+                {
+                    "attr": attr_name,
+                    "value": attr_value,
+                    "match": "full",
+                    "weight": weight,
+                }
+            )
             continue
 
         # Check 2: Value alone with word boundary check (>= 6 chars).
         if len(attr_value) >= 6 and _word_boundary_match(attr_value, reasoning):
             reduced_weight = weight * 0.6
             score += reduced_weight
-            matched_attrs.append({
-                "attr": attr_name, "value": attr_value,
-                "match": "value-only", "weight": reduced_weight,
-            })
+            matched_attrs.append(
+                {
+                    "attr": attr_name,
+                    "value": attr_value,
+                    "match": "value-only",
+                    "weight": reduced_weight,
+                }
+            )
 
     # Handle classes: fraction of ELIGIBLE classes mentioned.
     if element.classes:
         eligible_classes = [c for c in element.classes if len(c) >= 4]
-        classes_found = [
-            c for c in eligible_classes
-            if _word_boundary_match(c, reasoning)
-        ]
+        classes_found = [c for c in eligible_classes if _word_boundary_match(c, reasoning)]
         if classes_found and eligible_classes:
             class_fraction = len(classes_found) / len(eligible_classes)
             class_weight = 0.4 * class_fraction
             score += class_weight
-            matched_attrs.append({
-                "attr": "class", "value": classes_found,
-                "match": f"{len(classes_found)}/{len(element.classes)} classes",
-                "weight": class_weight,
-            })
+            matched_attrs.append(
+                {
+                    "attr": "class",
+                    "value": classes_found,
+                    "match": f"{len(classes_found)}/{len(element.classes)} classes",
+                    "weight": class_weight,
+                }
+            )
 
     # Handle visible text with word boundary matching.
     if element.element_text and len(element.element_text) > 2:
         if _word_boundary_match(element.element_text, reasoning):
             score += 0.3
-            matched_attrs.append({
-                "attr": "text", "value": element.element_text,
-                "match": "visible-text", "weight": 0.3,
-            })
+            matched_attrs.append(
+                {
+                    "attr": "text",
+                    "value": element.element_text,
+                    "match": "visible-text",
+                    "weight": 0.3,
+                }
+            )
 
     return score, matched_attrs
 
@@ -313,6 +339,7 @@ def _element_signature(element: RenderedInteractiveElement) -> str:
 # ---------------------------------------------------------------------------
 # Section reference extraction — matching pipeline
 # ---------------------------------------------------------------------------
+
 
 def match_elements_to_reasoning(
     reasoning: str,
@@ -335,7 +362,9 @@ def match_elements_to_reasoning(
             scored.append((section_id, el, el_score, matched_attrs))
 
     # Step 2: Group by structural signature.
-    signature_groups: dict[str, list[tuple[str, RenderedInteractiveElement, float, list[dict]]]] = defaultdict(list)
+    signature_groups: dict[str, list[tuple[str, RenderedInteractiveElement, float, list[dict]]]] = (
+        defaultdict(list)
+    )
     for section_id, el, el_score, matched_attrs in scored:
         sig = _element_signature(el)
         signature_groups[sig].append((section_id, el, el_score, matched_attrs))
@@ -357,14 +386,16 @@ def match_elements_to_reasoning(
             was_capped = True
 
         best_section_id, best_el, best_score, best_attrs = group[0]
-        results.append(ElementMatchResult(
-            element=best_el,
-            score=best_score,
-            matched_attributes=best_attrs,
-            sections_with_same_element=all_sections,
-            sections_kept=sections_kept,
-            was_capped=was_capped,
-        ))
+        results.append(
+            ElementMatchResult(
+                element=best_el,
+                score=best_score,
+                matched_attributes=best_attrs,
+                sections_with_same_element=all_sections,
+                sections_kept=sections_kept,
+                was_capped=was_capped,
+            )
+        )
 
     return results
 
@@ -409,10 +440,7 @@ def get_referenced_sections(
 
     # Mechanism 2: Interactive element matching — only for unmatched sections.
     unmatched_elements: list[tuple[str, RenderedInteractiveElement]] = [
-        (sid, el)
-        for sid, _, elements in sections
-        if sid not in referenced
-        for el in elements
+        (sid, el) for sid, _, elements in sections if sid not in referenced for el in elements
     ]
     element_matches = match_elements_to_reasoning(reasoning, unmatched_elements)
 
@@ -427,6 +455,7 @@ def get_referenced_sections(
 # ---------------------------------------------------------------------------
 # Indirect reference detection — token decomposition & IDF scoring
 # ---------------------------------------------------------------------------
+
 
 def _tokenize_section_id(section_id: str) -> list[str]:
     """Decompose a section ID into meaningful tokens.
@@ -449,11 +478,7 @@ def _tokenize_section_id(section_id: str) -> list[str]:
     seen: set[str] = set()
     tokens: list[str] = []
     for p in parts:
-        if (
-            len(p) >= MIN_ID_TOKEN_LENGTH
-            and not p.isdigit()
-            and p not in seen
-        ):
+        if len(p) >= MIN_ID_TOKEN_LENGTH and not p.isdigit() and p not in seen:
             seen.add(p)
             tokens.append(p)
     return tokens
@@ -489,10 +514,7 @@ def _compute_token_idf(
     # Smoothed IDF: log(1 + total/count) — always > 0, so even
     # ubiquitous tokens contribute a small positive weight rather
     # than collapsing the score to zero.
-    return {
-        token: _math.log(1 + total / count)
-        for token, count in doc_count.items()
-    }
+    return {token: _math.log(1 + total / count) for token, count in doc_count.items()}
 
 
 def score_section_indirect(
@@ -512,9 +534,7 @@ def score_section_indirect(
     """
     # --- ID tokens ---
     id_tokens = _tokenize_section_id(section_id)
-    id_matched = [
-        t for t in id_tokens if _word_boundary_match(t, reasoning_lower)
-    ]
+    id_matched = [t for t in id_tokens if _word_boundary_match(t, reasoning_lower)]
     id_total_idf = sum(idf.get(t, 1.0) for t in id_tokens)
     id_matched_idf = sum(idf.get(t, 1.0) for t in id_matched)
     id_score = id_matched_idf / id_total_idf if id_total_idf > 0 else 0.0
@@ -524,19 +544,13 @@ def score_section_indirect(
     content_tokens: list[str] = []
     for w in content[:200].split():
         w_lower = w.lower()
-        if (
-            len(w_lower) >= MIN_ID_TOKEN_LENGTH
-            and w_lower.isalpha()
-            and w_lower not in seen
-        ):
+        if len(w_lower) >= MIN_ID_TOKEN_LENGTH and w_lower.isalpha() and w_lower not in seen:
             seen.add(w_lower)
             content_tokens.append(w_lower)
             if len(content_tokens) >= 8:
                 break
 
-    ct_matched = [
-        t for t in content_tokens if _word_boundary_match(t, reasoning_lower)
-    ]
+    ct_matched = [t for t in content_tokens if _word_boundary_match(t, reasoning_lower)]
     ct_total_idf = sum(idf.get(t, 1.0) for t in content_tokens)
     ct_matched_idf = sum(idf.get(t, 1.0) for t in ct_matched)
     ct_score = ct_matched_idf / ct_total_idf if ct_total_idf > 0 else 0.0
@@ -581,12 +595,13 @@ def get_indirect_references(
         if sid in already_referenced:
             continue
         score, matched, source = score_section_indirect(
-            sid, content, reasoning_lower, idf,
+            sid,
+            content,
+            reasoning_lower,
+            idf,
         )
         if score > 0 and matched:
-            candidates.append(
-                IndirectMatchResult(sid, score, matched, source)
-            )
+            candidates.append(IndirectMatchResult(sid, score, matched, source))
 
     candidates.sort(key=lambda c: c.score, reverse=True)
     budget = min(
@@ -601,6 +616,7 @@ def get_indirect_references(
 # ---------------------------------------------------------------------------
 # Section preview builder
 # ---------------------------------------------------------------------------
+
 
 def _truncate_at_word(text: str, max_chars: int) -> str:
     """Truncate *text* at a word boundary, appending ``...``."""
@@ -620,7 +636,7 @@ def _truncate_at_word_reverse(text: str, max_chars: int) -> str:
     tail = text[-max_chars:]
     first_space = tail.find(" ")
     if 0 < first_space < max_chars // 2:
-        tail = tail[first_space + 1:]
+        tail = tail[first_space + 1 :]
     return "..." + tail
 
 
@@ -741,10 +757,7 @@ def build_section_meta(
                 if lbl:
                     labels.append(lbl)
             i_labels = ";".join(labels)
-        lines.append(
-            f"{sid}|{len(content.strip())}|{i_count}|{role}"
-            f"|{start}|{end}|{i_labels}"
-        )
+        lines.append(f"{sid}|{len(content.strip())}|{i_count}|{role}|{start}|{end}|{i_labels}")
     lines.append(_SECTION_META_END)
     return "\n".join(lines)
 
@@ -760,7 +773,7 @@ def parse_section_meta(text: str) -> list[SectionMeta] | None:
     if start_idx < 0 or end_idx < 0:
         return None
 
-    block = text[start_idx + len(_SECTION_META_START):end_idx].strip()
+    block = text[start_idx + len(_SECTION_META_START) : end_idx].strip()
     if not block:
         return []
 
@@ -783,21 +796,24 @@ def parse_section_meta(text: str) -> list[SectionMeta] | None:
         preview_end = parts[5].replace("\u00a6", "|")
         i_labels_raw = parts[6]
         i_labels = [l for l in i_labels_raw.split(";") if l] if i_labels_raw else []
-        results.append(SectionMeta(
-            section_id=sid,
-            char_count=char_count,
-            interactive_count=i_count,
-            role=role,
-            preview_start=preview_start,
-            preview_end=preview_end,
-            interactive_labels=i_labels,
-        ))
+        results.append(
+            SectionMeta(
+                section_id=sid,
+                char_count=char_count,
+                interactive_count=i_count,
+                role=role,
+                preview_start=preview_start,
+                preview_end=preview_end,
+                interactive_labels=i_labels,
+            )
+        )
     return results
 
 
 # ---------------------------------------------------------------------------
 # Filtered output builder
 # ---------------------------------------------------------------------------
+
 
 def _section_header(
     section_id: str,
@@ -809,10 +825,7 @@ def _section_header(
     ``--- [section-id] role (N interactive) ---``
     """
     role = semantic_role or "content"
-    return (
-        f"--- [{section_id}] {role} "
-        f"({interactive_count} interactive) ---"
-    )
+    return f"--- [{section_id}] {role} ({interactive_count} interactive) ---"
 
 
 def build_filtered_output(
@@ -871,12 +884,9 @@ def build_filtered_output(
 
     _indirect = indirect_refs or set()
 
-    kept_indices = {
-        i for i, (sid, *_) in enumerate(normalised) if sid in referenced
-    }
+    kept_indices = {i for i, (sid, *_) in enumerate(normalised) if sid in referenced}
     indirect_indices = {
-        i for i, (sid, *_) in enumerate(normalised)
-        if sid in _indirect and i not in kept_indices
+        i for i, (sid, *_) in enumerate(normalised) if sid in _indirect and i not in kept_indices
     }
 
     # Build neighbor sets: radius 3 for kept, radius 1 for indirect.
@@ -888,8 +898,7 @@ def build_filtered_output(
             if 0 <= idx < len(normalised) and idx not in full_content_indices:
                 neighbor_indices.add(idx)
     for ii in indirect_indices:
-        for offset in range(-indirect_neighbor_radius,
-                            indirect_neighbor_radius + 1):
+        for offset in range(-indirect_neighbor_radius, indirect_neighbor_radius + 1):
             idx = ii + offset
             if 0 <= idx < len(normalised) and idx not in full_content_indices:
                 neighbor_indices.add(idx)
@@ -928,15 +937,16 @@ def build_filtered_output(
 # Observability — logging dataclasses
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ElementMatch:
     """Log entry for a single interactive element match."""
 
-    marker: str                      # e.g. 'aria-label="Weiter"'
-    marker_type: str                 # "aria-label", "data-testid", etc.
-    reasoning_context: str           # snippet around the marker
-    matched_sections: list[str]      # ALL section IDs with this element
-    is_ambiguous: bool               # True if > 1 section matched
+    marker: str  # e.g. 'aria-label="Weiter"'
+    marker_type: str  # "aria-label", "data-testid", etc.
+    reasoning_context: str  # snippet around the marker
+    matched_sections: list[str]  # ALL section IDs with this element
+    is_ambiguous: bool  # True if > 1 section matched
 
 
 @dataclass
@@ -948,8 +958,8 @@ class ShowPageAnalysisLog:
     url: str
 
     # Similarity
-    similarity_score: float          # 0.0–1.0
-    variant_used: str                # "A" or "B"
+    similarity_score: float  # 0.0–1.0
+    variant_used: str  # "A" or "B"
 
     # Page content
     total_sections: int
@@ -967,7 +977,7 @@ class ShowPageAnalysisLog:
 
     # Filtered output
     filtered_page_chars: int
-    compression_ratio: float         # filtered / original
+    compression_ratio: float  # filtered / original
 
     # Interactive element matching detail
     element_matches: list[ElementMatch]

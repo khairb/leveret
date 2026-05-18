@@ -39,8 +39,14 @@ class Field:
     """
 
     __slots__ = (
-        "type_", "min", "max", "min_length", "max_length",
-        "pattern", "enum", "optional",
+        "type_",
+        "min",
+        "max",
+        "min_length",
+        "max_length",
+        "pattern",
+        "enum",
+        "optional",
     )
 
     def __init__(
@@ -137,8 +143,7 @@ class _DeprecatedList:
 
     def __call__(self, *args: Any, **kwargs: Any) -> Items:
         warnings.warn(
-            "List is deprecated — use Items instead. "
-            "List will be removed in a future version.",
+            "List is deprecated — use Items instead. List will be removed in a future version.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -154,9 +159,9 @@ List = _DeprecatedList()
 # Type alias for schema definitions accepted by the parser.
 # This is a structural alias — isinstance() checks do not work with it.
 SchemaType = Union[
-    type,       # str, int, float, bool, dict
+    type,  # str, int, float, bool, dict
     Field,
     Items,
-    dict,       # {"key": SchemaType, ...}
-    list,       # [SchemaType] — always exactly one element
+    dict,  # {"key": SchemaType, ...}
+    list,  # [SchemaType] — always exactly one element
 ]

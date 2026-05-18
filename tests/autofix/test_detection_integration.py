@@ -20,18 +20,16 @@ import json
 import pytest
 
 from scout.autofix.antibot import detect_antibot
-from scout.autofix.page_verifier import verify_page, check_page_gate
+from scout.autofix.page_verifier import check_page_gate, verify_page
 from scout.autofix.types import (
-    RegenerateMode,
     PageSignals,
     PageVerificationResult,
+    RegenerateMode,
 )
 from tests.autofix.conftest import (
     ANTIBOT_DIR,
-    all_antibot_fixtures,
     load_antibot_page,
 )
-
 
 # ── Helper ───────────────────────────────────────────────────
 
@@ -108,32 +106,21 @@ class TestFixtureDrivenDetection:
         result = detect_antibot(content)
 
         if expected_detected:
-            assert result is not None, (
-                f"Expected {fixture_name} to be detected, but got None"
-            )
+            assert result is not None, f"Expected {fixture_name} to be detected, but got None"
             if expected_provider is not None:
                 assert result.provider == expected_provider, (
-                    f"{fixture_name}: expected provider={expected_provider}, "
-                    f"got {result.provider}"
+                    f"{fixture_name}: expected provider={expected_provider}, got {result.provider}"
                 )
             if expected_tier is not None:
                 assert result.tier == expected_tier, (
-                    f"{fixture_name}: expected tier={expected_tier}, "
-                    f"got {result.tier}"
+                    f"{fixture_name}: expected tier={expected_tier}, got {result.tier}"
                 )
         else:
-            assert result is None, (
-                f"Expected {fixture_name} to be clean, "
-                f"but got {result}"
-            )
+            assert result is None, f"Expected {fixture_name} to be clean, but got {result}"
 
     @pytest.mark.parametrize(
         "fixture_name",
-        [
-            name for name, (detected, _, _)
-            in _FIXTURE_EXPECTATIONS.items()
-            if detected
-        ],
+        [name for name, (detected, _, _) in _FIXTURE_EXPECTATIONS.items() if detected],
     )
     def test_fixture_with_headers_and_cookies(self, fixture_name: str):
         """Anti-bot fixtures with companion headers/cookies are still detected."""
@@ -143,9 +130,7 @@ class TestFixtureDrivenDetection:
 
         content, headers, cookies = load_antibot_page(fixture_name)
         result = detect_antibot(content, headers, cookies)
-        assert result is not None, (
-            f"Expected {fixture_name} to be detected with full signals"
-        )
+        assert result is not None, f"Expected {fixture_name} to be detected with full signals"
         assert result.tier >= 1
 
 
@@ -157,11 +142,7 @@ class TestFixtureDrivenVerifyPage:
 
     @pytest.mark.parametrize(
         "fixture_name",
-        [
-            name for name, (detected, _, _)
-            in _FIXTURE_EXPECTATIONS.items()
-            if detected
-        ],
+        [name for name, (detected, _, _) in _FIXTURE_EXPECTATIONS.items() if detected],
     )
     def test_antibot_fixture_produces_anti_bot_result(self, fixture_name: str):
         """Anti-bot page + HTTP 200 + same domain → ANTI_BOT."""
@@ -182,11 +163,7 @@ class TestFixtureDrivenVerifyPage:
 
     @pytest.mark.parametrize(
         "fixture_name",
-        [
-            name for name, (detected, _, _)
-            in _FIXTURE_EXPECTATIONS.items()
-            if not detected
-        ],
+        [name for name, (detected, _, _) in _FIXTURE_EXPECTATIONS.items() if not detected],
     )
     def test_clean_fixture_produces_real_page(self, fixture_name: str):
         """Clean pages + HTTP 200 + same domain → REAL_PAGE."""
@@ -234,7 +211,10 @@ class TestHeaderOnlyDetectionPipeline:
         ],
     )
     def test_header_only_signals_through_verify_page(
-        self, header_name, header_value, expected_provider,
+        self,
+        header_name,
+        header_value,
+        expected_provider,
     ):
         """Individual anti-bot headers should produce ANTI_BOT."""
         signals = _make_signals(headers={header_name: header_value})
@@ -252,7 +232,9 @@ class TestHeaderOnlyDetectionPipeline:
         ],
     )
     def test_cookie_only_signals_through_verify_page(
-        self, cookie_name, expected_provider,
+        self,
+        cookie_name,
+        expected_provider,
     ):
         """Individual anti-bot cookies should produce ANTI_BOT."""
         signals = _make_signals(
@@ -332,11 +314,7 @@ class TestCloudflareVariations:
 
     def test_cf_error_code_with_single_quotes(self):
         """Some Cloudflare pages use single-quoted class attributes."""
-        content = (
-            "<html><body>"
-            "<span class='cf-error-code'>1020</span>"
-            "</body></html>"
-        )
+        content = "<html><body><span class='cf-error-code'>1020</span></body></html>"
         # The spec pattern uses double quotes: class="cf-error-code"
         # This tests whether single-quoted attributes are caught.
         result = detect_antibot(content)
@@ -351,11 +329,11 @@ class TestCloudflareVariations:
     def test_challenge_form_with_newlines(self):
         """Challenge form pattern spanning multiple lines."""
         content = (
-            '<html><body>\n'
+            "<html><body>\n"
             '<form id="challenge-form">\n'
             '  <input name="__cf_chl_f_tk=" value="abc">\n'
-            '</form>\n'
-            '</body></html>'
+            "</form>\n"
+            "</body></html>"
         )
         result = detect_antibot(content)
         assert result is not None
@@ -486,7 +464,9 @@ class TestImpervaVariations:
     """Imperva pattern variations."""
 
     def test_incapsula_incident_with_long_id(self):
-        content = "<html><body>Incapsula incident ID: 893426000021564786-226669634693259305</body></html>"
+        content = (
+            "<html><body>Incapsula incident ID: 893426000021564786-226669634693259305</body></html>"
+        )
         result = detect_antibot(content)
         assert result is not None
         assert result.provider == "imperva"
@@ -551,7 +531,9 @@ class TestTier2Variations:
         assert result.tier == 2
 
     def test_blocked_by_security_in_paragraph(self):
-        content = "<html><body><p>Your request has been blocked by security policy.</p></body></html>"
+        content = (
+            "<html><body><p>Your request has been blocked by security policy.</p></body></html>"
+        )
         result = detect_antibot(content)
         assert result is not None
         assert result.tier == 2
@@ -613,7 +595,9 @@ class TestTier3Variations:
         assert result is None
 
     def test_page_with_h1_tag_passes(self):
-        content = "<html><body><h1>Welcome to our website with real content here.</h1></body></html>"
+        content = (
+            "<html><body><h1>Welcome to our website with real content here.</h1></body></html>"
+        )
         result = detect_antibot(content)
         assert result is None
 
@@ -872,7 +856,9 @@ class TestMalformedInputs:
 
     def test_unicode_content(self):
         """Unicode content (Chinese, Arabic, emoji) doesn't crash."""
-        content = "<html><body><h1>产品目录</h1><p>欢迎来到我们的商店。浏览我们的产品。</p></body></html>"
+        content = (
+            "<html><body><h1>产品目录</h1><p>欢迎来到我们的商店。浏览我们的产品。</p></body></html>"
+        )
         result = detect_antibot(content)
         assert result is None
 

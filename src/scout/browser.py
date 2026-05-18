@@ -31,8 +31,9 @@ import re
 import threading
 import time
 import warnings
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Sequence, Union
+from typing import Any, Literal
 
 # Import Patchright's own sub-option TypedDicts so users get native types.
 try:
@@ -47,11 +48,11 @@ except ImportError:
     # Patchright not installed — define stubs so the TypedDict can
     # still be defined and used for type-checking without the runtime
     # dependency.
-    ProxySettings = Dict[str, Any]  # type: ignore[assignment,misc]
-    ViewportSize = Dict[str, int]  # type: ignore[assignment,misc]
-    Geolocation = Dict[str, Any]  # type: ignore[assignment,misc]
-    HttpCredentials = Dict[str, Any]  # type: ignore[assignment,misc]
-    ClientCertificate = Dict[str, Any]  # type: ignore[assignment,misc]
+    ProxySettings = dict[str, Any]  # type: ignore[assignment,misc]
+    ViewportSize = dict[str, int]  # type: ignore[assignment,misc]
+    Geolocation = dict[str, Any]  # type: ignore[assignment,misc]
+    HttpCredentials = dict[str, Any]  # type: ignore[assignment,misc]
+    ClientCertificate = dict[str, Any]  # type: ignore[assignment,misc]
 
 try:
     from typing import TypedDict
@@ -73,22 +74,22 @@ class LaunchOptions(TypedDict, total=False):
 
     # ── Browser-level options ────────────────────────────────────
     channel: str
-    executable_path: Union[str, Path]
+    executable_path: str | Path
     args: Sequence[str]
-    ignore_default_args: Union[bool, Sequence[str]]
+    ignore_default_args: bool | Sequence[str]
     handle_sigint: bool
     handle_sigterm: bool
     handle_sighup: bool
     timeout: float
-    env: Dict[str, Union[str, float, bool]]
+    env: dict[str, str | float | bool]
     proxy: ProxySettings
-    downloads_path: Union[str, Path]
+    downloads_path: str | Path
     slow_mo: float
     chromium_sandbox: bool
-    traces_dir: Union[str, Path]
+    traces_dir: str | Path
 
     # ── Context-level options ────────────────────────────────────
-    viewport: Optional[ViewportSize]
+    viewport: ViewportSize | None
     screen: ViewportSize
     no_viewport: bool
     ignore_https_errors: bool
@@ -99,7 +100,7 @@ class LaunchOptions(TypedDict, total=False):
     timezone_id: str
     geolocation: Geolocation
     permissions: Sequence[str]
-    extra_http_headers: Dict[str, str]
+    extra_http_headers: dict[str, str]
     offline: bool
     http_credentials: HttpCredentials
     device_scale_factor: float
@@ -113,20 +114,20 @@ class LaunchOptions(TypedDict, total=False):
     base_url: str
     strict_selectors: bool
     service_workers: Literal["allow", "block"]
-    storage_state: Union[str, Path, Dict[str, Any]]
-    client_certificates: List[ClientCertificate]
+    storage_state: str | Path | dict[str, Any]
+    client_certificates: list[ClientCertificate]
 
     # ── Recording options ────────────────────────────────────────
-    record_har_path: Union[str, Path]
+    record_har_path: str | Path
     record_har_omit_content: bool
     record_har_mode: Literal["full", "minimal"]
     record_har_content: Literal["attach", "embed", "omit"]
-    record_har_url_filter: Union[str, "re.Pattern[str]"]
-    record_video_dir: Union[str, Path]
+    record_har_url_filter: str | re.Pattern[str]
+    record_video_dir: str | Path
     record_video_size: ViewportSize
 
     # ── Firefox-specific ─────────────────────────────────────────
-    firefox_user_prefs: Dict[str, Union[str, float, bool]]
+    firefox_user_prefs: dict[str, str | float | bool]
 
 
 # ── Stealth defaults ─────────────────────────────────────────────
@@ -139,6 +140,7 @@ STEALTH_ARGS: list[str] = [
     "--disable-sync",
     "--disable-background-networking",
 ]
+
 
 def _detect_browser_channel() -> str:
     """Detect which browser channel is available.
@@ -154,9 +156,9 @@ def _detect_browser_channel() -> str:
 
     # Check standard Google Chrome install locations
     chrome_paths = [
-        Path("/opt/google/chrome/chrome"),           # Linux
-        Path("/usr/bin/google-chrome"),               # Linux (symlink)
-        Path("/usr/bin/google-chrome-stable"),        # Linux (alt)
+        Path("/opt/google/chrome/chrome"),  # Linux
+        Path("/usr/bin/google-chrome"),  # Linux (symlink)
+        Path("/usr/bin/google-chrome-stable"),  # Linux (alt)
     ]
 
     # Also check macOS
@@ -220,9 +222,7 @@ def resolve_launch_options(
             merged.update(user_opts)
         else:
             merged.update(user_options)
-        merged["args"] = STEALTH_ARGS + [
-            a for a in user_args if a not in STEALTH_ARGS
-        ]
+        merged["args"] = STEALTH_ARGS + [a for a in user_args if a not in STEALTH_ARGS]
     else:
         merged["args"] = list(STEALTH_ARGS)
 
@@ -231,8 +231,10 @@ def resolve_launch_options(
 
 # ── Demo layout ─────────────────────────────────────────────────
 
+
 def compute_demo_layout(
-    screen_width: int, screen_height: int,
+    screen_width: int,
+    screen_height: int,
 ) -> dict[str, int]:
     """Compute window sizes for the demo 20/80 split.
 
@@ -253,7 +255,8 @@ def compute_demo_layout(
 
 
 def compute_expanded_layout(
-    screen_width: int, screen_height: int,
+    screen_width: int,
+    screen_height: int,
 ) -> dict[str, int]:
     """Compute window sizes for the expanded 50/50 results view.
 
@@ -274,6 +277,7 @@ def compute_expanded_layout(
 
 
 # ── Shared Browser ──────────────────────────────────────────────
+
 
 class Browser:
     """Shared browser for running multiple scrapers efficiently.
@@ -375,6 +379,7 @@ class Browser:
     async def new_page(self) -> Any:
         """Deprecated — use _new_page() internally."""
         import warnings
+
         warnings.warn("Browser.new_page() is deprecated", DeprecationWarning, stacklevel=2)
         return await self._new_page()
 
@@ -399,7 +404,8 @@ class Browser:
 
         try:
             future = asyncio.run_coroutine_threadsafe(
-                self._start(), self._bg_loop,
+                self._start(),
+                self._bg_loop,
             )
             future.result(timeout=60)
         except Exception:
@@ -415,7 +421,8 @@ class Browser:
     def __exit__(self, *exc: Any) -> bool:
         if self._bg_loop is not None:
             future = asyncio.run_coroutine_threadsafe(
-                self._stop(), self._bg_loop,
+                self._stop(),
+                self._bg_loop,
             )
             try:
                 future.result(timeout=15)

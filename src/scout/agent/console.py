@@ -49,8 +49,8 @@ def _truncate(text: str, max_lines: int = 15, max_chars: int = 2000) -> str:
     if len(lines) <= max_lines:
         return text[:max_chars] + f"\n{_DIM}... ({len(text) - max_chars} more chars){_RESET}"
 
-    head = "\n".join(lines[:max_lines // 2])
-    tail = "\n".join(lines[-(max_lines // 2):])
+    head = "\n".join(lines[: max_lines // 2])
+    tail = "\n".join(lines[-(max_lines // 2) :])
     omitted = len(lines) - max_lines
     return f"{head}\n{_DIM}  ... ({omitted} lines omitted) ...{_RESET}\n{tail}"
 
@@ -58,6 +58,7 @@ def _truncate(text: str, max_lines: int = 15, max_chars: int = 2000) -> str:
 # ═══════════════════════════════════════════════════════════════
 #  Public print functions — called from the loop
 # ═══════════════════════════════════════════════════════════════
+
 
 def print_init(url: str, task: str, model: str) -> None:
     print(_header("Scraping Agent"))
@@ -133,7 +134,7 @@ def print_tool_result(
         # Show a brief summary — output lines, whether page view is included.
         lines = content.split("\n")
         # Find the execution summary line.
-        summary = lines[0] if lines else ""
+        lines[0] if lines else ""
         has_page_view = "=== Page State" in content
         has_error = "Error:" in content
         has_output = "Output:" in content
@@ -172,24 +173,17 @@ def print_turn_status(message: str) -> None:
 
 
 def print_final_call() -> None:
-    print(
-        f"\n  {_c(_YELLOW, 'Final call:')} "
-        f"turns exhausted — requesting script with no tools"
-    )
+    print(f"\n  {_c(_YELLOW, 'Final call:')} turns exhausted — requesting script with no tools")
 
 
 def print_exploration_required() -> None:
     print(
-        f"\n  {_c(_YELLOW, 'Exploration required:')} "
-        f"agent must explore the page before submitting"
+        f"\n  {_c(_YELLOW, 'Exploration required:')} agent must explore the page before submitting"
     )
 
 
 def print_debug_required() -> None:
-    print(
-        f"\n  {_c(_YELLOW, 'Debug required:')} "
-        f"agent must investigate before resubmitting"
-    )
+    print(f"\n  {_c(_YELLOW, 'Debug required:')} agent must investigate before resubmitting")
 
 
 def print_script_page_injected() -> None:
@@ -255,18 +249,14 @@ async def ask_user_approval() -> tuple[bool, str]:
     print(f"  {_c(_RED, '[r]eject')}   —  output is wrong, provide feedback")
     print(f"{_BOLD}{_CYAN}{'─' * 60}{_RESET}")
 
-    choice = await asyncio.to_thread(
-        input, f"\n  {_BOLD}Approve or reject? [a/r]: {_RESET}"
-    )
+    choice = await asyncio.to_thread(input, f"\n  {_BOLD}Approve or reject? [a/r]: {_RESET}")
     choice = choice.strip().lower()
 
     if choice in ("a", "approve", "y", "yes"):
         print(f"\n  {_c(_GREEN, 'Function approved.')}")
         return True, ""
 
-    feedback = await asyncio.to_thread(
-        input, f"  {_BOLD}What's wrong? {_RESET}"
-    )
+    feedback = await asyncio.to_thread(input, f"  {_BOLD}What's wrong? {_RESET}")
     return False, feedback.strip()
 
 
@@ -404,11 +394,7 @@ def print_interaction_highlights(
             cats.append(_c(color, f"{n} {cat}"))
     cat_str = ", ".join(cats)
 
-    print(
-        f"    {_c(_CYAN, '[highlights]')}"
-        f" {total_extracted} extracted"
-        f" ({cat_str})"
-    )
+    print(f"    {_c(_CYAN, '[highlights]')} {total_extracted} extracted ({cat_str})")
 
     # Filtering/resolution stats
     parts = []
@@ -492,16 +478,12 @@ def print_param_detection(
         return
 
     if match_count > 0:
-        print(
-            f"    {tag}"
-            f" {_c(_GREEN, f'{match_count} match(es)')}"
-            f" from {fill_count} fill(s)"
-        )
+        print(f"    {tag} {_c(_GREEN, f'{match_count} match(es)')} from {fill_count} fill(s)")
         for param_name, param_value, action, fill_value in matches:
             print(
                 f"    {_DIM}  {_c(_GREEN, '●')}"
                 f" {param_name}={param_value}"
-                f"  ←  {action}(\"{fill_value}\")"
+                f'  ←  {action}("{fill_value}")'
                 f"{_RESET}"
             )
     elif complex_count > 0:

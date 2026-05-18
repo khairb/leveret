@@ -13,7 +13,6 @@ import enum
 from dataclasses import dataclass, field
 from typing import Any
 
-
 # ── Error classification ──────────────────────────────────────
 
 
@@ -30,38 +29,44 @@ class ErrorCategory(enum.Enum):
         >>> ErrorCategory.D   # Post-navigation timeout
     """
 
-    A = "A"    # Code is structurally broken (parse errors)
-    B = "B"    # Code crashed against page content (runtime errors)
-    C = "C"    # Network/server failure (page never loaded)
-    D = "D"    # Script's expectation wasn't met (post-nav timeout)
-    E = "E"    # Page state prevented interaction
+    A = "A"  # Code is structurally broken (parse errors)
+    B = "B"  # Code crashed against page content (runtime errors)
+    C = "C"  # Network/server failure (page never loaded)
+    D = "D"  # Script's expectation wasn't met (post-nav timeout)
+    E = "E"  # Page state prevented interaction
     F1 = "F1"  # Browser/page crash or process death
     F2 = "F2"  # Subprocess/execution timeout
     F3 = "F3"  # Infrastructure failure (browser not installed, disk full)
-    G = "G"    # Output is wrong — schema validation failed, no error
+    G = "G"  # Output is wrong — schema validation failed, no error
 
 
 # S9: Categories that never trigger regeneration (Tier 3).
-TIER_3_CATEGORIES: frozenset[ErrorCategory] = frozenset({
-    ErrorCategory.C,
-    ErrorCategory.F1,
-    ErrorCategory.F2,
-    ErrorCategory.F3,
-})
+TIER_3_CATEGORIES: frozenset[ErrorCategory] = frozenset(
+    {
+        ErrorCategory.C,
+        ErrorCategory.F1,
+        ErrorCategory.F2,
+        ErrorCategory.F3,
+    }
+)
 
 # S9: Categories that skip retries entirely.
-NO_RETRY_CATEGORIES: frozenset[ErrorCategory] = frozenset({
-    ErrorCategory.A,   # Deterministic — same code, same error
-    ErrorCategory.F2,  # Diagnostic cost too high (full timeout x 3)
-    ErrorCategory.F3,  # Infrastructure broken — no script can run
-})
+NO_RETRY_CATEGORIES: frozenset[ErrorCategory] = frozenset(
+    {
+        ErrorCategory.A,  # Deterministic — same code, same error
+        ErrorCategory.F2,  # Diagnostic cost too high (full timeout x 3)
+        ErrorCategory.F3,  # Infrastructure broken — no script can run
+    }
+)
 
 # S4/S9: Category E sub-types that are never eligible for regeneration.
-E_INELIGIBLE_PATTERNS: frozenset[str] = frozenset({
-    "Execution context was destroyed",
-    "Frame was detached",
-    "Navigating frame was detached",
-})
+E_INELIGIBLE_PATTERNS: frozenset[str] = frozenset(
+    {
+        "Execution context was destroyed",
+        "Frame was detached",
+        "Navigating frame was detached",
+    }
+)
 
 
 # ── Error fingerprinting ─────────────────────────────────────
@@ -74,10 +79,10 @@ class ComparisonLevel(enum.Enum):
     EXACT > SAME_KIND > SAME_CATEGORY > NONE.
     """
 
-    EXACT = "exact"              # Same category + error_type + method + target
-    SAME_KIND = "same_kind"      # Same category + error_type + method, different target
+    EXACT = "exact"  # Same category + error_type + method + target
+    SAME_KIND = "same_kind"  # Same category + error_type + method, different target
     SAME_CATEGORY = "same_category"  # Same category, different error_type or method
-    NONE = "none"                # Different categories
+    NONE = "none"  # Different categories
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,10 +124,10 @@ class StabilityLevel(enum.Enum):
     Determined by comparing fingerprints from all failed attempts.
     """
 
-    STABLE = "stable"        # All 3 match at Level 1 or 2 (exact/same-kind)
+    STABLE = "stable"  # All 3 match at Level 1 or 2 (exact/same-kind)
     CONSISTENT = "consistent"  # All 3 same category, Level 3 match
-    MIXED = "mixed"          # Exactly 2 categories
-    CHAOTIC = "chaotic"      # 3 categories, or 2 with no clear majority
+    MIXED = "mixed"  # Exactly 2 categories
+    CHAOTIC = "chaotic"  # 3 categories, or 2 with no clear majority
 
 
 # ── Page verification ─────────────────────────────────────────
@@ -134,12 +139,12 @@ class PageVerificationResult(enum.Enum):
     Determined by HTTP status, URL domain match, and anti-bot detection.
     """
 
-    REAL_PAGE = "real_page"      # HTTP 200 + same domain + no anti-bot + real content
-    ANTI_BOT = "anti_bot"        # Anti-bot patterns detected
+    REAL_PAGE = "real_page"  # HTTP 200 + same domain + no anti-bot + real content
+    ANTI_BOT = "anti_bot"  # Anti-bot patterns detected
     SERVER_ERROR = "server_error"  # HTTP 5xx or 429
-    REDIRECTED = "redirected"    # page.url domain differs from target
+    REDIRECTED = "redirected"  # page.url domain differs from target
     NO_RESPONSE = "no_response"  # page.goto() failed, no Response object
-    SOFT_BLOCK = "soft_block"    # HTTP 200 but not real content (login, maintenance, etc.)
+    SOFT_BLOCK = "soft_block"  # HTTP 200 but not real content (login, maintenance, etc.)
 
 
 @dataclass(frozen=True, slots=True)

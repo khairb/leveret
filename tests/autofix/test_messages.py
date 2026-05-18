@@ -15,21 +15,19 @@ from __future__ import annotations
 import pytest
 
 from scout.autofix.diagnosis import (
-    format_diagnosis_message,
     _category_label,
-    _stability_label,
     _page_summary,
+    _stability_label,
+    format_diagnosis_message,
 )
 from scout.autofix.types import (
     AttemptResult,
     AutoFixAction,
-    RegenerateMode,
     ErrorCategory,
-    PageSignals,
     PageVerificationResult,
+    RegenerateMode,
     StabilityLevel,
 )
-
 
 # -- Helpers ---------------------------------------------------------------
 
@@ -39,10 +37,7 @@ def _make_attempts(
     error: str = "AttributeError: 'NoneType' has no attribute 'text_content'",
 ) -> list[AttemptResult]:
     """Create n failed AttemptResult objects."""
-    return [
-        AttemptResult(success=False, error=error)
-        for _ in range(n)
-    ]
+    return [AttemptResult(success=False, error=error) for _ in range(n)]
 
 
 # -- Test: Anti-bot blocked message ----------------------------------------

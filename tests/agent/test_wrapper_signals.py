@@ -16,18 +16,15 @@ from __future__ import annotations
 import ast
 import json
 
-import pytest
-
 from scout.agent.wrapper import (
-    PAGE_SIGNALS_START,
     PAGE_SIGNALS_END,
-    RETURN_VALUE_START,
+    PAGE_SIGNALS_START,
     RETURN_VALUE_END,
+    RETURN_VALUE_START,
     generate_subprocess_wrapper,
     parse_page_signals,
     parse_return_value,
 )
-
 
 # -- Helpers ---------------------------------------------------------------
 
@@ -50,23 +47,13 @@ def _gen(*, collect_page_signals: bool = False) -> str:
 def _make_stdout_with_signals(signals_dict: dict) -> str:
     """Build a stdout string with page signals markers."""
     signals_json = json.dumps(signals_dict, ensure_ascii=False)
-    return (
-        f"some checkpoint output\n"
-        f"{PAGE_SIGNALS_START}\n"
-        f"{signals_json}\n"
-        f"{PAGE_SIGNALS_END}\n"
-    )
+    return f"some checkpoint output\n{PAGE_SIGNALS_START}\n{signals_json}\n{PAGE_SIGNALS_END}\n"
 
 
 def _make_stdout_with_return_value(data: object) -> str:
     """Build a stdout string with return value markers."""
     rv_json = json.dumps(data, ensure_ascii=False, indent=2)
-    return (
-        f"checkpoint output\n"
-        f"{RETURN_VALUE_START}\n"
-        f"{rv_json}\n"
-        f"{RETURN_VALUE_END}\n"
-    )
+    return f"checkpoint output\n{RETURN_VALUE_START}\n{rv_json}\n{RETURN_VALUE_END}\n"
 
 
 # -- Test: Generated wrapper syntax ----------------------------------------
@@ -85,7 +72,7 @@ class TestGeneratedWrapperSyntax:
 
     def test_signal_mode_with_complex_agent_code(self):
         """Signal mode works with multi-line agent code containing f-strings."""
-        complex_code = '''\
+        complex_code = """\
 async def scrape(page, url, checkpoint):
     items = []
     for el in await page.query_selector_all(".item"):
@@ -93,9 +80,11 @@ async def scrape(page, url, checkpoint):
         items.append({"name": name, "url": f"{url}/detail"})
     await checkpoint("done", data_preview=items)
     return items
-'''
+"""
         code = generate_subprocess_wrapper(
-            complex_code, "https://example.com", "/tmp/cp",
+            complex_code,
+            "https://example.com",
+            "/tmp/cp",
             collect_page_signals=True,
         )
         ast.parse(code)
@@ -150,13 +139,13 @@ class TestSignalModeContent:
     def test_has_response_listener(self):
         code = _gen(collect_page_signals=True)
         assert "_doc_responses" in code
-        assert '_on_doc_response' in code
+        assert "_on_doc_response" in code
         assert 'page.on("response"' in code
         assert 'resource_type == "document"' in code
 
     def test_collects_page_url(self):
         code = _gen(collect_page_signals=True)
-        assert 'page.url' in code
+        assert "page.url" in code
 
     def test_collects_page_content_with_timeout(self):
         code = _gen(collect_page_signals=True)
@@ -318,12 +307,7 @@ class TestMarkerNonInterference:
 
     def test_return_value_parsing_ignores_signal_markers(self):
         """parse_return_value still works when signal markers are present."""
-        stdout = (
-            f"output\n"
-            f"{PAGE_SIGNALS_START}\n"
-            f'{{"http_status": 200}}\n'
-            f"{PAGE_SIGNALS_END}\n"
-        )
+        stdout = f'output\n{PAGE_SIGNALS_START}\n{{"http_status": 200}}\n{PAGE_SIGNALS_END}\n'
         clean, rv = parse_return_value(stdout)
         # No return value markers → rv is None
         assert rv is None

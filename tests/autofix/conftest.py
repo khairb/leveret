@@ -49,10 +49,7 @@ def all_fixtures_for_category(category: str) -> list[str]:
         Sorted list of fixture names (without .json).
     """
     prefix = f"{category}_"
-    return sorted(
-        f.stem
-        for f in ERRORS_DIR.glob(f"{prefix}*.json")
-    )
+    return sorted(f.stem for f in ERRORS_DIR.glob(f"{prefix}*.json"))
 
 
 def all_error_fixtures() -> list[str]:

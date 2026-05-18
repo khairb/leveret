@@ -5,9 +5,6 @@ is clear, correct, and useful for an AI agent. Every test checks the
 actual rendered text that an agent would read.
 """
 
-import pytest
-
-from scout.schema.compiler import compile_schema
 from scout.schema.parse import parse_schema
 from scout.schema.prompt import (
     render_requirements,
@@ -66,11 +63,13 @@ class TestStructureRendering:
 
     def test_comments_aligned_within_object(self):
         """All # comments in an object should start at the same column."""
-        root = parse_schema({
-            "x": str,
-            "long_field_name": int,
-            "y": bool,
-        })
+        root = parse_schema(
+            {
+                "x": str,
+                "long_field_name": int,
+                "y": bool,
+            }
+        )
         s = render_structure(root)
         comment_positions = []
         for line in s.split("\n"):
@@ -196,9 +195,7 @@ class TestSchemaPromptAssembly:
         assert "### Requirements" in prompt
 
     def test_optional_paragraph_present_when_optional_fields(self):
-        prompt = render_schema_prompt(
-            parse_schema({"bio": Field(str, optional=True)})
-        )
+        prompt = render_schema_prompt(parse_schema({"bio": Field(str, optional=True)}))
         assert "For optional fields" in prompt
         assert "return `None`" in prompt
 
@@ -230,20 +227,25 @@ class TestPromptAgentFriendliness:
     def test_complex_schema_is_readable(self):
         """A complex real-world schema should produce a prompt that an
         agent can parse without ambiguity."""
-        schema = List({
-            "title": Field(str, min_length=1),
-            "price": Field(float, min=0),
-            "currency": Field(str, enum=["USD", "EUR", "GBP"]),
-            "rating": Field(int, min=1, max=5, optional=True),
-            "description": Field(str, min_length=20),
-            "in_stock": bool,
-            "specs": dict,
-            "variants": [{
-                "color": str,
-                "size": Field(str, enum=["S", "M", "L", "XL"]),
+        schema = List(
+            {
+                "title": Field(str, min_length=1),
                 "price": Field(float, min=0),
-            }],
-        }, min_items=10)
+                "currency": Field(str, enum=["USD", "EUR", "GBP"]),
+                "rating": Field(int, min=1, max=5, optional=True),
+                "description": Field(str, min_length=20),
+                "in_stock": bool,
+                "specs": dict,
+                "variants": [
+                    {
+                        "color": str,
+                        "size": Field(str, enum=["S", "M", "L", "XL"]),
+                        "price": Field(float, min=0),
+                    }
+                ],
+            },
+            min_items=10,
+        )
         prompt = render_schema_prompt(parse_schema(schema))
 
         # Agent should see: what to return
@@ -251,8 +253,18 @@ class TestPromptAgentFriendliness:
         assert "at least **10" in prompt
 
         # Agent should see: every field name
-        for field in ["title", "price", "currency", "rating", "description",
-                       "in_stock", "specs", "variants", "color", "size"]:
+        for field in [
+            "title",
+            "price",
+            "currency",
+            "rating",
+            "description",
+            "in_stock",
+            "specs",
+            "variants",
+            "color",
+            "size",
+        ]:
             assert f"`{field}`" in prompt, f"Field {field!r} missing from Requirements"
 
         # Agent should see: enum values

@@ -218,7 +218,8 @@ def compare_fingerprints(a: Fingerprint, b: Fingerprint) -> ComparisonLevel:
 
 
 def _fingerprint_parse_error(
-    stderr: str, category: ErrorCategory,
+    stderr: str,
+    category: ErrorCategory,
 ) -> Fingerprint:
     """Extract fingerprint for Category A (parse errors)."""
     error_type = None
@@ -248,7 +249,8 @@ def _fingerprint_parse_error(
 
 
 def _fingerprint_runtime(
-    stderr: str, category: ErrorCategory,
+    stderr: str,
+    category: ErrorCategory,
 ) -> Fingerprint:
     """Extract fingerprint for Category B (runtime crashes)."""
     error_type = None
@@ -264,8 +266,7 @@ def _fingerprint_runtime(
         js_match = _JS_ERROR_RE.search(error_detail)
         if js_match:
             # e.g., "TypeError: Cannot read properties of null"
-            for js_type in ("TypeError", "ReferenceError", "SyntaxError",
-                            "RangeError", "URIError"):
+            for js_type in ("TypeError", "ReferenceError", "SyntaxError", "RangeError", "URIError"):
                 if js_type in error_detail:
                     error_type = f"JS.{js_type}"
                     break
@@ -305,7 +306,8 @@ def _fingerprint_runtime(
 
 
 def _fingerprint_network(
-    stderr: str, category: ErrorCategory,
+    stderr: str,
+    category: ErrorCategory,
 ) -> Fingerprint:
     """Extract fingerprint for Category C (network/server failure)."""
     error_type = None
@@ -343,7 +345,8 @@ def _fingerprint_network(
 
 
 def _fingerprint_timeout(
-    stderr: str, category: ErrorCategory,
+    stderr: str,
+    category: ErrorCategory,
 ) -> Fingerprint:
     """Extract fingerprint for Category D (post-navigation timeouts)."""
     error_type = "TimeoutError"
@@ -368,7 +371,8 @@ def _fingerprint_timeout(
 
 
 def _fingerprint_page_state(
-    stderr: str, category: ErrorCategory,
+    stderr: str,
+    category: ErrorCategory,
 ) -> Fingerprint:
     """Extract fingerprint for Category E (page state errors)."""
     error_type = None
@@ -409,8 +413,11 @@ def _fingerprint_page_state(
         error_type = "content_during_nav"
     elif re.search(r"Frame for this navigation request", stderr):
         error_type = "frame_not_available"
-    elif re.search(r"[Cc]annot evaluate.*JavaScript dialog|"
-                    r"JavaScript dialog prevents evaluation", stderr):
+    elif re.search(
+        r"[Cc]annot evaluate.*JavaScript dialog|"
+        r"JavaScript dialog prevents evaluation",
+        stderr,
+    ):
         error_type = "dialog_blocking"
     elif re.search(r"Clicking the checkbox did not change", stderr):
         error_type = "checkbox_unchanged"
@@ -440,7 +447,8 @@ def _fingerprint_page_state(
 
 
 def _fingerprint_process_death(
-    stderr: str, category: ErrorCategory,
+    stderr: str,
+    category: ErrorCategory,
 ) -> Fingerprint:
     """Extract fingerprint for Category F (process/browser death)."""
     error_type = None

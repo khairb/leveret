@@ -28,8 +28,6 @@ import pytest
 
 from scout.agent.timeout_predict import (
     BASELINE,
-    MARGIN,
-    MAX_TIMEOUT,
     predict_timeout,
 )
 
@@ -46,6 +44,7 @@ def _t(code: str) -> float:
 #  asyncio.wait_for because predict_timeout underestimated the
 #  time needed.  Most should FAIL, exposing prediction bugs.
 # ═══════════════════════════════════════════════════════════════════
+
 
 class TestExecTimeout_FunctionDefCall:
     """Function defined + called in same block.  Body cost is lost."""
@@ -498,10 +497,12 @@ class TestExecTimeout_ShowPageSlow:
         t = _t(code)
         assert t > 30.0, f"predicted {t}s but execution exceeded 30s"
 
-    @pytest.mark.xfail(reason=(
-        "Two simple calls (count + inner_text) that took >30s due to extreme "
-        "page complexity.  No static analysis can predict this."
-    ))
+    @pytest.mark.xfail(
+        reason=(
+            "Two simple calls (count + inner_text) that took >30s due to extreme "
+            "page complexity.  No static analysis can predict this."
+        )
+    )
     def test_pagination_inner_text_30s(self):
         """Source: src/traces/run_2026-04-12_09-55-15
         Exceeded: 30.0s
@@ -526,6 +527,7 @@ class TestExecTimeout_ShowPageSlow:
 #  predict_timeout at least gives enough budget for the code.
 #  Most should PASS.
 # ═══════════════════════════════════════════════════════════════════
+
 
 class TestPW_WrongPaginationSelector:
     """Clicking pagination links with wrong selectors."""
@@ -1222,7 +1224,7 @@ class TestPW_WaitForFunction:
     def test_wait_for_first_title_change(self):
         """Source: traces/run_2026-04-20_00-47-35"""
         code = (
-            'old_first_title = await page.locator(\'div[data-testid="listing-card-title"]\').first.inner_text()\n'
+            "old_first_title = await page.locator('div[data-testid=\"listing-card-title\"]').first.inner_text()\n"
             "await page.wait_for_function(\n"
             '    "(oldTitle) => true",\n'
             "    arg=old_first_title,\n"
@@ -1273,6 +1275,7 @@ class TestPW_WaitForFunction:
 #  all Playwright click actions.  The prediction is usually
 #  adequate; the problem is purely the overlay.
 # ═══════════════════════════════════════════════════════════════════
+
 
 class TestOverlay_ScoutOverlay:
     """Scout demo overlay (div#scout-overlay) intercepts pointer events.

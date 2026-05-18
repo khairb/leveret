@@ -16,7 +16,6 @@ from scout.autofix.types import (
     StabilityLevel,
 )
 
-
 # ── Helpers ──────────────────────────────────────────────────
 
 

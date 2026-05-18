@@ -40,14 +40,13 @@ from scout.autofix.diagnosis import diagnose
 from scout.autofix.types import (
     AttemptResult,
     AutoFixAction,
-    RegenerateMode,
     DiagnosisResult,
     PageSignals,
     PageVerificationResult,
+    RegenerateMode,
 )
 from tests.autofix.battle_server import (
     AB_TEST_VARIANT,
-    BattleServer,
     CHANGED_LAYOUT,
     CLOUDFLARE_CHALLENGE,
     DATADOME_CHALLENGE,
@@ -57,11 +56,11 @@ from tests.autofix.battle_server import (
     PARTIAL_PRODUCTS,
     PRODUCTS_PAGE,
     RATE_LIMIT_SOFT,
-    SERVER_503,
     SERVER_429,
+    SERVER_503,
     SERVER_ERROR_AS_200,
+    BattleServer,
 )
-
 
 # ── Fixtures ─────────────────────────────────────────────────
 
@@ -96,7 +95,9 @@ async def _fetch(
     def _do() -> tuple[int, str, dict[str, str], list[dict[str, str]]]:
         parsed = urlparse(url)
         conn = http.client.HTTPConnection(
-            parsed.hostname, parsed.port, timeout=10,
+            parsed.hostname,
+            parsed.port,
+            timeout=10,
         )
         try:
             conn.request("GET", parsed.path or "/")
@@ -180,7 +181,8 @@ def script_waits_for(
     class_name = selector.lstrip(".")
 
     def behavior(
-        content: str, signals: PageSignals,
+        content: str,
+        signals: PageSignals,
     ) -> AttemptResult:
         if f'class="{class_name}"' in content:
             return AttemptResult(
@@ -213,7 +215,8 @@ def script_queries(
     class_name = selector.lstrip(".")
 
     def behavior(
-        content: str, signals: PageSignals,
+        content: str,
+        signals: PageSignals,
     ) -> AttemptResult:
         if f'class="{class_name}"' in content:
             return AttemptResult(
@@ -244,7 +247,8 @@ def script_clicks_through_overlay() -> Any:
     """
 
     def behavior(
-        content: str, signals: PageSignals,
+        content: str,
+        signals: PageSignals,
     ) -> AttemptResult:
         return AttemptResult(
             success=False,
@@ -278,7 +282,8 @@ def script_extracts_items(
     """
 
     def behavior(
-        content: str, signals: PageSignals,
+        content: str,
+        signals: PageSignals,
     ) -> AttemptResult:
         return AttemptResult(
             success=False,
@@ -298,7 +303,8 @@ def script_has_syntax_error() -> Any:
     """
 
     def behavior(
-        content: str, signals: PageSignals,
+        content: str,
+        signals: PageSignals,
     ) -> AttemptResult:
         return AttemptResult(
             success=False,
@@ -324,7 +330,8 @@ def script_hits_navigation_redirect() -> Any:
     """
 
     def behavior(
-        content: str, signals: PageSignals,
+        content: str,
+        signals: PageSignals,
     ) -> AttemptResult:
         return AttemptResult(
             success=False,
@@ -352,7 +359,8 @@ def script_fails_then_works(
     counter = [0]
 
     def behavior(
-        content: str, signals: PageSignals,
+        content: str,
+        signals: PageSignals,
     ) -> AttemptResult:
         counter[0] += 1
         if counter[0] <= n_failures:
@@ -455,10 +463,7 @@ class TestBattle:
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
         # Anti-bot should be detected in the page verification
-        assert any(
-            r == PageVerificationResult.ANTI_BOT
-            for r in result.page_results
-        )
+        assert any(r == PageVerificationResult.ANTI_BOT for r in result.page_results)
 
     # -- 4. The Intermittent Server Error ---------------------------
 
@@ -476,7 +481,7 @@ class TestBattle:
         server.program(
             "/products",
             CHANGED_LAYOUT,  # Request 1: real page
-            SERVER_503,      # Request 2: server error
+            SERVER_503,  # Request 2: server error
             CHANGED_LAYOUT,  # Request 3: real page
         )
         url = server.url("/products")
@@ -579,10 +584,7 @@ class TestBattle:
         # Fix 1: Non-content detection catches "something went wrong"
         # as a maintenance page → SOFT_BLOCK → blocks regeneration.
         assert result.action == AutoFixAction.RAISE
-        assert any(
-            r == PageVerificationResult.SOFT_BLOCK
-            for r in result.page_results
-        )
+        assert any(r == PageVerificationResult.SOFT_BLOCK for r in result.page_results)
 
     # -- 8. The Adaptive Anti-Bot -----------------------------------
 
@@ -599,8 +601,8 @@ class TestBattle:
         """
         server.program(
             "/products",
-            CHANGED_LAYOUT,        # Request 1: goes through
-            CHANGED_LAYOUT,        # Request 2: goes through
+            CHANGED_LAYOUT,  # Request 1: goes through
+            CHANGED_LAYOUT,  # Request 2: goes through
             CLOUDFLARE_CHALLENGE,  # Request 3: challenged
         )
         url = server.url("/products")
@@ -715,8 +717,8 @@ class TestBattle:
         """
         server.program(
             "/products",
-            CHANGED_LAYOUT,   # Attempt 1: new layout (timeouts)
-            PRODUCTS_PAGE,    # Attempt 2: old layout (succeeds!)
+            CHANGED_LAYOUT,  # Attempt 1: new layout (timeouts)
+            PRODUCTS_PAGE,  # Attempt 2: old layout (succeeds!)
         )
         url = server.url("/products")
 
@@ -827,7 +829,7 @@ class TestBattle:
         """
         server.program(
             "/products",
-            SERVER_503,      # Request 1: server error
+            SERVER_503,  # Request 1: server error
             CHANGED_LAYOUT,  # Request 2: real page
             CHANGED_LAYOUT,  # Request 3: real page
         )
@@ -873,10 +875,7 @@ class TestBattle:
         # Fix 1: Non-content detection catches the password input field
         # on the login page → SOFT_BLOCK → blocks regeneration.
         assert result.action == AutoFixAction.RAISE
-        assert any(
-            r == PageVerificationResult.SOFT_BLOCK
-            for r in result.page_results
-        )
+        assert any(r == PageVerificationResult.SOFT_BLOCK for r in result.page_results)
 
     # -- 17. The Rate Limiter That Doesn't Use 429 ------------------
 
@@ -901,10 +900,7 @@ class TestBattle:
         # Fix 1: Non-content detection catches "browsing too fast" and
         # the auto-refresh meta tag → SOFT_BLOCK → blocks regeneration.
         assert result.action == AutoFixAction.RAISE
-        assert any(
-            r == PageVerificationResult.SOFT_BLOCK
-            for r in result.page_results
-        )
+        assert any(r == PageVerificationResult.SOFT_BLOCK for r in result.page_results)
 
     # -- 18. The A/B Test (old version served first) ----------------
 
@@ -991,8 +987,8 @@ class TestBattle:
         """
         server.program(
             "/products",
-            PRODUCTS_PAGE,     # Stale CDN cache (script works)
-            CHANGED_LAYOUT,    # Fresh version (script would fail)
+            PRODUCTS_PAGE,  # Stale CDN cache (script works)
+            CHANGED_LAYOUT,  # Fresh version (script would fail)
         )
         url = server.url("/products")
 
@@ -1028,10 +1024,7 @@ class TestBattle:
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
-        assert any(
-            r == PageVerificationResult.ANTI_BOT
-            for r in result.page_results
-        )
+        assert any(r == PageVerificationResult.ANTI_BOT for r in result.page_results)
 
     # -- 23. The Partial Page Load ----------------------------------
 

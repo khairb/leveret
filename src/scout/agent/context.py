@@ -16,7 +16,10 @@ from __future__ import annotations
 import logging as _logging
 import re as _re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .llm import LLMConfig
 
 _logger = _logging.getLogger(__name__)
 
@@ -27,10 +30,9 @@ _ZOOM_START = "__ZOOM_START__"
 _ZOOM_END = "__ZOOM_END__"
 
 # ── Turn-based progressive compaction ─────────────────────────
-_SKELETON_AFTER_TURNS = 2   # Stage 1 → Stage 2 (skeleton)
-_STUB_AFTER_TURNS = 5       # Stage 2 → Stage 3 (stub)
+_SKELETON_AFTER_TURNS = 2  # Stage 1 → Stage 2 (skeleton)
+_STUB_AFTER_TURNS = 5  # Stage 2 → Stage 3 (stub)
 _TURN_TAG_RE = _re.compile(r"__TURN_(\d+)__")
-
 
 
 @dataclass
@@ -127,7 +129,9 @@ class ConversationManager:
             _stub_old_page_views_inplace(self.messages, turn)
         if not self.skip_zoom_truncation:
             _stub_old_zoom_results_inplace(
-                self.messages, turn, protect_last_msg=True,
+                self.messages,
+                turn,
+                protect_last_msg=True,
             )
         self._trim_if_needed()
 
@@ -146,7 +150,7 @@ class ConversationManager:
             content = msg.get("content")
             if not isinstance(content, list):
                 continue
-            for j, block in enumerate(content):
+            for _j, block in enumerate(content):
                 if (
                     block.get("type") == "tool_result"
                     and isinstance(block.get("content"), str)
@@ -160,17 +164,16 @@ class ConversationManager:
                         turn_match = _TURN_TAG_RE.search(
                             text[start:end],
                         )
-                        turn_line = (
-                            turn_match.group(0) + "\n"
-                            if turn_match else ""
-                        )
+                        turn_line = turn_match.group(0) + "\n" if turn_match else ""
                         block["content"] = (
                             text[:start]
-                            + _PAGE_VIEW_START + "\n"
+                            + _PAGE_VIEW_START
+                            + "\n"
                             + turn_line
-                            + filtered_content + "\n"
+                            + filtered_content
+                            + "\n"
                             + _PAGE_VIEW_END
-                            + text[end + len(_PAGE_VIEW_END):]
+                            + text[end + len(_PAGE_VIEW_END) :]
                         )
                     return
 
@@ -186,7 +189,7 @@ class ConversationManager:
         task_description: str,
         model: str,
         *,
-        llm_config: "LLMConfig | None" = None,
+        llm_config: LLMConfig | None = None,
     ) -> dict[str, Any] | None:
         """Compress older exploration messages into a sequential summary.
 
@@ -213,9 +216,7 @@ class ConversationManager:
 
         # Compressible window starts after the last summary (or after
         # message 0 if no summaries exist).
-        compress_start = (
-            last_summary_idx + 1 if last_summary_idx >= 0 else 1
-        )
+        compress_start = last_summary_idx + 1 if last_summary_idx >= 0 else 1
 
         # Preserve the last 5 interactions (10 messages).
         # Walk backwards to find 5 complete assistant+user pairs.
@@ -225,7 +226,8 @@ class ConversationManager:
         if recent_start <= compress_start:
             _logger.debug(
                 "Compression skipped: recent window (%d) <= compress start (%d)",
-                recent_start, compress_start,
+                recent_start,
+                compress_start,
             )
             return None
 
@@ -262,19 +264,14 @@ class ConversationManager:
                     protected_indices.add(i - 1)
                 break  # Only the latest pair
 
-        protected_msgs = [
-            compressible[i] for i in sorted(protected_indices)
-        ]
-        summarizable = [
-            msg for i, msg in enumerate(compressible)
-            if i not in protected_indices
-        ]
+        protected_msgs = [compressible[i] for i in sorted(protected_indices)]
+        summarizable = [msg for i, msg in enumerate(compressible) if i not in protected_indices]
 
         if len(summarizable) < 4:
             _logger.debug(
-                "Compression skipped: only %d summarizable messages "
-                "(after protecting %d)",
-                len(summarizable), len(protected_msgs),
+                "Compression skipped: only %d summarizable messages (after protecting %d)",
+                len(summarizable),
+                len(protected_msgs),
             )
             return None
 
@@ -291,7 +288,10 @@ class ConversationManager:
         # ── Run the summarizer ───────────────────────────────────
         _logger.info(
             "Compressing turns %d-%d (%d messages, ~%d tokens)",
-            start_turn, end_turn, len(summarizable), summarizable_token_est,
+            start_turn,
+            end_turn,
+            len(summarizable),
+            summarizable_token_est,
         )
 
         summary = await run_summarizer(
@@ -308,16 +308,13 @@ class ConversationManager:
                 f"[Context compressed — earlier exploration "
                 f"(turns {start_turn}-{end_turn}) condensed below. "
                 f"Your findings are preserved. Re-inspect any page "
-                f'state with show_page(page) or '
+                f"state with show_page(page) or "
                 f'zoom_section(page, "id").]'
             ),
         }
         summary_msg = {
             "role": "user",
-            "content": (
-                f"[EXPLORATION SUMMARY — "
-                f"Turns {start_turn}-{end_turn}]\n\n{summary}"
-            ),
+            "content": (f"[EXPLORATION SUMMARY — Turns {start_turn}-{end_turn}]\n\n{summary}"),
         }
 
         self.messages = (
@@ -340,9 +337,10 @@ class ConversationManager:
         }
 
         _logger.info(
-            "Compression complete: %d messages → summary "
-            "(~%d→~%d tokens est.)",
-            len(compressible), compressible_token_est, new_token_est,
+            "Compression complete: %d messages → summary (~%d→~%d tokens est.)",
+            len(compressible),
+            compressible_token_est,
+            new_token_est,
         )
 
         return meta
@@ -365,8 +363,7 @@ class ConversationManager:
 _DEFAULT_CONTEXT_WINDOW = 128_000
 
 _MODEL_DB_URL = (
-    "https://raw.githubusercontent.com/BerriAI/litellm/"
-    "main/model_prices_and_context_window.json"
+    "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
 )
 
 # Module-level cache — loaded once, reused for the lifetime of
@@ -395,6 +392,7 @@ def _load_model_db() -> dict:
     # 1. Try fetching from GitHub (with short timeout).
     try:
         import urllib.request
+
         req = urllib.request.Request(
             _MODEL_DB_URL,
             headers={"User-Agent": "scout-agent/1.0"},
@@ -406,7 +404,8 @@ def _load_model_db() -> dict:
             # Update local cache for offline use.
             try:
                 cache_path.write_text(
-                    json.dumps(data), encoding="utf-8",
+                    json.dumps(data),
+                    encoding="utf-8",
                 )
             except OSError:
                 pass
@@ -436,8 +435,7 @@ def _load_model_db() -> dict:
 
     # 3. All sources failed.
     _logger.warning(
-        "Could not load model database — using default "
-        "context window (%d) for all models",
+        "Could not load model database — using default context window (%d) for all models",
         _DEFAULT_CONTEXT_WINDOW,
     )
     _model_db = {}
@@ -457,8 +455,16 @@ def _lookup_model_db(name: str) -> int | None:
     # Build candidate keys to try.
     candidates = [name]
 
-    for prefix in ("anthropic/", "openai/", "google/", "mistral/",
-                    "groq/", "cohere/", "bedrock/", "azure/"):
+    for prefix in (
+        "anthropic/",
+        "openai/",
+        "google/",
+        "mistral/",
+        "groq/",
+        "cohere/",
+        "bedrock/",
+        "azure/",
+    ):
         candidates.append(prefix + name)
 
     # Strip date suffixes (e.g., -20250514).
@@ -493,9 +499,9 @@ def _get_context_window(model: str) -> int:
         return window
 
     _logger.debug(
-        "Could not determine context window for model '%s' — "
-        "using default %d",
-        model, _DEFAULT_CONTEXT_WINDOW,
+        "Could not determine context window for model '%s' — using default %d",
+        model,
+        _DEFAULT_CONTEXT_WINDOW,
     )
     return _DEFAULT_CONTEXT_WINDOW
 
@@ -516,23 +522,23 @@ def _get_context_window(model: str) -> int:
 # Models NOT in this dict get a fraction from ``_classify_model``.
 _TRIGGER_OVERRIDES: dict[str, float] = {
     # Anthropic — strong long-context.
-    "claude-haiku-4-5":    0.65,   # smallest Claude, trigger earlier
-    "claude-sonnet-4":     0.75,
-    "claude-sonnet-4-5":   0.75,
-    "claude-sonnet-4-6":   0.75,
-    "claude-opus-4":       0.80,   # best long-context model
-    "claude-opus-4-5":     0.80,
-    "claude-opus-4-6":     0.80,
+    "claude-haiku-4-5": 0.65,  # smallest Claude, trigger earlier
+    "claude-sonnet-4": 0.75,
+    "claude-sonnet-4-5": 0.75,
+    "claude-sonnet-4-6": 0.75,
+    "claude-opus-4": 0.80,  # best long-context model
+    "claude-opus-4-5": 0.80,
+    "claude-opus-4-6": 0.80,
     # OpenAI — observed degradation in traces.
-    "gpt-4o":              0.40,
-    "gpt-4o-mini":         0.20,   # degrades very early (~18K in traces)
-    "gpt-4.1":             0.20,
-    "gpt-4.1-mini":        0.10,   # small model, large window
-    "gpt-4.1-nano":        0.06,   # smallest model, largest window
-    "o1":                  0.50,
-    "o3":                  0.50,
-    "o3-mini":             0.30,
-    "o4-mini":             0.30,
+    "gpt-4o": 0.40,
+    "gpt-4o-mini": 0.20,  # degrades very early (~18K in traces)
+    "gpt-4.1": 0.20,
+    "gpt-4.1-mini": 0.10,  # small model, large window
+    "gpt-4.1-nano": 0.06,  # smallest model, largest window
+    "o1": 0.50,
+    "o3": 0.50,
+    "o3-mini": 0.30,
+    "o4-mini": 0.30,
 }
 
 
@@ -718,16 +724,12 @@ def _is_tool_result_message(msg: dict) -> bool:
 # ═══════════════════════════════════════════════════════════════
 
 # Regex to extract the header line:  === Page State #N | URL ===
-_PAGE_HEADER_RE = _re.compile(
-    r"(=== Page State #\d+\s*\|.*?===)"
-)
+_PAGE_HEADER_RE = _re.compile(r"(=== Page State #\d+\s*\|.*?===)")
 
 # Regex to extract kept section IDs from filtered output.
 # Matches lines like:  --- [section-id] role (N interactive) ---
 # followed by actual content (not "[omitted]").
-_SECTION_HEADER_RE = _re.compile(
-    r"--- \[([^\]]+)\] .+? ---"
-)
+_SECTION_HEADER_RE = _re.compile(r"--- \[([^\]]+)\] .+? ---")
 
 
 def _get_kept_section_ids(page_view: str) -> list[str]:
@@ -812,7 +814,6 @@ def _build_skeleton_from_filtered(page_view: str) -> str | None:
     page views should skip skeleton and go directly to stub).
     """
     from .show_page_context import (
-        _SECTION_META_END,
         _SECTION_META_START,
         parse_section_meta,
     )
@@ -845,10 +846,7 @@ def _build_skeleton_from_filtered(page_view: str) -> str | None:
     blocks: list[str] = []
     for m in meta_list:
         role = m.role or "content"
-        hdr = (
-            f"--- [{m.section_id}] {role} "
-            f"({m.interactive_count} interactive) ---"
-        )
+        hdr = f"--- [{m.section_id}] {role} ({m.interactive_count} interactive) ---"
         if m.section_id in kept_content:
             blocks.append(f"{hdr}\n{kept_content[m.section_id]}")
         else:
@@ -860,10 +858,7 @@ def _build_skeleton_from_filtered(page_view: str) -> str | None:
             i_part = ""
             if m.interactive_labels:
                 i_part = f" | {', '.join(m.interactive_labels)}"
-            preview = (
-                f'[preview: "{text}" '
-                f"| {m.char_count} chars{i_part}]"
-            )
+            preview = f'[preview: "{text}" | {m.char_count} chars{i_part}]'
             blocks.append(f"{hdr}\n{preview}")
 
     body = "\n\n".join(blocks)
@@ -893,10 +888,7 @@ def _stub_old_page_views_inplace(
         if not isinstance(content, list):
             continue
         for block in content:
-            if (
-                block.get("type") != "tool_result"
-                or not isinstance(block.get("content"), str)
-            ):
+            if block.get("type") != "tool_result" or not isinstance(block.get("content"), str):
                 continue
             text: str = block["content"]
             if _PAGE_VIEW_START not in text or _PAGE_VIEW_END not in text:
@@ -930,10 +922,12 @@ def _stub_old_page_views_inplace(
                     stub = _build_page_view_stub(page_view)
                     block["content"] = (
                         text[:start_pos]
-                        + _PAGE_VIEW_START + "\n"
-                        + stub + "\n"
+                        + _PAGE_VIEW_START
+                        + "\n"
+                        + stub
+                        + "\n"
                         + _PAGE_VIEW_END
-                        + text[end_pos + len(_PAGE_VIEW_END):]
+                        + text[end_pos + len(_PAGE_VIEW_END) :]
                     )
                 # else: still Stage 2, leave as-is.
                 continue
@@ -949,10 +943,12 @@ def _stub_old_page_views_inplace(
                 stub = _build_page_view_stub(page_view)
                 block["content"] = (
                     text[:start_pos]
-                    + _PAGE_VIEW_START + "\n"
-                    + stub + "\n"
+                    + _PAGE_VIEW_START
+                    + "\n"
+                    + stub
+                    + "\n"
                     + _PAGE_VIEW_END
-                    + text[end_pos + len(_PAGE_VIEW_END):]
+                    + text[end_pos + len(_PAGE_VIEW_END) :]
                 )
             elif age >= _SKELETON_AFTER_TURNS:
                 # Stage 1 → Stage 2.
@@ -964,17 +960,16 @@ def _stub_old_page_views_inplace(
                 skeleton = _build_skeleton_from_filtered(page_view)
                 if skeleton is not None:
                     # Preserve the turn tag.
-                    turn_line = (
-                        turn_match.group(0) + "\n"
-                        if turn_match else ""
-                    )
+                    turn_line = turn_match.group(0) + "\n" if turn_match else ""
                     block["content"] = (
                         text[:start_pos]
-                        + _PAGE_VIEW_START + "\n"
+                        + _PAGE_VIEW_START
+                        + "\n"
                         + turn_line
-                        + skeleton + "\n"
+                        + skeleton
+                        + "\n"
                         + _PAGE_VIEW_END
-                        + text[end_pos + len(_PAGE_VIEW_END):]
+                        + text[end_pos + len(_PAGE_VIEW_END) :]
                     )
                 # else: no meta block → leave as Stage 1 until stub time.
 
@@ -985,9 +980,7 @@ def _stub_old_page_views_inplace(
 
 # Regex to parse the zoom start marker and extract section IDs.
 # Format: __ZOOM_START__|section-id-1, section-id-2|
-_ZOOM_START_RE = _re.compile(
-    r"__ZOOM_START__\|([^|]*)\|"
-)
+_ZOOM_START_RE = _re.compile(r"__ZOOM_START__\|([^|]*)\|")
 
 
 def _stub_old_zoom_results_inplace(
@@ -1025,10 +1018,7 @@ def _stub_old_zoom_results_inplace(
         if not isinstance(content, list):
             continue
         for block in content:
-            if (
-                block.get("type") != "tool_result"
-                or not isinstance(block.get("content"), str)
-            ):
+            if block.get("type") != "tool_result" or not isinstance(block.get("content"), str):
                 continue
             text: str = block["content"]
             if _ZOOM_START not in text or _ZOOM_END not in text:
@@ -1049,7 +1039,7 @@ def _stub_old_zoom_results_inplace(
                 search_from = end + len(_ZOOM_END)
 
             for start_pos, end_pos in reversed(positions):
-                zoom_block = text[start_pos:end_pos + len(_ZOOM_END)]
+                zoom_block = text[start_pos : end_pos + len(_ZOOM_END)]
 
                 # Already stubbed — skip.
                 if "Zoom stub" in zoom_block:
@@ -1068,24 +1058,23 @@ def _stub_old_zoom_results_inplace(
 
                 # Count lines in the zoom output for the stub.
                 first_nl = text.find("\n", start_pos)
-                zoom_content = (
-                    text[first_nl + 1:end_pos] if first_nl >= 0 else ""
-                )
+                zoom_content = text[first_nl + 1 : end_pos] if first_nl >= 0 else ""
                 line_count = zoom_content.count("\n") + 1
 
                 stub = (
                     f"[Zoom stub for sections: {section_ids} — "
                     f"{line_count} lines condensed. "
-                    f"Call zoom_section(page, \"section-id\") "
+                    f'Call zoom_section(page, "section-id") '
                     f"to re-inspect.]"
                 )
 
                 block["content"] = (
                     text[:start_pos]
                     + f"{_ZOOM_START}|{section_ids}|\n"
-                    + stub + "\n"
+                    + stub
+                    + "\n"
                     + _ZOOM_END
-                    + text[end_pos + len(_ZOOM_END):]
+                    + text[end_pos + len(_ZOOM_END) :]
                 )
                 # Re-read text after modification for next iteration.
                 text = block["content"]

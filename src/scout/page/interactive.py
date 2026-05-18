@@ -24,7 +24,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Data Structures
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -38,21 +37,34 @@ class InteractiveElement:
     providing a reliable bridge between browser state and any HTML parser.
     """
 
-    iid: int                          # matches data-iid="N" in the DOM
-    tag: str                          # "a", "button", "input", …
-    attributes: dict[str, str]        # relevant attrs (href, name, role, …)
-    text: str                         # visible text content (≤ 500 chars)
-    selector: str                     # CSS selector to re-locate the element
-    bounding_box: dict[str, float]    # {x, y, width, height}
+    iid: int  # matches data-iid="N" in the DOM
+    tag: str  # "a", "button", "input", …
+    attributes: dict[str, str]  # relevant attrs (href, name, role, …)
+    text: str  # visible text content (≤ 500 chars)
+    selector: str  # CSS selector to re-locate the element
+    bounding_box: dict[str, float]  # {x, y, width, height}
     detected_by: list[str] = field(default_factory=list)
 
 
 # Roles the accessibility-tree layer (4) considers interactive.
 _AX_INTERACTIVE_ROLES = frozenset(
     {
-        "button", "link", "tab", "menuitem", "option", "checkbox", "radio",
-        "slider", "switch", "combobox", "searchbox", "textbox", "treeitem",
-        "menuitemcheckbox", "menuitemradio", "spinbutton",
+        "button",
+        "link",
+        "tab",
+        "menuitem",
+        "option",
+        "checkbox",
+        "radio",
+        "slider",
+        "switch",
+        "combobox",
+        "searchbox",
+        "textbox",
+        "treeitem",
+        "menuitemcheckbox",
+        "menuitemradio",
+        "spinbutton",
     }
 )
 
@@ -497,9 +509,7 @@ async def detect_interactive_elements(
     next_iid: int = js_result["nextIid"]
 
     # ── 2. Layer 4 — accessibility tree catch-all ───────────────────
-    ax_elements, next_iid = await _detect_via_accessibility_tree(
-        page, next_iid
-    )
+    ax_elements, next_iid = await _detect_via_accessibility_tree(page, next_iid)
     raw_elements.extend(ax_elements)
 
     # ── 3. Remove redundant children of interactive parents ─────────
@@ -508,12 +518,9 @@ async def detect_interactive_elements(
     # interactive ancestor are not independently actionable.  Strip
     # their data-iid and drop them from results.
     layer_info = {
-        str(r["iid"]): {"detected_by": r["detected_by"], "tag": r["tag"]}
-        for r in raw_elements
+        str(r["iid"]): {"detected_by": r["detected_by"], "tag": r["tag"]} for r in raw_elements
     }
-    removed_iids = await page.evaluate(
-        _CLEANUP_REDUNDANT_JS, layer_info, isolated_context=True
-    )
+    removed_iids = await page.evaluate(_CLEANUP_REDUNDANT_JS, layer_info, isolated_context=True)
     removed_set = set(removed_iids) if removed_iids else set()
 
     # ── 4. Build typed result list ──────────────────────────────────
@@ -552,8 +559,19 @@ def cleanup_markers(html: str) -> str:
 # evaluate_all() to process all matched elements in a single CDP call
 # per role (14 calls total instead of 500+).
 _ROLES_TO_SCAN = [
-    "button", "link", "tab", "menuitem", "option", "checkbox", "radio",
-    "slider", "switch", "combobox", "searchbox", "textbox", "treeitem",
+    "button",
+    "link",
+    "tab",
+    "menuitem",
+    "option",
+    "checkbox",
+    "radio",
+    "slider",
+    "switch",
+    "combobox",
+    "searchbox",
+    "textbox",
+    "treeitem",
     "spinbutton",
 ]
 

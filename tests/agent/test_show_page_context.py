@@ -10,7 +10,6 @@ from scout.agent.show_page_context import (
     MAX_SECTIONS_PER_ELEMENT,
     NEIGHBOR_RADIUS,
     SIMILARITY_THRESHOLD,
-    ElementMatchResult,
     ShowPageState,
     _word_boundary_match,
     build_filtered_output,
@@ -22,13 +21,12 @@ from scout.agent.show_page_context import (
 )
 from scout.page.converter import RenderedInteractiveElement
 
-
 # ---------------------------------------------------------------------------
 # page_similarity
 # ---------------------------------------------------------------------------
 
-class TestPageSimilarity:
 
+class TestPageSimilarity:
     def test_identical_texts(self):
         text = "the quick brown fox jumps over the lazy dog"
         assert page_similarity(text, text) == 1.0
@@ -64,6 +62,7 @@ class TestPageSimilarity:
         words = "the quick brown fox jumps over the lazy dog".split()
         original = " ".join(words)
         import random
+
         rng = random.Random(42)
         shuffled_words = words[:]
         rng.shuffle(shuffled_words)
@@ -81,8 +80,8 @@ class TestPageSimilarity:
 # ShowPageState
 # ---------------------------------------------------------------------------
 
-class TestShowPageState:
 
+class TestShowPageState:
     def test_first_call_forces_full_analysis(self):
         state = ShowPageState()
         assert state.should_force_full_analysis("any text") is True
@@ -159,6 +158,7 @@ class TestShowPageState:
 # Helper to build mock RenderedInteractiveElement
 # ---------------------------------------------------------------------------
 
+
 def _make_element(
     *,
     tag: str = "button",
@@ -182,8 +182,8 @@ def _make_element(
 # _word_boundary_match
 # ---------------------------------------------------------------------------
 
-class TestWordBoundaryMatch:
 
+class TestWordBoundaryMatch:
     def test_match_surrounded_by_spaces(self):
         assert _word_boundary_match("search", "I need to search for") is True
 
@@ -210,8 +210,8 @@ class TestWordBoundaryMatch:
 # score_element
 # ---------------------------------------------------------------------------
 
-class TestScoreElement:
 
+class TestScoreElement:
     def test_full_tag_match_short_circuits(self):
         """Agent copies the whole tag → score 2.0, immediate return."""
         tag_str = '<button data-testid="category-bar-filter-button" type="button">'
@@ -233,7 +233,7 @@ class TestScoreElement:
             attributes={"type": "text"},
             full_tag_str=tag_str,
         )
-        reasoning = f'I see {tag_str}'
+        reasoning = f"I see {tag_str}"
         score, attrs = score_element(el, reasoning)
         # Should fall through to per-attribute scoring, not 2.0
         assert score < 2.0
@@ -341,8 +341,8 @@ class TestScoreElement:
 # match_elements_to_reasoning
 # ---------------------------------------------------------------------------
 
-class TestMatchElementsToReasoning:
 
+class TestMatchElementsToReasoning:
     def test_signature_grouping(self):
         """Same structural signature across sections groups correctly."""
         el1 = _make_element(
@@ -409,8 +409,8 @@ class TestMatchElementsToReasoning:
 # get_sections_by_id
 # ---------------------------------------------------------------------------
 
-class TestGetSectionsById:
 
+class TestGetSectionsById:
     def test_finds_mentioned_ids(self):
         reasoning = "zoom into [item-1-div-wohnung-in] and [header-unterk-nfte]"
         ids = ["item-1-div-wohnung-in", "header-unterk-nfte", "footer-links"]
@@ -436,8 +436,8 @@ class TestGetSectionsById:
 # get_referenced_sections
 # ---------------------------------------------------------------------------
 
-class TestGetReferencedSections:
 
+class TestGetReferencedSections:
     def test_mechanism_1_only(self):
         """Section IDs mentioned directly — no element matching needed."""
         sections = [
@@ -491,8 +491,8 @@ class TestGetReferencedSections:
         ]
         reasoning = 'I need item-1-div. The data-testid="next-page-button" for paging.'
         referenced, matches = get_referenced_sections(reasoning, sections)
-        assert "item-1-div" in referenced      # via mechanism 1
-        assert "pagination-div" in referenced   # via mechanism 2
+        assert "item-1-div" in referenced  # via mechanism 1
+        assert "pagination-div" in referenced  # via mechanism 2
 
     def test_constants_values(self):
         assert MATCH_THRESHOLD == 0.5
@@ -506,13 +506,13 @@ class TestGetReferencedSections:
 # build_filtered_output
 # ---------------------------------------------------------------------------
 
+
 def _make_sections(n: int) -> list[tuple[str, str]]:
     """Helper: create N sections with predictable IDs and content."""
     return [(f"section-{i}", f"Content of section {i}") for i in range(n)]
 
 
 class TestBuildFilteredOutput:
-
     def test_neighbor_radius_constant(self):
         assert NEIGHBOR_RADIUS == 3
 

@@ -21,17 +21,16 @@ Spec reference: docs/specific/AUTO_FIX_ALGORITHM.md §6
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 from urllib.parse import urlparse
 
 from scout.autofix.antibot import detect_antibot
 from scout.autofix.content_check import detect_non_content
 from scout.autofix.types import (
-    RegenerateMode,
-    PageVerificationResult,
     PageSignals,
+    PageVerificationResult,
+    RegenerateMode,
 )
-
 
 # ── Public API ───────────────────────────────────────────────
 
@@ -110,12 +109,8 @@ def check_page_gate(
     if not results:
         return False, "No page verification results available"
 
-    real_count = sum(
-        1 for r in results if r == PageVerificationResult.REAL_PAGE
-    )
-    has_antibot = any(
-        r == PageVerificationResult.ANTI_BOT for r in results
-    )
+    real_count = sum(1 for r in results if r == PageVerificationResult.REAL_PAGE)
+    has_antibot = any(r == PageVerificationResult.ANTI_BOT for r in results)
     total = len(results)
 
     # §6: ANTI_BOT blocks regeneration in ALL modes, even eager.
@@ -139,10 +134,7 @@ def check_page_gate(
     # Eager mode: at least 2/3 REAL_PAGE (no ANTI_BOT, already checked).
     required = max(2, (total * 2 + 2) // 3)  # ceil(2/3 * total)
     if real_count >= required:
-        return True, (
-            f"Page verified real ({real_count}/{total} attempts, "
-            "eager mode)"
-        )
+        return True, (f"Page verified real ({real_count}/{total} attempts, eager mode)")
     taint = _describe_taint(results)
     return False, (
         f"Insufficient page verification ({real_count}/{total} REAL_PAGE, "
@@ -194,7 +186,9 @@ def _domains_match(page_url: str, target_url: str) -> bool:
     if page_port is not None or target_port is not None:
         # At least one URL has an explicit port — resolve and compare.
         resolved_page = page_port if page_port is not None else _default_port(page_parsed.scheme)
-        resolved_target = target_port if target_port is not None else _default_port(target_parsed.scheme)
+        resolved_target = (
+            target_port if target_port is not None else _default_port(target_parsed.scheme)
+        )
         if resolved_page != resolved_target:
             return False
 

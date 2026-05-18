@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import pytest
 
-from scout.autofix.page_verifier import verify_page, check_page_gate
+from scout.autofix.page_verifier import check_page_gate, verify_page
 from scout.autofix.types import (
-    RegenerateMode,
     PageSignals,
     PageVerificationResult,
+    RegenerateMode,
 )
 
 # Realistic page content that won't trigger anti-bot Tier 3 structural checks.
@@ -236,10 +236,10 @@ class TestVerifyPageAntiBot:
             http_status=200,
             page_url="https://example.com",
             content=(
-                '<html><head><title>Just a moment...</title></head>'
+                "<html><head><title>Just a moment...</title></head>"
                 '<body><form id="challenge-form">'
                 '<input name="__cf_chl_f_tk" value="abc">'
-                '</form></body></html>'
+                "</form></body></html>"
             ),
         )
         result = verify_page(signals, "https://example.com")
@@ -312,7 +312,7 @@ class TestVerifyPagePriority:
         signals = PageSignals(
             http_status=503,
             page_url="https://example.com",
-            content='<html><head><title>Just a moment...</title></head></html>',
+            content="<html><head><title>Just a moment...</title></head></html>",
         )
         result = verify_page(signals, "https://example.com")
         assert result == PageVerificationResult.SERVER_ERROR
@@ -330,7 +330,7 @@ class TestVerifyPagePriority:
         signals = PageSignals(
             http_status=200,
             page_url="https://cloudflare.com/challenge",
-            content='<html><head><title>Just a moment...</title></head></html>',
+            content="<html><head><title>Just a moment...</title></head></html>",
         )
         result = verify_page(signals, "https://example.com")
         assert result == PageVerificationResult.REDIRECTED

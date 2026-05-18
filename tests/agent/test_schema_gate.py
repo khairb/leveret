@@ -11,13 +11,11 @@ This mirrors the exact code path in loop.py lines 351-373.
 
 import json
 
-import pytest
-
 from scout.schema.compiler import CompiledSchema, compile_schema
 from scout.schema.types import Field, List
 
-
 # ── Helpers ──────────────────────────────────────────────────────
+
 
 def _simulate_schema_gate(
     compiled_schema: CompiledSchema,
@@ -44,6 +42,7 @@ def _simulate_schema_gate(
 
 # ── Happy paths ──────────────────────────────────────────────────
 
+
 class TestSchemaGatePass:
     """Data that matches the schema passes the gate."""
 
@@ -55,15 +54,17 @@ class TestSchemaGatePass:
         assert msg == ""
 
     def test_complex_schema(self):
-        cs = compile_schema(List({
-            "title": Field(str, min_length=1),
-            "price": Field(float, min=0),
-            "currency": Field(str, enum=["USD", "EUR"]),
-        }, min_items=5))
-        data = [
-            {"title": f"P{i}", "price": float(i), "currency": "USD"}
-            for i in range(10)
-        ]
+        cs = compile_schema(
+            List(
+                {
+                    "title": Field(str, min_length=1),
+                    "price": Field(float, min=0),
+                    "currency": Field(str, enum=["USD", "EUR"]),
+                },
+                min_items=5,
+            )
+        )
+        data = [{"title": f"P{i}", "price": float(i), "currency": "USD"} for i in range(10)]
         valid, msg = _simulate_schema_gate(cs, json.dumps(data))
         assert valid is True
 
@@ -81,6 +82,7 @@ class TestSchemaGatePass:
 
 
 # ── Schema failures — these skip the LLM validator ───────────────
+
 
 class TestSchemaGateFail:
     """Data that violates the schema is rejected immediately."""
@@ -150,6 +152,7 @@ class TestSchemaGateFail:
 
 # ── Error message quality (agent perspective) ─────────────────────
 
+
 class TestSchemaGateErrorQuality:
     """The error messages from schema rejection should be clear enough
     for an AI agent to understand and fix the code."""
@@ -171,11 +174,15 @@ class TestSchemaGateErrorQuality:
         assert "20" in msg  # count of affected items
 
     def test_multiple_error_types_all_shown(self):
-        cs = compile_schema([{
-            "name": str,
-            "price": float,
-            "count": int,
-        }])
+        cs = compile_schema(
+            [
+                {
+                    "name": str,
+                    "price": float,
+                    "count": int,
+                }
+            ]
+        )
         data = [{"name": 42, "price": "free", "count": "ten"}]
         valid, msg = _simulate_schema_gate(cs, json.dumps(data))
         assert valid is False
@@ -196,20 +203,23 @@ class TestSchemaGateErrorQuality:
 
 # ── Real-world agent mistake scenarios ────────────────────────────
 
+
 class TestRealWorldAgentMistakes:
     """These test scenarios that actually happen when an LLM writes
     scraping functions — the most common extraction mistakes."""
 
     def test_prices_extracted_as_strings_with_dollar_signs(self):
         """Agent uses .text_content() and gets '$12.99' instead of 12.99."""
-        cs = compile_schema(List({
-            "title": str,
-            "price": Field(float, min=0),
-        }, min_items=10))
-        data = [
-            {"title": f"Product {i}", "price": f"${i * 10}.99"}
-            for i in range(20)
-        ]
+        cs = compile_schema(
+            List(
+                {
+                    "title": str,
+                    "price": Field(float, min=0),
+                },
+                min_items=10,
+            )
+        )
+        data = [{"title": f"Product {i}", "price": f"${i * 10}.99"} for i in range(20)]
         valid, msg = _simulate_schema_gate(cs, json.dumps(data))
         assert valid is False
         assert "expected float, got string" in msg
@@ -255,10 +265,14 @@ class TestRealWorldAgentMistakes:
 
     def test_nested_object_returned_as_flat(self):
         """Agent flattened a nested structure."""
-        cs = compile_schema([{
-            "name": str,
-            "address": {"street": str, "city": str},
-        }])
+        cs = compile_schema(
+            [
+                {
+                    "name": str,
+                    "address": {"street": str, "city": str},
+                }
+            ]
+        )
         data = [{"name": "Alice", "address": "123 Main St, NYC"}]
         valid, msg = _simulate_schema_gate(cs, json.dumps(data))
         assert valid is False
@@ -282,11 +296,16 @@ class TestRealWorldAgentMistakes:
 
     def test_mixed_errors_across_many_items(self):
         """Multiple error types across many items — tests grouping."""
-        cs = compile_schema(List({
-            "title": Field(str, min_length=1),
-            "price": Field(float, min=0),
-            "rating": Field(int, min=1, max=5),
-        }, min_items=10))
+        cs = compile_schema(
+            List(
+                {
+                    "title": Field(str, min_length=1),
+                    "price": Field(float, min=0),
+                    "rating": Field(int, min=1, max=5),
+                },
+                min_items=10,
+            )
+        )
         data = []
         for i in range(15):
             item = {"title": f"P{i}", "price": float(i), "rating": i % 6}
@@ -303,20 +322,34 @@ class TestRealWorldAgentMistakes:
 
     def test_deeply_nested_error_path_is_readable(self):
         """Deeply nested paths should be clear, not confusing."""
-        cs = compile_schema([{
-            "categories": [{
-                "products": [{
-                    "variants": [{"size": Field(str, enum=["S", "M", "L"])}],
-                }],
-            }],
-        }])
-        data = [{
-            "categories": [{
-                "products": [{
-                    "variants": [{"size": "XXL"}],
-                }],
-            }],
-        }]
+        cs = compile_schema(
+            [
+                {
+                    "categories": [
+                        {
+                            "products": [
+                                {
+                                    "variants": [{"size": Field(str, enum=["S", "M", "L"])}],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        )
+        data = [
+            {
+                "categories": [
+                    {
+                        "products": [
+                            {
+                                "variants": [{"size": "XXL"}],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
         valid, msg = _simulate_schema_gate(cs, json.dumps(data))
         assert valid is False
         assert "variants" in msg
@@ -325,10 +358,14 @@ class TestRealWorldAgentMistakes:
 
     def test_optional_field_with_wrong_type_not_null(self):
         """Optional field present with wrong type — not just null."""
-        cs = compile_schema([{
-            "name": str,
-            "rating": Field(int, min=1, max=5, optional=True),
-        }])
+        cs = compile_schema(
+            [
+                {
+                    "name": str,
+                    "rating": Field(int, min=1, max=5, optional=True),
+                }
+            ]
+        )
         data = [{"name": "Item", "rating": "five stars"}]
         valid, msg = _simulate_schema_gate(cs, json.dumps(data))
         assert valid is False
@@ -336,14 +373,19 @@ class TestRealWorldAgentMistakes:
 
     def test_correct_complex_data_passes(self):
         """A fully correct complex dataset passes cleanly."""
-        cs = compile_schema(List({
-            "title": Field(str, min_length=1),
-            "price": Field(float, min=0),
-            "currency": Field(str, enum=["USD", "EUR", "GBP"]),
-            "rating": Field(int, min=1, max=5, optional=True),
-            "in_stock": bool,
-            "tags": [str],
-        }, min_items=10))
+        cs = compile_schema(
+            List(
+                {
+                    "title": Field(str, min_length=1),
+                    "price": Field(float, min=0),
+                    "currency": Field(str, enum=["USD", "EUR", "GBP"]),
+                    "rating": Field(int, min=1, max=5, optional=True),
+                    "in_stock": bool,
+                    "tags": [str],
+                },
+                min_items=10,
+            )
+        )
         data = [
             {
                 "title": f"Product {i}",

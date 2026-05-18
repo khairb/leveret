@@ -66,23 +66,15 @@ def _extract_field_info(root: Node, prefix: str = "") -> list[str]:
 
             elif isinstance(child, ObjectNode):
                 # Nested object — recurse with dot prefix.
-                results.extend(
-                    _extract_field_info(child, prefix=f"{full_name}.")
-                )
+                results.extend(_extract_field_info(child, prefix=f"{full_name}."))
 
             elif isinstance(child, ListNode):
                 if isinstance(child.item, ObjectNode):
                     # List of objects — recurse into the item schema.
-                    results.extend(
-                        _extract_field_info(
-                            child.item, prefix=f"{full_name}[]."
-                        )
-                    )
+                    results.extend(_extract_field_info(child.item, prefix=f"{full_name}[]."))
                 elif isinstance(child.item, ScalarNode):
                     item_type = _TYPE_NAMES.get(child.item.type_, "value")
-                    results.append(
-                        f"{full_name} (list of {item_type}, {presence})"
-                    )
+                    results.append(f"{full_name} (list of {item_type}, {presence})")
                 else:
                     results.append(f"{full_name} (list, {presence})")
 

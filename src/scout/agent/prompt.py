@@ -604,17 +604,12 @@ def build_initial_user_message(
     Returns:
         The initial user message string.
     """
-    show_page_line = (
-        "The page is loaded. Call `await show_page(page)` to view its content."
-    )
+    show_page_line = "The page is loaded. Call `await show_page(page)` to view its content."
     if inputs_hint:
         show_page_line += inputs_hint
 
     parts = [
-        f"## Task\n\n{task}\n\n"
-        f"## Current Page\n\n"
-        f"**URL:** {url}\n\n"
-        f"{show_page_line}",
+        f"## Task\n\n{task}\n\n## Current Page\n\n**URL:** {url}\n\n{show_page_line}",
     ]
 
     if exploration_checklist:

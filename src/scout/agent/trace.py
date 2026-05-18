@@ -103,7 +103,8 @@ class Tracer:
 
         # Save system prompt as standalone file for trace_viewer.
         (self._run_dir / "system_prompt.txt").write_text(
-            system_prompt, encoding="utf-8",
+            system_prompt,
+            encoding="utf-8",
         )
 
         # Write initial header (stats will be rewritten in finish()).
@@ -113,7 +114,7 @@ class Tracer:
             f"- **URL**: `{url}`",
             f"- **Task**: {task}",
             f"- **Model**: `{model}`",
-            f"- **Status**: IN PROGRESS...",
+            "- **Status**: IN PROGRESS...",
             "",
             "---",
             "",
@@ -135,12 +136,15 @@ class Tracer:
         ]
         self._trace_path.write_text("\n".join(lines), encoding="utf-8")
 
-        self._add("system", {
-            "event": "session_start",
-            "url": url,
-            "task": task,
-            "model": model,
-        })
+        self._add(
+            "system",
+            {
+                "event": "session_start",
+                "url": url,
+                "task": task,
+                "model": model,
+            },
+        )
 
     def finish(self, agent_result: Any) -> Path:
         """End the session and rewrite the trace with final summary stats.
@@ -150,14 +154,17 @@ class Tracer:
         Returns:
             Path to the **run directory** containing all artifacts.
         """
-        self._add("system", {
-            "event": "session_end",
-            "success": agent_result.success,
-            "error": agent_result.error,
-            "steps_executed": agent_result.steps_executed,
-            "python_steps": agent_result.python_steps,
-            "conversation_length": agent_result.conversation_length,
-        })
+        self._add(
+            "system",
+            {
+                "event": "session_end",
+                "success": agent_result.success,
+                "error": agent_result.error,
+                "steps_executed": agent_result.steps_executed,
+                "python_steps": agent_result.python_steps,
+                "conversation_length": agent_result.conversation_length,
+            },
+        )
 
         # Rewrite the full trace with final header stats.
         self._rewrite_final_trace()
@@ -184,21 +191,27 @@ class Tracer:
         if self._run_dir:
             if raw_html:
                 (self._run_dir / "page_raw.html").write_text(
-                    raw_html, encoding="utf-8",
+                    raw_html,
+                    encoding="utf-8",
                 )
             if sanitized_html:
                 (self._run_dir / "page_sanitized.html").write_text(
-                    sanitized_html, encoding="utf-8",
+                    sanitized_html,
+                    encoding="utf-8",
                 )
             if page_view:
                 (self._run_dir / "page_view.txt").write_text(
-                    page_view, encoding="utf-8",
+                    page_view,
+                    encoding="utf-8",
                 )
 
-        self._add("system", {
-            "event": "initial_page_view",
-            "page_view": page_view,
-        })
+        self._add(
+            "system",
+            {
+                "event": "initial_page_view",
+                "page_view": page_view,
+            },
+        )
 
     def log_llm_request(
         self,
@@ -207,12 +220,15 @@ class Tracer:
     ) -> None:
         """Log the full request sent to the LLM."""
         self._turn_number += 1
-        self._add("llm_request", {
-            "turn": self._turn_number,
-            "message_count": len(messages),
-            "has_tools": tools is not None,
-            "latest_message": messages[-1] if messages else None,
-        })
+        self._add(
+            "llm_request",
+            {
+                "turn": self._turn_number,
+                "message_count": len(messages),
+                "has_tools": tools is not None,
+                "latest_message": messages[-1] if messages else None,
+            },
+        )
 
     def log_llm_response(
         self,
@@ -225,25 +241,30 @@ class Tracer:
             if b.type == "text":
                 content_blocks.append({"type": "text", "text": b.text})
             elif b.type == "tool_use":
-                content_blocks.append({
-                    "type": "tool_use",
-                    "id": b.id,
-                    "name": b.name,
-                    "input": b.input,
-                })
+                content_blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": b.id,
+                        "name": b.name,
+                        "input": b.input,
+                    }
+                )
 
-        self._add("llm_response", {
-            "turn": self._turn_number,
-            "stop_reason": response.stop_reason,
-            "content_blocks": content_blocks,
-            "duration_ms": round(duration_ms, 1),
-            "usage": {
-                "input_tokens": response.usage.input_tokens,
-                "output_tokens": response.usage.output_tokens,
-                "cache_read_input_tokens": response.usage.cache_read_input_tokens,
-                "cache_creation_input_tokens": response.usage.cache_creation_input_tokens,
+        self._add(
+            "llm_response",
+            {
+                "turn": self._turn_number,
+                "stop_reason": response.stop_reason,
+                "content_blocks": content_blocks,
+                "duration_ms": round(duration_ms, 1),
+                "usage": {
+                    "input_tokens": response.usage.input_tokens,
+                    "output_tokens": response.usage.output_tokens,
+                    "cache_read_input_tokens": response.usage.cache_read_input_tokens,
+                    "cache_creation_input_tokens": response.usage.cache_creation_input_tokens,
+                },
             },
-        })
+        )
 
     def log_tool_call(
         self,
@@ -253,12 +274,15 @@ class Tracer:
     ) -> None:
         """Log a tool call before execution."""
         self._tool_call_counter += 1
-        self._add("tool_call", {
-            "number": self._tool_call_counter,
-            "name": name,
-            "tool_use_id": tool_use_id,
-            "arguments": arguments,
-        })
+        self._add(
+            "tool_call",
+            {
+                "number": self._tool_call_counter,
+                "name": name,
+                "tool_use_id": tool_use_id,
+                "arguments": arguments,
+            },
+        )
 
     def log_tool_result(
         self,
@@ -269,13 +293,16 @@ class Tracer:
         duration_ms: float,
     ) -> None:
         """Log a tool result after execution."""
-        self._add("tool_result", {
-            "name": name,
-            "tool_use_id": tool_use_id,
-            "content": content,
-            "is_error": is_error,
-            "duration_ms": round(duration_ms, 1),
-        })
+        self._add(
+            "tool_result",
+            {
+                "name": name,
+                "tool_use_id": tool_use_id,
+                "content": content,
+                "is_error": is_error,
+                "duration_ms": round(duration_ms, 1),
+            },
+        )
 
     def log_system_event(self, message: str, **extra: Any) -> None:
         """Log a system-level event (budget warnings, nudges, errors)."""
@@ -288,20 +315,26 @@ class Tracer:
         error: str = "",
     ) -> None:
         """Log when a final script is detected and validated."""
-        self._add("system", {
-            "event": "script_extracted",
-            "valid": valid,
-            "error": error,
-            "script_length": len(script),
-            "script_preview": script[:500] + ("..." if len(script) > 500 else ""),
-        })
+        self._add(
+            "system",
+            {
+                "event": "script_extracted",
+                "valid": valid,
+                "error": error,
+                "script_length": len(script),
+                "script_preview": script[:500] + ("..." if len(script) > 500 else ""),
+            },
+        )
 
     def log_compression(self, meta: dict[str, Any]) -> None:
         """Log a history compression event."""
-        self._add("system", {
-            "event": "history_compression",
-            **meta,
-        })
+        self._add(
+            "system",
+            {
+                "event": "history_compression",
+                **meta,
+            },
+        )
 
     def log_show_page_analysis(self, log: Any) -> None:
         """Log a show_page analysis cycle.
@@ -310,10 +343,14 @@ class Tracer:
             log: A :class:`ShowPageAnalysisLog` dataclass instance.
         """
         from dataclasses import asdict
-        self._add("system", {
-            "event": "show_page_analysis",
-            **asdict(log),
-        })
+
+        self._add(
+            "system",
+            {
+                "event": "show_page_analysis",
+                **asdict(log),
+            },
+        )
 
     # ── History snapshots ─────────────────────────────────────
 
@@ -367,23 +404,31 @@ class Tracer:
                     elif btype == "tool_use":
                         code = block.get("input", {}).get("code", "")
                         bchars = len(json.dumps(block.get("input", {})))
-                        block_details.append({
-                            "type": "tool_use",
-                            "name": block.get("name", "?"),
-                            "chars": bchars,
-                            "code_chars": len(code) if code else 0,
-                        })
+                        block_details.append(
+                            {
+                                "type": "tool_use",
+                                "name": block.get("name", "?"),
+                                "chars": bchars,
+                                "code_chars": len(code) if code else 0,
+                            }
+                        )
                         char_count += bchars
                         continue
                     elif btype == "tool_result":
                         result_content = block.get("content", "")
-                        bchars = len(result_content) if isinstance(result_content, str) else len(json.dumps(result_content))
-                        block_details.append({
-                            "type": "tool_result",
-                            "tool_use_id": block.get("tool_use_id", "?"),
-                            "chars": bchars,
-                            "is_error": block.get("is_error", False),
-                        })
+                        bchars = (
+                            len(result_content)
+                            if isinstance(result_content, str)
+                            else len(json.dumps(result_content))
+                        )
+                        block_details.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": block.get("tool_use_id", "?"),
+                                "chars": bchars,
+                                "is_error": block.get("is_error", False),
+                            }
+                        )
                         char_count += bchars
                         continue
                     else:
@@ -395,16 +440,18 @@ class Tracer:
                 content_types = ["unknown"]
                 block_details = [{"type": "unknown", "chars": char_count}]
 
-            message_stats.append({
-                "index": idx,
-                "role": role,
-                "chars": char_count,
-                "estimated_tokens": char_count // 4,
-                "content_types": list(set(content_types)),
-                "block_count": len(block_details),
-                "blocks": block_details,
-                "content": content,
-            })
+            message_stats.append(
+                {
+                    "index": idx,
+                    "role": role,
+                    "chars": char_count,
+                    "estimated_tokens": char_count // 4,
+                    "content_types": list(set(content_types)),
+                    "block_count": len(block_details),
+                    "blocks": block_details,
+                    "content": content,
+                }
+            )
 
         # Aggregate LLM usage from trace entries up to this turn.
         cumulative_usage = {
@@ -421,14 +468,16 @@ class Tracer:
                 cumulative_usage["total_output_tokens"] += u.get("output_tokens", 0)
                 cumulative_usage["total_cache_read"] += u.get("cache_read_input_tokens", 0)
                 cumulative_usage["total_cache_create"] += u.get("cache_creation_input_tokens", 0)
-                per_turn_usage.append({
-                    "turn": e.data.get("turn", 0),
-                    "input_tokens": u.get("input_tokens", 0),
-                    "output_tokens": u.get("output_tokens", 0),
-                    "cache_read": u.get("cache_read_input_tokens", 0),
-                    "cache_create": u.get("cache_creation_input_tokens", 0),
-                    "duration_ms": e.data.get("duration_ms", 0),
-                })
+                per_turn_usage.append(
+                    {
+                        "turn": e.data.get("turn", 0),
+                        "input_tokens": u.get("input_tokens", 0),
+                        "output_tokens": u.get("output_tokens", 0),
+                        "cache_read": u.get("cache_read_input_tokens", 0),
+                        "cache_create": u.get("cache_creation_input_tokens", 0),
+                        "duration_ms": e.data.get("duration_ms", 0),
+                    }
+                )
 
         snapshot = {
             "turn": turn_number,
@@ -499,7 +548,9 @@ class Tracer:
                 _a(f"- **Success**: {success}")
                 if entry.data.get("error"):
                     _a(f"- **Error**: {entry.data['error']}")
-                _a(f"- **Steps**: {entry.data.get('steps_executed', 0)} total, {entry.data.get('python_steps', 0)} python")
+                _a(
+                    f"- **Steps**: {entry.data.get('steps_executed', 0)} total, {entry.data.get('python_steps', 0)} python"
+                )
                 _a(f"- **Conversation messages**: {entry.data.get('conversation_length', 0)}")
                 _a("")
 
@@ -550,7 +601,11 @@ class Tracer:
                             if btype == "tool_result":
                                 tid = block.get("tool_use_id", "?")
                                 is_err = block.get("is_error", False)
-                                _a(f"**Tool result** `{tid}`" + (" (ERROR)" if is_err else "") + ":")
+                                _a(
+                                    f"**Tool result** `{tid}`"
+                                    + (" (ERROR)" if is_err else "")
+                                    + ":"
+                                )
                                 _a("")
                                 _a("````")
                                 _a(str(block.get("content", "")))
@@ -574,7 +629,9 @@ class Tracer:
             _a("")
             _a(f"- **Stop reason**: `{stop}`")
             _a(f"- **Duration**: {dur:.0f}ms")
-            _a(f"- **Tokens**: {usage.get('input_tokens', 0):,} in, {usage.get('output_tokens', 0):,} out")
+            _a(
+                f"- **Tokens**: {usage.get('input_tokens', 0):,} in, {usage.get('output_tokens', 0):,} out"
+            )
             _a("")
 
             for block in entry.data.get("content_blocks", []):
@@ -649,7 +706,9 @@ class Tracer:
 
         snapshots = [json.loads(f.read_text()) for f in files]
         report = _build_stats_report(
-            snapshots, self._entries, self._model,
+            snapshots,
+            self._entries,
+            self._model,
         )
         (self._run_dir / "history_stats.txt").write_text(report, encoding="utf-8")
 
@@ -663,11 +722,7 @@ class Tracer:
         _a = lines.append
 
         # ── Header with final stats ────────────────────────────
-        total_duration = (
-            (self._entries[-1].timestamp - self._start_time)
-            if self._entries
-            else 0
-        )
+        total_duration = (self._entries[-1].timestamp - self._start_time) if self._entries else 0
 
         total_input = 0
         total_output = 0
@@ -684,7 +739,9 @@ class Tracer:
         _a(f"- **Duration**: {total_duration:.1f}s")
         _a(f"- **Turns**: {self._turn_number}")
         _a(f"- **Tool calls**: {self._tool_call_counter}")
-        _a(f"- **Tokens**: {total_input:,} input, {total_output:,} output, {total_input + total_output:,} total")
+        _a(
+            f"- **Tokens**: {total_input:,} input, {total_output:,} output, {total_input + total_output:,} total"
+        )
         _a("")
 
         # ── System prompt ──────────────────────────────────────
@@ -762,26 +819,26 @@ def _fmt_ch(n: int) -> str:
 _MODEL_PRICING: dict[str, dict[str, float]] = {
     # Anthropic — prices per million tokens (USD).
     # Cache read = 0.1× input, cache write = 1.25× input.
-    "claude-opus-4":       {"input": 15.0,  "output": 75.0, "cache_read": 1.50,  "cache_write": 18.75},
-    "claude-opus-4-5":     {"input": 5.0,   "output": 25.0, "cache_read": 0.50,  "cache_write": 6.25},
-    "claude-opus-4-6":     {"input": 5.0,   "output": 25.0, "cache_read": 0.50,  "cache_write": 6.25},
-    "claude-sonnet-4":     {"input": 3.0,   "output": 15.0, "cache_read": 0.30,  "cache_write": 3.75},
-    "claude-sonnet-4-5":   {"input": 3.0,   "output": 15.0, "cache_read": 0.30,  "cache_write": 3.75},
-    "claude-sonnet-4-6":   {"input": 3.0,   "output": 15.0, "cache_read": 0.30,  "cache_write": 3.75},
-    "claude-haiku-4-5":    {"input": 1.0,   "output": 5.0,  "cache_read": 0.10,  "cache_write": 1.25},
-    "claude-3-5-haiku":    {"input": 0.80,  "output": 4.0,  "cache_read": 0.08,  "cache_write": 1.00},
+    "claude-opus-4": {"input": 15.0, "output": 75.0, "cache_read": 1.50, "cache_write": 18.75},
+    "claude-opus-4-5": {"input": 5.0, "output": 25.0, "cache_read": 0.50, "cache_write": 6.25},
+    "claude-opus-4-6": {"input": 5.0, "output": 25.0, "cache_read": 0.50, "cache_write": 6.25},
+    "claude-sonnet-4": {"input": 3.0, "output": 15.0, "cache_read": 0.30, "cache_write": 3.75},
+    "claude-sonnet-4-5": {"input": 3.0, "output": 15.0, "cache_read": 0.30, "cache_write": 3.75},
+    "claude-sonnet-4-6": {"input": 3.0, "output": 15.0, "cache_read": 0.30, "cache_write": 3.75},
+    "claude-haiku-4-5": {"input": 1.0, "output": 5.0, "cache_read": 0.10, "cache_write": 1.25},
+    "claude-3-5-haiku": {"input": 0.80, "output": 4.0, "cache_read": 0.08, "cache_write": 1.00},
     # OpenAI — prices per million tokens (USD).
     # No separate cache-write fee; cache_write = input price.
-    "gpt-4o":              {"input": 2.50,  "output": 10.0, "cache_read": 1.25,  "cache_write": 2.50},
-    "gpt-4o-mini":         {"input": 0.15,  "output": 0.60, "cache_read": 0.075, "cache_write": 0.15},
-    "gpt-4.1":             {"input": 2.0,   "output": 8.0,  "cache_read": 0.50,  "cache_write": 2.0},
-    "gpt-4.1-mini":        {"input": 0.40,  "output": 1.60, "cache_read": 0.10,  "cache_write": 0.40},
-    "gpt-4.1-nano":        {"input": 0.10,  "output": 0.40, "cache_read": 0.025, "cache_write": 0.10},
-    "o1":                  {"input": 15.0,  "output": 60.0, "cache_read": 7.50,  "cache_write": 15.0},
-    "o1-mini":             {"input": 3.0,   "output": 12.0, "cache_read": 1.50,  "cache_write": 3.0},
-    "o3":                  {"input": 2.0,   "output": 8.0,  "cache_read": 0.50,  "cache_write": 2.0},
-    "o3-mini":             {"input": 1.10,  "output": 4.40, "cache_read": 0.55,  "cache_write": 1.10},
-    "o4-mini":             {"input": 1.10,  "output": 4.40, "cache_read": 0.275, "cache_write": 1.10},
+    "gpt-4o": {"input": 2.50, "output": 10.0, "cache_read": 1.25, "cache_write": 2.50},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60, "cache_read": 0.075, "cache_write": 0.15},
+    "gpt-4.1": {"input": 2.0, "output": 8.0, "cache_read": 0.50, "cache_write": 2.0},
+    "gpt-4.1-mini": {"input": 0.40, "output": 1.60, "cache_read": 0.10, "cache_write": 0.40},
+    "gpt-4.1-nano": {"input": 0.10, "output": 0.40, "cache_read": 0.025, "cache_write": 0.10},
+    "o1": {"input": 15.0, "output": 60.0, "cache_read": 7.50, "cache_write": 15.0},
+    "o1-mini": {"input": 3.0, "output": 12.0, "cache_read": 1.50, "cache_write": 3.0},
+    "o3": {"input": 2.0, "output": 8.0, "cache_read": 0.50, "cache_write": 2.0},
+    "o3-mini": {"input": 1.10, "output": 4.40, "cache_read": 0.55, "cache_write": 1.10},
+    "o4-mini": {"input": 1.10, "output": 4.40, "cache_read": 0.275, "cache_write": 1.10},
 }
 
 
@@ -843,14 +900,20 @@ def _build_stats_report(
     w(f"  Turns:        {latest['turn']}")
     w(f"  Messages:     {latest['message_count']}")
     w(f"  History:      {_fmt_ch(total_chars)} chars  (~{_fmt_tok(total_est_tok)} tokens)")
-    w(f"  LLM tokens:   {_fmt_tok(grand_total)} total  "
-      f"({_fmt_tok(total_input)} in, {_fmt_tok(total_output)} out)")
-    w(f"  Steps:        {latest.get('step_count', '?')} "
-      f"({latest.get('python_step_count', '?')} python)")
+    w(
+        f"  LLM tokens:   {_fmt_tok(grand_total)} total  "
+        f"({_fmt_tok(total_input)} in, {_fmt_tok(total_output)} out)"
+    )
+    w(
+        f"  Steps:        {latest.get('step_count', '?')} "
+        f"({latest.get('python_step_count', '?')} python)"
+    )
     w(f"  Duration:     {latest['elapsed_s']:.0f}s")
     if total_output > 0:
-        w(f"  I/O ratio:    {total_input / total_output:.1f}x  "
-          f"(high = big context, small responses)")
+        w(
+            f"  I/O ratio:    {total_input / total_output:.1f}x  "
+            f"(high = big context, small responses)"
+        )
     w("")
 
     # ── Growth over turns ─────────────────────────────────────
@@ -862,28 +925,34 @@ def _build_stats_report(
         chars_list = [s["total_chars"] for s in snapshots]
         msg_list = [s["message_count"] for s in snapshots]
         tok_list = [s["total_estimated_tokens"] for s in snapshots]
-        w(f"  Chars:    {_spark([float(v) for v in chars_list])}  "
-          f"({_fmt_ch(chars_list[0])} -> {_fmt_ch(chars_list[-1])})")
-        w(f"  Messages: {_spark([float(v) for v in msg_list])}  "
-          f"({msg_list[0]} -> {msg_list[-1]})")
-        w(f"  Tokens:   {_spark([float(v) for v in tok_list])}  "
-          f"({_fmt_tok(tok_list[0])} -> {_fmt_tok(tok_list[-1])})")
+        w(
+            f"  Chars:    {_spark([float(v) for v in chars_list])}  "
+            f"({_fmt_ch(chars_list[0])} -> {_fmt_ch(chars_list[-1])})"
+        )
+        w(f"  Messages: {_spark([float(v) for v in msg_list])}  ({msg_list[0]} -> {msg_list[-1]})")
+        w(
+            f"  Tokens:   {_spark([float(v) for v in tok_list])}  "
+            f"({_fmt_tok(tok_list[0])} -> {_fmt_tok(tok_list[-1])})"
+        )
         w("")
 
         max_ch = max(chars_list)
         prev_ch = 0
-        w(f"  {'Turn':>5} {'Msgs':>5} {'Chars':>10} {'Est.Tok':>10} "
-          f"{'Delta':>10} {'Elapsed':>8}  Growth")
-        w(f"  {'─' * 5} {'─' * 5} {'─' * 10} {'─' * 10} "
-          f"{'─' * 10} {'─' * 8}  {'─' * 25}")
+        w(
+            f"  {'Turn':>5} {'Msgs':>5} {'Chars':>10} {'Est.Tok':>10} "
+            f"{'Delta':>10} {'Elapsed':>8}  Growth"
+        )
+        w(f"  {'─' * 5} {'─' * 5} {'─' * 10} {'─' * 10} {'─' * 10} {'─' * 8}  {'─' * 25}")
         for s in snapshots:
             delta = s["total_chars"] - prev_ch
             d_str = f"+{_fmt_ch(delta)}" if delta > 0 else _fmt_ch(delta)
-            w(f"  {s['turn']:>5} {s['message_count']:>5} "
-              f"{_fmt_ch(s['total_chars']):>10} "
-              f"{_fmt_tok(s['total_estimated_tokens']):>10} "
-              f"{d_str:>10} {s['elapsed_s']:>7.0f}s  "
-              f"{_bar(s['total_chars'], max_ch, 25)}")
+            w(
+                f"  {s['turn']:>5} {s['message_count']:>5} "
+                f"{_fmt_ch(s['total_chars']):>10} "
+                f"{_fmt_tok(s['total_estimated_tokens']):>10} "
+                f"{d_str:>10} {s['elapsed_s']:>7.0f}s  "
+                f"{_bar(s['total_chars'], max_ch, 25)}"
+            )
             prev_ch = s["total_chars"]
         w("")
 
@@ -891,8 +960,10 @@ def _build_stats_report(
         n_turns = snapshots[-1]["turn"] - snapshots[0]["turn"]
         if n_turns > 0:
             avg = total_growth / n_turns
-            w(f"  Avg growth: {_fmt_ch(int(avg))} chars/turn  "
-              f"(~{_fmt_tok(int(avg) // 4)} tokens/turn)")
+            w(
+                f"  Avg growth: {_fmt_ch(int(avg))} chars/turn  "
+                f"(~{_fmt_tok(int(avg) // 4)} tokens/turn)"
+            )
         w("")
 
     # ── LLM token usage ───────────────────────────────────────
@@ -903,12 +974,16 @@ def _build_stats_report(
         w("")
         w(f"  {'Category':<25} {'Tokens':>12} {'%':>7}  Bar")
         w(f"  {'─' * 25} {'─' * 12} {'─' * 7}  {'─' * 30}")
-        w(f"  {'Input':<25} {_fmt_tok(total_input):>12} "
-          f"{_pct(total_input, grand_total):>7}  "
-          f"{_bar(total_input, grand_total)}")
-        w(f"  {'Output':<25} {_fmt_tok(total_output):>12} "
-          f"{_pct(total_output, grand_total):>7}  "
-          f"{_bar(total_output, grand_total)}")
+        w(
+            f"  {'Input':<25} {_fmt_tok(total_input):>12} "
+            f"{_pct(total_input, grand_total):>7}  "
+            f"{_bar(total_input, grand_total)}"
+        )
+        w(
+            f"  {'Output':<25} {_fmt_tok(total_output):>12} "
+            f"{_pct(total_output, grand_total):>7}  "
+            f"{_bar(total_output, grand_total)}"
+        )
         cache_read = cu.get("total_cache_read", 0)
         cache_create = cu.get("total_cache_create", 0)
         if cache_read:
@@ -924,20 +999,26 @@ def _build_stats_report(
         input_vals = [t["input_tokens"] for t in per_turn]
         output_vals = [t["output_tokens"] for t in per_turn]
         max_inp = max(input_vals) if input_vals else 1
-        w(f"  Input:  {_spark([float(v) for v in input_vals])}  "
-          f"(min={_fmt_tok(min(input_vals))}, max={_fmt_tok(max(input_vals))}, "
-          f"avg={_fmt_tok(sum(input_vals) // len(input_vals))})")
-        w(f"  Output: {_spark([float(v) for v in output_vals])}  "
-          f"(min={_fmt_tok(min(output_vals))}, max={_fmt_tok(max(output_vals))}, "
-          f"avg={_fmt_tok(sum(output_vals) // len(output_vals))})")
+        w(
+            f"  Input:  {_spark([float(v) for v in input_vals])}  "
+            f"(min={_fmt_tok(min(input_vals))}, max={_fmt_tok(max(input_vals))}, "
+            f"avg={_fmt_tok(sum(input_vals) // len(input_vals))})"
+        )
+        w(
+            f"  Output: {_spark([float(v) for v in output_vals])}  "
+            f"(min={_fmt_tok(min(output_vals))}, max={_fmt_tok(max(output_vals))}, "
+            f"avg={_fmt_tok(sum(output_vals) // len(output_vals))})"
+        )
         w("")
         w(f"  {'Turn':>5} {'Input':>10} {'Output':>10} {'Duration':>10}  Bar")
         w(f"  {'─' * 5} {'─' * 10} {'─' * 10} {'─' * 10}  {'─' * 30}")
         for t in per_turn:
             dur = f"{t['duration_ms'] / 1000:.1f}s" if t.get("duration_ms") else "?"
-            w(f"  {t['turn']:>5} {_fmt_tok(t['input_tokens']):>10} "
-              f"{_fmt_tok(t['output_tokens']):>10} {dur:>10}  "
-              f"{_bar(t['input_tokens'], max_inp)}")
+            w(
+                f"  {t['turn']:>5} {_fmt_tok(t['input_tokens']):>10} "
+                f"{_fmt_tok(t['output_tokens']):>10} {dur:>10}  "
+                f"{_bar(t['input_tokens'], max_inp)}"
+            )
         w("")
         if len(per_turn) >= 2:
             growths = [
@@ -947,8 +1028,10 @@ def _build_stats_report(
             avg_g = sum(growths) / len(growths)
             max_g_idx = growths.index(max(growths))
             w(f"  Avg input growth/turn: {_fmt_tok(int(avg_g))} tokens")
-            w(f"  Largest jump: Turn {per_turn[max_g_idx + 1]['turn']} "
-              f"(+{_fmt_tok(max(growths))} tokens)")
+            w(
+                f"  Largest jump: Turn {per_turn[max_g_idx + 1]['turn']} "
+                f"(+{_fmt_tok(max(growths))} tokens)"
+            )
             w("")
 
     # ── Cost estimate ─────────────────────────────────────────
@@ -960,7 +1043,11 @@ def _build_stats_report(
         # (cache tokens are billed separately at their own rates).
         billed_input = max(total_input - cache_read - cache_create, 0)
         total_cost = _calc_cost(
-            pricing, billed_input, total_output, cache_read, cache_create,
+            pricing,
+            billed_input,
+            total_output,
+            cache_read,
+            cache_create,
         )
 
         w("-" * 72)
@@ -969,10 +1056,12 @@ def _build_stats_report(
         w("")
         model_display = model.split(":", 1)[-1] if ":" in model else model
         w(f"  Model: {model_display}")
-        w(f"  Pricing (per 1M tokens):")
-        w(f"    Input: ${pricing['input']:.2f}  |  Output: ${pricing['output']:.2f}  "
-          f"|  Cache read: ${pricing['cache_read']:.3f}  "
-          f"|  Cache write: ${pricing['cache_write']:.2f}")
+        w("  Pricing (per 1M tokens):")
+        w(
+            f"    Input: ${pricing['input']:.2f}  |  Output: ${pricing['output']:.2f}  "
+            f"|  Cache read: ${pricing['cache_read']:.3f}  "
+            f"|  Cache write: ${pricing['cache_write']:.2f}"
+        )
         w("")
         w(f"  {'Component':<25} {'Tokens':>12} {'Rate':>10} {'Cost':>10}")
         w(f"  {'─' * 25} {'─' * 12} {'─' * 10} {'─' * 10}")
@@ -986,53 +1075,71 @@ def _build_stats_report(
         cr_cost = (cache_read / 1_000_000) * pricing["cache_read"]
         cw_cost = (cache_create / 1_000_000) * pricing["cache_write"]
 
-        w(f"  {'Input (non-cached)':<25} {_fmt_tok(billed_input):>12} "
-          f"{_d(pricing['input'], 2):>10} {_d(input_cost):>10}")
-        w(f"  {'Output':<25} {_fmt_tok(total_output):>12} "
-          f"{_d(pricing['output'], 2):>10} {_d(output_cost):>10}")
+        w(
+            f"  {'Input (non-cached)':<25} {_fmt_tok(billed_input):>12} "
+            f"{_d(pricing['input'], 2):>10} {_d(input_cost):>10}"
+        )
+        w(
+            f"  {'Output':<25} {_fmt_tok(total_output):>12} "
+            f"{_d(pricing['output'], 2):>10} {_d(output_cost):>10}"
+        )
         if cache_read:
-            w(f"  {'Cache read':<25} {_fmt_tok(cache_read):>12} "
-              f"{_d(pricing['cache_read'], 3):>10} {_d(cr_cost):>10}")
+            w(
+                f"  {'Cache read':<25} {_fmt_tok(cache_read):>12} "
+                f"{_d(pricing['cache_read'], 3):>10} {_d(cr_cost):>10}"
+            )
         if cache_create:
-            w(f"  {'Cache write':<25} {_fmt_tok(cache_create):>12} "
-              f"{_d(pricing['cache_write'], 2):>10} {_d(cw_cost):>10}")
+            w(
+                f"  {'Cache write':<25} {_fmt_tok(cache_create):>12} "
+                f"{_d(pricing['cache_write'], 2):>10} {_d(cw_cost):>10}"
+            )
         w(f"  {'─' * 25} {'':>12} {'':>10} {'─' * 10}")
         w(f"  {'TOTAL':<25} {'':>12} {'':>10} {_d(total_cost):>10}")
         w("")
 
         # Per-turn cost breakdown.
         if per_turn:
-            w(f"  PER-TURN COST")
-            w(f"  {'Turn':>5} {'Input':>10} {'Output':>10} "
-              f"{'CacheRd':>10} {'CacheWr':>10} {'Cost':>10}")
-            w(f"  {'─' * 5} {'─' * 10} {'─' * 10} "
-              f"{'─' * 10} {'─' * 10} {'─' * 10}")
+            w("  PER-TURN COST")
+            w(
+                f"  {'Turn':>5} {'Input':>10} {'Output':>10} "
+                f"{'CacheRd':>10} {'CacheWr':>10} {'Cost':>10}"
+            )
+            w(f"  {'─' * 5} {'─' * 10} {'─' * 10} {'─' * 10} {'─' * 10} {'─' * 10}")
             cumulative_cost = 0.0
             for t in per_turn:
                 t_cr = t.get("cache_read", 0)
                 t_cw = t.get("cache_create", 0)
                 t_inp = max(t["input_tokens"] - t_cr - t_cw, 0)
                 t_cost = _calc_cost(
-                    pricing, t_inp, t["output_tokens"], t_cr, t_cw,
+                    pricing,
+                    t_inp,
+                    t["output_tokens"],
+                    t_cr,
+                    t_cw,
                 )
                 cumulative_cost += t_cost
-                w(f"  {t['turn']:>5} {_fmt_tok(t_inp):>10} "
-                  f"{_fmt_tok(t['output_tokens']):>10} "
-                  f"{_fmt_tok(t_cr):>10} {_fmt_tok(t_cw):>10} "
-                  f"{_d(t_cost):>10}")
+                w(
+                    f"  {t['turn']:>5} {_fmt_tok(t_inp):>10} "
+                    f"{_fmt_tok(t['output_tokens']):>10} "
+                    f"{_fmt_tok(t_cr):>10} {_fmt_tok(t_cw):>10} "
+                    f"{_d(t_cost):>10}"
+                )
             w(f"  {'─' * 5} {'':>10} {'':>10} {'':>10} {'':>10} {'─' * 10}")
-            w(f"  {'Total':>5} {'':>10} {'':>10} {'':>10} {'':>10} "
-              f"{_d(cumulative_cost):>10}")
+            w(f"  {'Total':>5} {'':>10} {'':>10} {'':>10} {'':>10} {_d(cumulative_cost):>10}")
             w("")
 
         # What-if: show cost for other models.
-        w(f"  COST COMPARISON (same token usage, different models)")
+        w("  COST COMPARISON (same token usage, different models)")
         w(f"  {'Model':<30} {'Est. Cost':>10}")
         w(f"  {'─' * 30} {'─' * 10}")
         for alt_name in sorted(_MODEL_PRICING):
             alt_p = _MODEL_PRICING[alt_name]
             alt_cost = _calc_cost(
-                alt_p, billed_input, total_output, cache_read, cache_create,
+                alt_p,
+                billed_input,
+                total_output,
+                cache_read,
+                cache_create,
             )
             marker = " <-- this run" if alt_p is pricing else ""
             w(f"  {alt_name:<30} {_d(alt_cost):>10}{marker}")
@@ -1043,8 +1150,10 @@ def _build_stats_report(
     w("  MESSAGE BREAKDOWN")
     w("-" * 72)
     w("")
-    w(f"  Turn: {latest['turn']}  |  Messages: {latest['message_count']}  |  "
-      f"Elapsed: {latest['elapsed_s']:.0f}s")
+    w(
+        f"  Turn: {latest['turn']}  |  Messages: {latest['message_count']}  |  "
+        f"Elapsed: {latest['elapsed_s']:.0f}s"
+    )
     w(f"  Total: {_fmt_ch(total_chars)} chars  (~{_fmt_tok(total_est_tok)} tokens)")
     w("")
 
@@ -1057,15 +1166,15 @@ def _build_stats_report(
         role_stats[r]["chars"] += m["chars"]
         role_stats[r]["tokens"] += m["estimated_tokens"]
 
-    w(f"  {'Role':<12} {'#':>5} {'Chars':>10} {'Tokens':>10} "
-      f"{'%':>7}  Bar")
-    w(f"  {'─' * 12} {'─' * 5} {'─' * 10} {'─' * 10} "
-      f"{'─' * 7}  {'─' * 25}")
+    w(f"  {'Role':<12} {'#':>5} {'Chars':>10} {'Tokens':>10} {'%':>7}  Bar")
+    w(f"  {'─' * 12} {'─' * 5} {'─' * 10} {'─' * 10} {'─' * 7}  {'─' * 25}")
     for role, st in sorted(role_stats.items()):
-        w(f"  {role:<12} {st['count']:>5} {_fmt_ch(st['chars']):>10} "
-          f"{_fmt_tok(st['tokens']):>10} "
-          f"{_pct(st['chars'], total_chars):>7}  "
-          f"{_bar(st['chars'], total_chars, 25)}")
+        w(
+            f"  {role:<12} {st['count']:>5} {_fmt_ch(st['chars']):>10} "
+            f"{_fmt_tok(st['tokens']):>10} "
+            f"{_pct(st['chars'], total_chars):>7}  "
+            f"{_bar(st['chars'], total_chars, 25)}"
+        )
     w("")
 
     # ── By content type ───────────────────────────────────────
@@ -1079,41 +1188,40 @@ def _build_stats_report(
             type_stats[key]["count"] += 1
             type_stats[key]["chars"] += block["chars"]
 
-    w(f"  {'Content Type':<28} {'#':>5} {'Chars':>10} "
-      f"{'%':>7}  Bar")
-    w(f"  {'─' * 28} {'─' * 5} {'─' * 10} "
-      f"{'─' * 7}  {'─' * 25}")
+    w(f"  {'Content Type':<28} {'#':>5} {'Chars':>10} {'%':>7}  Bar")
+    w(f"  {'─' * 28} {'─' * 5} {'─' * 10} {'─' * 7}  {'─' * 25}")
     for key, st in sorted(type_stats.items(), key=lambda x: -x[1]["chars"]):
-        w(f"  {key:<28} {st['count']:>5} {_fmt_ch(st['chars']):>10} "
-          f"{_pct(st['chars'], total_chars):>7}  "
-          f"{_bar(st['chars'], total_chars, 25)}")
+        w(
+            f"  {key:<28} {st['count']:>5} {_fmt_ch(st['chars']):>10} "
+            f"{_pct(st['chars'], total_chars):>7}  "
+            f"{_bar(st['chars'], total_chars, 25)}"
+        )
     w("")
 
     # ── Top 10 largest messages ───────────────────────────────
     sorted_msgs = sorted(messages, key=lambda m: -m["chars"])[:10]
-    w(f"  TOP 10 LARGEST MESSAGES")
-    w(f"  {'#':>3} {'Idx':>4} {'Role':<10} {'Types':<24} "
-      f"{'Chars':>10} {'%':>7}  Bar")
-    w(f"  {'─' * 3} {'─' * 4} {'─' * 10} {'─' * 24} "
-      f"{'─' * 10} {'─' * 7}  {'─' * 20}")
+    w("  TOP 10 LARGEST MESSAGES")
+    w(f"  {'#':>3} {'Idx':>4} {'Role':<10} {'Types':<24} {'Chars':>10} {'%':>7}  Bar")
+    w(f"  {'─' * 3} {'─' * 4} {'─' * 10} {'─' * 24} {'─' * 10} {'─' * 7}  {'─' * 20}")
     for rank, m in enumerate(sorted_msgs, 1):
         types_str = ",".join(m["content_types"])[:23]
-        w(f"  {rank:>3} {m['index']:>4} {m['role']:<10} {types_str:<24} "
-          f"{_fmt_ch(m['chars']):>10} "
-          f"{_pct(m['chars'], total_chars):>7}  "
-          f"{_bar(m['chars'], total_chars, 20)}")
+        w(
+            f"  {rank:>3} {m['index']:>4} {m['role']:<10} {types_str:<24} "
+            f"{_fmt_ch(m['chars']):>10} "
+            f"{_pct(m['chars'], total_chars):>7}  "
+            f"{_bar(m['chars'], total_chars, 20)}"
+        )
     w("")
 
     # ── Tool result distribution ──────────────────────────────
-    tool_results = [
-        b for m in messages for b in m["blocks"]
-        if b["type"] == "tool_result"
-    ]
+    tool_results = [b for m in messages for b in m["blocks"] if b["type"] == "tool_result"]
     if tool_results:
         total_tr = sum(b["chars"] for b in tool_results)
-        w(f"  TOOL RESULTS: {len(tool_results)} total  "
-          f"| {_fmt_ch(total_tr)} chars  "
-          f"| {_pct(total_tr, total_chars)} of history")
+        w(
+            f"  TOOL RESULTS: {len(tool_results)} total  "
+            f"| {_fmt_ch(total_tr)} chars  "
+            f"| {_pct(total_tr, total_chars)} of history"
+        )
         w("")
         buckets = {"<1K": 0, "1-5K": 0, "5-20K": 0, "20-100K": 0, ">100K": 0}
         for tr in tool_results:
@@ -1171,8 +1279,10 @@ def _build_stats_report(
     for cat, chars in sorted(categories.items(), key=lambda x: -x[1]):
         if chars == 0:
             continue
-        w(f"  {cat:<30} {_fmt_ch(chars):>10} {_pct(chars, total_chars):>7}  "
-          f"{_bar(chars, mx_cat, 25)}")
+        w(
+            f"  {cat:<30} {_fmt_ch(chars):>10} {_pct(chars, total_chars):>7}  "
+            f"{_bar(chars, mx_cat, 25)}"
+        )
     w("")
 
     # 80% coverage
@@ -1180,16 +1290,13 @@ def _build_stats_report(
     for i, m in enumerate(sorted(messages, key=lambda m: -m["chars"]), 1):
         cum += m["chars"]
         if cum >= total_chars * 0.8:
-            w(f"  {i} messages ({_pct(i, len(messages))}) "
-              f"account for 80% of the history")
+            w(f"  {i} messages ({_pct(i, len(messages))}) account for 80% of the history")
             break
     w("")
 
     # ── Tool execution summary ───────────────────────────────
     if entries:
-        tool_results_entries = [
-            e for e in entries if e.kind == "tool_result"
-        ]
+        tool_results_entries = [e for e in entries if e.kind == "tool_result"]
         if tool_results_entries:
             # Per-tool-name aggregation.
             tool_agg: dict[str, dict] = {}
@@ -1200,8 +1307,12 @@ def _build_stats_report(
                 is_err = e.data.get("is_error", False)
                 if name not in tool_agg:
                     tool_agg[name] = {
-                        "count": 0, "total_ms": 0, "max_ms": 0,
-                        "total_chars": 0, "max_chars": 0, "errors": 0,
+                        "count": 0,
+                        "total_ms": 0,
+                        "max_ms": 0,
+                        "total_chars": 0,
+                        "max_chars": 0,
+                        "errors": 0,
                         "durations": [],
                     }
                 a = tool_agg[name]
@@ -1221,27 +1332,36 @@ def _build_stats_report(
             w("  TOOL EXECUTION SUMMARY")
             w("-" * 72)
             w("")
-            w(f"  Total tool calls: {total_tool_calls}  |  "
-              f"Total tool time: {total_tool_ms / 1000:.1f}s")
+            w(
+                f"  Total tool calls: {total_tool_calls}  |  "
+                f"Total tool time: {total_tool_ms / 1000:.1f}s"
+            )
             w("")
-            w(f"  {'Tool':<20} {'#':>4} {'Err':>4} {'Total':>8} "
-              f"{'Avg':>8} {'Max':>8} {'OutChars':>10} "
-              f"{'%Time':>7}  Bar")
-            w(f"  {'─' * 20} {'─' * 4} {'─' * 4} {'─' * 8} "
-              f"{'─' * 8} {'─' * 8} {'─' * 10} "
-              f"{'─' * 7}  {'─' * 20}")
+            w(
+                f"  {'Tool':<20} {'#':>4} {'Err':>4} {'Total':>8} "
+                f"{'Avg':>8} {'Max':>8} {'OutChars':>10} "
+                f"{'%Time':>7}  Bar"
+            )
+            w(
+                f"  {'─' * 20} {'─' * 4} {'─' * 4} {'─' * 8} "
+                f"{'─' * 8} {'─' * 8} {'─' * 10} "
+                f"{'─' * 7}  {'─' * 20}"
+            )
             for name, a in sorted(
-                tool_agg.items(), key=lambda x: -x[1]["total_ms"],
+                tool_agg.items(),
+                key=lambda x: -x[1]["total_ms"],
             ):
                 avg_ms = a["total_ms"] / a["count"] if a["count"] else 0
                 err_str = str(a["errors"]) if a["errors"] else ""
-                w(f"  {name:<20} {a['count']:>4} {err_str:>4} "
-                  f"{a['total_ms'] / 1000:>7.1f}s "
-                  f"{avg_ms / 1000:>7.1f}s "
-                  f"{a['max_ms'] / 1000:>7.1f}s "
-                  f"{_fmt_ch(a['total_chars']):>10} "
-                  f"{_pct(a['total_ms'], total_tool_ms):>7}  "
-                  f"{_bar(a['total_ms'], total_tool_ms, 20)}")
+                w(
+                    f"  {name:<20} {a['count']:>4} {err_str:>4} "
+                    f"{a['total_ms'] / 1000:>7.1f}s "
+                    f"{avg_ms / 1000:>7.1f}s "
+                    f"{a['max_ms'] / 1000:>7.1f}s "
+                    f"{_fmt_ch(a['total_chars']):>10} "
+                    f"{_pct(a['total_ms'], total_tool_ms):>7}  "
+                    f"{_bar(a['total_ms'], total_tool_ms, 20)}"
+                )
             w("")
 
             # Top 10 slowest individual tool calls.
@@ -1249,18 +1369,15 @@ def _build_stats_report(
                 tool_results_entries,
                 key=lambda e: -e.data.get("duration_ms", 0),
             )[:10]
-            w(f"  TOP 10 SLOWEST TOOL CALLS")
-            w(f"  {'#':>3} {'Tool':<20} {'Duration':>10} "
-              f"{'Output':>10} {'Error':>6}")
-            w(f"  {'─' * 3} {'─' * 20} {'─' * 10} "
-              f"{'─' * 10} {'─' * 6}")
+            w("  TOP 10 SLOWEST TOOL CALLS")
+            w(f"  {'#':>3} {'Tool':<20} {'Duration':>10} {'Output':>10} {'Error':>6}")
+            w(f"  {'─' * 3} {'─' * 20} {'─' * 10} {'─' * 10} {'─' * 6}")
             for rank, e in enumerate(slowest, 1):
                 name = e.data.get("name", "?")
                 dur = e.data.get("duration_ms", 0)
                 out_ch = len(e.data.get("content", ""))
                 is_err = "YES" if e.data.get("is_error") else ""
-                w(f"  {rank:>3} {name:<20} {dur / 1000:>9.1f}s "
-                  f"{_fmt_ch(out_ch):>10} {is_err:>6}")
+                w(f"  {rank:>3} {name:<20} {dur / 1000:>9.1f}s {_fmt_ch(out_ch):>10} {is_err:>6}")
             w("")
 
     # ── Top largest content blocks ────────────────────────────
@@ -1270,43 +1387,43 @@ def _build_stats_report(
     for m in messages:
         role = m["role"]
         for block in m["blocks"]:
-            all_blocks.append({
-                "msg_idx": m["index"],
-                "role": role,
-                "type": block.get("type", "?"),
-                "name": block.get("name", ""),
-                "chars": block.get("chars", 0),
-                "tool_use_id": block.get("tool_use_id", ""),
-            })
+            all_blocks.append(
+                {
+                    "msg_idx": m["index"],
+                    "role": role,
+                    "type": block.get("type", "?"),
+                    "name": block.get("name", ""),
+                    "chars": block.get("chars", 0),
+                    "tool_use_id": block.get("tool_use_id", ""),
+                }
+            )
     biggest_blocks = sorted(all_blocks, key=lambda b: -b["chars"])[:15]
     if biggest_blocks:
         w("-" * 72)
         w("  TOP 15 LARGEST CONTENT BLOCKS")
         w("-" * 72)
         w("")
-        w(f"  {'#':>3} {'Msg':>4} {'Role':<10} {'Type':<24} "
-          f"{'Chars':>10} {'%':>7}  Bar")
-        w(f"  {'─' * 3} {'─' * 4} {'─' * 10} {'─' * 24} "
-          f"{'─' * 10} {'─' * 7}  {'─' * 20}")
+        w(f"  {'#':>3} {'Msg':>4} {'Role':<10} {'Type':<24} {'Chars':>10} {'%':>7}  Bar")
+        w(f"  {'─' * 3} {'─' * 4} {'─' * 10} {'─' * 24} {'─' * 10} {'─' * 7}  {'─' * 20}")
         for rank, b in enumerate(biggest_blocks, 1):
             btype = b["type"]
             if btype == "tool_use" and b["name"]:
                 btype = f"tool_use:{b['name']}"
             elif btype == "tool_result" and b["tool_use_id"]:
-                btype = f"tool_result"
+                btype = "tool_result"
             btype = btype[:23]
-            w(f"  {rank:>3} {b['msg_idx']:>4} {b['role']:<10} {btype:<24} "
-              f"{_fmt_ch(b['chars']):>10} "
-              f"{_pct(b['chars'], total_chars):>7}  "
-              f"{_bar(b['chars'], total_chars, 20)}")
+            w(
+                f"  {rank:>3} {b['msg_idx']:>4} {b['role']:<10} {btype:<24} "
+                f"{_fmt_ch(b['chars']):>10} "
+                f"{_pct(b['chars'], total_chars):>7}  "
+                f"{_bar(b['chars'], total_chars, 20)}"
+            )
         w("")
 
     # ── Show page / context management stats ──────────────────
     if entries:
         sp_events = [
-            e for e in entries
-            if e.kind == "system"
-            and e.data.get("event") == "show_page_analysis"
+            e for e in entries if e.kind == "system" and e.data.get("event") == "show_page_analysis"
         ]
         if sp_events:
             w("-" * 72)
@@ -1315,12 +1432,16 @@ def _build_stats_report(
             w("")
             w(f"  show_page calls: {len(sp_events)}")
             w("")
-            w(f"  {'#':>3} {'Sections':>9} {'Kept':>5} {'Nbr':>4} "
-              f"{'Dist':>5} {'FullChars':>10} {'Filtered':>10} "
-              f"{'Ratio':>7} {'Sim':>5} {'Var':>4}")
-            w(f"  {'─' * 3} {'─' * 9} {'─' * 5} {'─' * 4} "
-              f"{'─' * 5} {'─' * 10} {'─' * 10} "
-              f"{'─' * 7} {'─' * 5} {'─' * 4}")
+            w(
+                f"  {'#':>3} {'Sections':>9} {'Kept':>5} {'Nbr':>4} "
+                f"{'Dist':>5} {'FullChars':>10} {'Filtered':>10} "
+                f"{'Ratio':>7} {'Sim':>5} {'Var':>4}"
+            )
+            w(
+                f"  {'─' * 3} {'─' * 9} {'─' * 5} {'─' * 4} "
+                f"{'─' * 5} {'─' * 10} {'─' * 10} "
+                f"{'─' * 7} {'─' * 5} {'─' * 4}"
+            )
             for i, e in enumerate(sp_events, 1):
                 d = e.data
                 total_s = d.get("total_sections", 0)
@@ -1332,22 +1453,22 @@ def _build_stats_report(
                 ratio = d.get("compression_ratio", 0)
                 sim = d.get("similarity_score", 0)
                 var = d.get("variant_used", "?")
-                w(f"  {i:>3} {total_s:>9} {kept:>5} {nbr:>4} "
-                  f"{dist:>5} {_fmt_ch(orig):>10} {_fmt_ch(filt):>10} "
-                  f"{ratio:>6.2f}x {sim:>4.2f} {var:>4}")
-            total_orig = sum(
-                e.data.get("total_page_chars", 0) for e in sp_events
-            )
-            total_filt = sum(
-                e.data.get("filtered_page_chars", 0) for e in sp_events
-            )
+                w(
+                    f"  {i:>3} {total_s:>9} {kept:>5} {nbr:>4} "
+                    f"{dist:>5} {_fmt_ch(orig):>10} {_fmt_ch(filt):>10} "
+                    f"{ratio:>6.2f}x {sim:>4.2f} {var:>4}"
+                )
+            total_orig = sum(e.data.get("total_page_chars", 0) for e in sp_events)
+            total_filt = sum(e.data.get("filtered_page_chars", 0) for e in sp_events)
             if total_orig > 0:
                 savings = total_orig - total_filt
                 w("")
-                w(f"  Total page chars produced: {_fmt_ch(total_orig)}  "
-                  f"| After filtering: {_fmt_ch(total_filt)}  "
-                  f"| Saved: {_fmt_ch(savings)} "
-                  f"({savings / total_orig * 100:.0f}%)")
+                w(
+                    f"  Total page chars produced: {_fmt_ch(total_orig)}  "
+                    f"| After filtering: {_fmt_ch(total_filt)}  "
+                    f"| Saved: {_fmt_ch(savings)} "
+                    f"({savings / total_orig * 100:.0f}%)"
+                )
             w("")
 
     # ── Heatmap ───────────────────────────────────────────────
@@ -1370,12 +1491,11 @@ def _build_stats_report(
                     cells.append(" ")
             line = "".join(cells)
             for start in range(0, len(line), 70):
-                chunk = line[start:start + 70]
+                chunk = line[start : start + 70]
                 if chunk.strip():
                     w(f"  {label} {start:>4} |{chunk}|")
         w("")
-        w("  Legend: ' '=other role  \u2591=small  \u2592=medium  "
-          "\u2593=large  \u2588=largest")
+        w("  Legend: ' '=other role  \u2591=small  \u2592=medium  \u2593=large  \u2588=largest")
         w("")
 
     return "\n".join(o) + "\n"

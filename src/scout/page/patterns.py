@@ -34,14 +34,13 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Optional
 
 from lxml.html import HtmlElement
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Data Structures
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 @dataclass
 class RepeatedGroup:
@@ -49,7 +48,7 @@ class RepeatedGroup:
 
     parent: HtmlElement
     members: list[HtmlElement]
-    signature: tuple                   # the shared canonical signature
+    signature: tuple  # the shared canonical signature
     member_count: int = field(init=False)
 
     def __post_init__(self) -> None:
@@ -72,7 +71,7 @@ class GroupAnnotations:
         """True if *el* is a member of a detected repeated group."""
         return id(el) in self._atomic
 
-    def get_group(self, el: HtmlElement) -> Optional[RepeatedGroup]:
+    def get_group(self, el: HtmlElement) -> RepeatedGroup | None:
         """Return the group *el* belongs to, or None."""
         return self._atomic.get(id(el))
 
@@ -101,6 +100,7 @@ class GroupAnnotations:
 # ═══════════════════════════════════════════════════════════════════════════
 #  Signature Computation
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def _element_children(el: HtmlElement) -> list[HtmlElement]:
     """Direct element children (skipping comments, PIs, text nodes)."""
@@ -143,15 +143,14 @@ def compute_shape_signature(el: HtmlElement) -> tuple:
     (e.g. ``product featured`` vs ``product standard``).
     """
     tag = el.tag if isinstance(el.tag, str) else ""
-    child_tags = tuple(
-        c.tag for c in _element_children(el)
-    )
+    child_tags = tuple(c.tag for c in _element_children(el))
     return (tag, child_tags)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Class Similarity Validation
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def _validate_class_similarity(
     members: list[HtmlElement],
@@ -177,10 +176,7 @@ def _validate_class_similarity(
        three layout containers (header, main, footer) that happen to
        share the same child-tag shape.
     """
-    class_sets = [
-        frozenset((m.get("class") or "").split())
-        for m in members
-    ]
+    class_sets = [frozenset((m.get("class") or "").split()) for m in members]
 
     # All classless → structural match is sufficient.
     non_empty = [cs for cs in class_sets if cs]
@@ -227,6 +223,7 @@ def _validate_class_similarity(
 #  Group Detection (per parent)
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def find_repeated_groups(
     parent: HtmlElement,
     sizes: dict[int, int],
@@ -246,10 +243,7 @@ def find_repeated_groups(
         List of :class:`RepeatedGroup` objects.  An element appears in
         at most one group.
     """
-    children = [
-        c for c in _element_children(parent)
-        if sizes.get(id(c), 0) > 0
-    ]
+    children = [c for c in _element_children(parent) if sizes.get(id(c), 0) > 0]
 
     if len(children) < min_group_size:
         return []
@@ -299,6 +293,7 @@ def find_repeated_groups(
 # ═══════════════════════════════════════════════════════════════════════════
 #  Recursive Detection (whole DOM)
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def detect_all_groups(
     root: HtmlElement,

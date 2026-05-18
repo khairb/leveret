@@ -13,23 +13,22 @@ Covers:
 
 import asyncio
 import json
-import threading
 import warnings
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from scout.scraper import Scraper, ScraperResult, _build_pre_import_namespace
 from scout.errors import (
     ScoutError,
     ScoutScriptRuntimeError,
     ScoutScriptTimeoutError,
     ScoutValidationError,
 )
-
+from scout.scraper import Scraper, _build_pre_import_namespace
 
 # ── Helpers ──────────────────────────────────────────────────────
+
 
 def _make_scraper(tmp_path=None, **kwargs):
     """Create a Scraper with minimal valid params."""
@@ -52,14 +51,14 @@ def _write_valid_script(path: Path, return_data=None):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         '"""\nScout Script\n\n'
-        'url:           https://example.com\n'
-        'task:          Extract data\n'
-        'generated:     2024-01-01T00:00:00.000000Z\n'
-        'model:         test\n'
-        'scout_version: test\n'
+        "url:           https://example.com\n"
+        "task:          Extract data\n"
+        "generated:     2024-01-01T00:00:00.000000Z\n"
+        "model:         test\n"
+        "scout_version: test\n"
         '"""\n\n'
-        f'async def scrape(page, url, checkpoint):\n'
-        f'    return {data_repr}\n',
+        f"async def scrape(page, url, checkpoint):\n"
+        f"    return {data_repr}\n",
         encoding="utf-8",
     )
 
@@ -82,15 +81,24 @@ def _mock_browser_manager():
 
 # ── Pre-import namespace ─────────────────────────────────────────
 
+
 class TestPreImportNamespace:
     """Verify _build_pre_import_namespace provides all expected modules."""
 
     def test_contains_all_expected_modules(self):
         ns = _build_pre_import_namespace()
         expected = [
-            "json", "re", "math", "os", "time",
-            "asyncio", "tempfile", "shutil",
-            "datetime", "urljoin", "urlparse",
+            "json",
+            "re",
+            "math",
+            "os",
+            "time",
+            "asyncio",
+            "tempfile",
+            "shutil",
+            "datetime",
+            "urljoin",
+            "urlparse",
         ]
         for name in expected:
             assert name in ns, f"Missing pre-import: {name}"
@@ -104,14 +112,15 @@ class TestPreImportNamespace:
 
     def test_json_is_the_real_module(self):
         import json
+
         ns = _build_pre_import_namespace()
         assert ns["json"] is json
 
 
 # ── Sync context manager ─────────────────────────────────────────
 
-class TestSyncContextManager:
 
+class TestSyncContextManager:
     def test_enter_returns_self(self, tmp_path):
         s = _make_scraper(tmp_path)
         result = s.__enter__()
@@ -149,7 +158,7 @@ class TestSyncContextManager:
 
     def test_exit_does_not_suppress_exceptions(self, tmp_path):
         s = _make_scraper(tmp_path)
-        result = s.__enter__()
+        s.__enter__()
         suppress = s.__exit__(ValueError, ValueError("test"), None)
         assert suppress is False
 
@@ -174,8 +183,8 @@ class TestSyncContextManager:
 
 # ── Async context manager ────────────────────────────────────────
 
-class TestAsyncContextManager:
 
+class TestAsyncContextManager:
     @pytest.mark.asyncio
     async def test_aenter_returns_self(self, tmp_path):
         s = _make_scraper(tmp_path)
@@ -226,8 +235,8 @@ class TestAsyncContextManager:
 
 # ── Browser lifecycle ─────────────────────────────────────────────
 
-class TestBrowserLifecycle:
 
+class TestBrowserLifecycle:
     @pytest.mark.asyncio
     async def test_close_browser_idempotent(self, tmp_path):
         s = _make_scraper(tmp_path)
@@ -249,6 +258,7 @@ class TestBrowserLifecycle:
     @pytest.mark.asyncio
     async def test_close_browser_logs_summary(self, tmp_path, caplog):
         import logging
+
         s = _make_scraper(tmp_path)
         mock_mgr, _ = _mock_browser_manager()
         s._browser_mgr = mock_mgr
@@ -261,6 +271,7 @@ class TestBrowserLifecycle:
     @pytest.mark.asyncio
     async def test_close_browser_no_log_if_zero_pages(self, tmp_path, caplog):
         import logging
+
         s = _make_scraper(tmp_path)
         mock_mgr, _ = _mock_browser_manager()
         s._browser_mgr = mock_mgr
@@ -285,8 +296,8 @@ class TestBrowserLifecycle:
 
 # ── In-process execution ─────────────────────────────────────────
 
-class TestInProcessExecution:
 
+class TestInProcessExecution:
     @pytest.mark.asyncio
     async def test_launches_browser_on_first_call(self, tmp_path):
         s = _make_scraper(tmp_path)
@@ -294,9 +305,7 @@ class TestInProcessExecution:
 
         mock_mgr, mock_page = _mock_browser_manager()
 
-        with patch(
-            "scout.runtime.environment.BrowserManager", return_value=mock_mgr
-        ) as MockBM:
+        with patch("scout.runtime.environment.BrowserManager", return_value=mock_mgr) as MockBM:
             # Set up scraper state as if context-managed
             s._context_managed = True
             s._cm_start_time = 0.0
@@ -304,6 +313,7 @@ class TestInProcessExecution:
 
             # Load the function
             from scout.scraper import _load_script
+
             fn, _ = _load_script(s._script_path)
             s._cached_fn = fn
 
@@ -332,10 +342,11 @@ class TestInProcessExecution:
         s._cm_page_count = 1
 
         from scout.scraper import _load_script
+
         fn, _ = _load_script(s._script_path)
         s._cached_fn = fn
 
-        rv_json = await s._run_in_process("https://example.com")
+        await s._run_in_process("https://example.com")
 
         # Should NOT re-create the BrowserManager
         mock_mgr.start.assert_not_awaited()
@@ -431,14 +442,13 @@ class TestInProcessExecution:
 
         mock_mgr, mock_page = _mock_browser_manager()
 
-        with patch(
-            "scout.runtime.environment.BrowserManager", return_value=mock_mgr
-        ) as MockBM:
+        with patch("scout.runtime.environment.BrowserManager", return_value=mock_mgr) as MockBM:
             s._context_managed = True
             s._cm_start_time = 0.0
             s._cm_page_count = 0
 
             from scout.scraper import _load_script
+
             fn, _ = _load_script(s._script_path)
             s._cached_fn = fn
 
@@ -449,21 +459,18 @@ class TestInProcessExecution:
 
 # ── Context-managed run (integration) ────────────────────────────
 
+
 class TestContextManagedRun:
     """Test the full _run_cached branching for context-managed mode."""
 
     @pytest.mark.asyncio
-    async def test_run_cached_uses_in_process_when_context_managed(
-        self, tmp_path
-    ):
+    async def test_run_cached_uses_in_process_when_context_managed(self, tmp_path):
         s = _make_scraper(tmp_path)
         _write_valid_script(s._script_path, [{"title": "Hello"}])
 
         mock_mgr, mock_page = _mock_browser_manager()
 
-        with patch(
-            "scout.runtime.environment.BrowserManager", return_value=mock_mgr
-        ):
+        with patch("scout.runtime.environment.BrowserManager", return_value=mock_mgr):
             s._context_managed = True
             s._cm_start_time = 0.0
             s._cm_page_count = 0
@@ -475,18 +482,20 @@ class TestContextManagedRun:
             mock_mgr.new_page.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_run_cached_uses_subprocess_when_not_context_managed(
-        self, tmp_path
-    ):
+    async def test_run_cached_uses_subprocess_when_not_context_managed(self, tmp_path):
         s = _make_scraper(tmp_path)
         _write_valid_script(s._script_path)
         s._context_managed = False
 
         with patch.object(
-            s, "_execute_function",
+            s,
+            "_execute_function",
             new_callable=AsyncMock,
             return_value=(
-                "", json.dumps([{"title": "Test"}]), "", 0,
+                "",
+                json.dumps([{"title": "Test"}]),
+                "",
+                0,
             ),
         ):
             result = await s._run_cached("https://example.com")
@@ -494,18 +503,15 @@ class TestContextManagedRun:
             s._execute_function.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_first_run_logs_cached_script_message(
-        self, tmp_path, caplog
-    ):
+    async def test_first_run_logs_cached_script_message(self, tmp_path, caplog):
         import logging
+
         s = _make_scraper(tmp_path)
         _write_valid_script(s._script_path)
 
         mock_mgr, mock_page = _mock_browser_manager()
 
-        with patch(
-            "scout.runtime.environment.BrowserManager", return_value=mock_mgr
-        ):
+        with patch("scout.runtime.environment.BrowserManager", return_value=mock_mgr):
             s._context_managed = True
             s._cm_start_time = 0.0
             s._cm_page_count = 0
@@ -518,10 +524,9 @@ class TestContextManagedRun:
             assert any("Launching browser" in m for m in messages)
 
     @pytest.mark.asyncio
-    async def test_subsequent_run_logs_scraping_url(
-        self, tmp_path, caplog
-    ):
+    async def test_subsequent_run_logs_scraping_url(self, tmp_path, caplog):
         import logging
+
         s = _make_scraper(tmp_path)
         _write_valid_script(s._script_path)
 
@@ -535,25 +540,20 @@ class TestContextManagedRun:
             await s._run_cached("https://example.com/page/2")
 
         messages = [r.getMessage() for r in caplog.records]
-        assert any(
-            "Scraping" in m and "example.com/page/2" in m
-            for m in messages
-        )
+        assert any("Scraping" in m and "example.com/page/2" in m for m in messages)
 
 
 # ── Sync run() inside context manager ────────────────────────────
 
-class TestSyncRunInContextManager:
 
+class TestSyncRunInContextManager:
     def test_run_dispatches_to_background_loop(self, tmp_path):
         s = _make_scraper(tmp_path)
         _write_valid_script(s._script_path)
 
         mock_mgr, mock_page = _mock_browser_manager()
 
-        with patch(
-            "scout.runtime.environment.BrowserManager", return_value=mock_mgr
-        ):
+        with patch("scout.runtime.environment.BrowserManager", return_value=mock_mgr):
             with s:
                 result = s.run()
 
@@ -566,12 +566,10 @@ class TestSyncRunInContextManager:
 
         mock_mgr, mock_page = _mock_browser_manager()
 
-        with patch(
-            "scout.runtime.environment.BrowserManager", return_value=mock_mgr
-        ):
+        with patch("scout.runtime.environment.BrowserManager", return_value=mock_mgr):
             with s:
-                r1 = s.run()
-                r2 = s.run(url="https://example.com/page/2")
+                s.run()
+                s.run(url="https://example.com/page/2")
 
             # Browser started once
             mock_mgr.start.assert_awaited_once()
@@ -585,9 +583,7 @@ class TestSyncRunInContextManager:
 
         mock_mgr, mock_page = _mock_browser_manager()
 
-        with patch(
-            "scout.runtime.environment.BrowserManager", return_value=mock_mgr
-        ):
+        with patch("scout.runtime.environment.BrowserManager", return_value=mock_mgr):
             with s:
                 result = s.run(url="https://example.com/other")
                 assert result.url == "https://example.com/other"
@@ -595,8 +591,8 @@ class TestSyncRunInContextManager:
 
 # ── close() method ───────────────────────────────────────────────
 
-class TestCloseMethod:
 
+class TestCloseMethod:
     def test_close_without_context_manager_is_noop(self, tmp_path):
         s = _make_scraper(tmp_path)
         s.close()  # should not raise
@@ -618,8 +614,8 @@ class TestCloseMethod:
 
 # ── __del__ warning ──────────────────────────────────────────────
 
-class TestDelWarning:
 
+class TestDelWarning:
     def test_no_warning_when_no_browser(self, tmp_path):
         s = _make_scraper(tmp_path)
         with warnings.catch_warnings(record=True) as w:
@@ -650,8 +646,8 @@ class TestDelWarning:
 
 # ── export() method ──────────────────────────────────────────────
 
-class TestExport:
 
+class TestExport:
     def test_export_creates_standalone_file(self, tmp_path):
         s = _make_scraper(tmp_path)
         _write_valid_script(s._script_path)
@@ -666,6 +662,7 @@ class TestExport:
 
     def test_export_file_is_valid_python(self, tmp_path):
         import ast
+
         s = _make_scraper(tmp_path)
         _write_valid_script(s._script_path)
 
@@ -724,6 +721,7 @@ class TestExport:
 
     def test_export_logs_path(self, tmp_path, caplog):
         import logging
+
         s = _make_scraper(tmp_path)
         _write_valid_script(s._script_path)
 
@@ -736,6 +734,7 @@ class TestExport:
 
 # ── In-memory caching without script= ────────────────────────────
 
+
 class TestInMemoryCaching:
     """Verify that _run_generate caches function even without script=."""
 
@@ -747,8 +746,7 @@ class TestInMemoryCaching:
         mock_result = MagicMock()
         mock_result.success = True
         mock_result.final_script = (
-            "async def scrape(page, url, checkpoint):\n"
-            "    return [{'title': 'Generated'}]\n"
+            "async def scrape(page, url, checkpoint):\n    return [{'title': 'Generated'}]\n"
         )
         mock_result.return_value = json.dumps([{"title": "Generated"}])
         mock_result.error = None
@@ -763,9 +761,8 @@ class TestInMemoryCaching:
             patch.object(s, "_check_playwright"),
         ):
             import time
-            result = await s._run_generate(
-                "https://example.com", time.monotonic()
-            )
+
+            await s._run_generate("https://example.com", time.monotonic())
 
         assert s._cached_source is not None
         assert "async def scrape" in s._cached_source
@@ -778,10 +775,7 @@ class TestInMemoryCaching:
         s = _make_scraper()
 
         # Simulate what _run_generate does for scriptless caching
-        source = (
-            "async def scrape(page, url, checkpoint):\n"
-            "    return [{'title': 'Cached'}]\n"
-        )
+        source = "async def scrape(page, url, checkpoint):\n    return [{'title': 'Cached'}]\n"
         ns = {
             "__file__": "<scout-generated>",
             **_build_pre_import_namespace(),
@@ -802,6 +796,7 @@ class TestInMemoryCaching:
 
 # ── Pre-imports in loaded functions ──────────────────────────────
 
+
 class TestPreImportsInLoadedFunctions:
     """Agent-authored functions that use pre-imported modules
     should work when executed in-process."""
@@ -812,25 +807,28 @@ class TestPreImportsInLoadedFunctions:
         script_path = tmp_path / "scraper.py"
         script_path.write_text(
             '"""\nScout Script\n\n'
-            'url:           https://example.com\n'
-            'task:          test\n'
-            'generated:     2024-01-01T00:00:00.000000Z\n'
-            'model:         test\n'
-            'scout_version: test\n'
+            "url:           https://example.com\n"
+            "task:          test\n"
+            "generated:     2024-01-01T00:00:00.000000Z\n"
+            "model:         test\n"
+            "scout_version: test\n"
             '"""\n\n'
-            'async def scrape(page, url, checkpoint):\n'
+            "async def scrape(page, url, checkpoint):\n"
             '    data = json.dumps({"a": 1})\n'
             '    return [{"title": data}]\n',
             encoding="utf-8",
         )
 
         from scout.scraper import _load_script
+
         fn, _ = _load_script(script_path)
 
         mock_mgr, mock_page = _mock_browser_manager()
 
         s = Scraper(
-            "https://example.com", "test", schema=[{"title": str}],
+            "https://example.com",
+            "test",
+            schema=[{"title": str}],
             script=str(script_path),
         )
         s._cached_fn = fn
@@ -849,25 +847,28 @@ class TestPreImportsInLoadedFunctions:
         script_path = tmp_path / "scraper.py"
         script_path.write_text(
             '"""\nScout Script\n\n'
-            'url:           https://example.com\n'
-            'task:          test\n'
-            'generated:     2024-01-01T00:00:00.000000Z\n'
-            'model:         test\n'
-            'scout_version: test\n'
+            "url:           https://example.com\n"
+            "task:          test\n"
+            "generated:     2024-01-01T00:00:00.000000Z\n"
+            "model:         test\n"
+            "scout_version: test\n"
             '"""\n\n'
-            'async def scrape(page, url, checkpoint):\n'
+            "async def scrape(page, url, checkpoint):\n"
             '    cleaned = re.sub(r"\\$", "", "$99")\n'
             '    return [{"title": cleaned}]\n',
             encoding="utf-8",
         )
 
         from scout.scraper import _load_script
+
         fn, _ = _load_script(script_path)
 
         mock_mgr, mock_page = _mock_browser_manager()
 
         s = Scraper(
-            "https://example.com", "test", schema=[{"title": str}],
+            "https://example.com",
+            "test",
+            schema=[{"title": str}],
             script=str(script_path),
         )
         s._cached_fn = fn
@@ -883,8 +884,8 @@ class TestPreImportsInLoadedFunctions:
 
 # ── Edge cases ───────────────────────────────────────────────────
 
-class TestEdgeCases:
 
+class TestEdgeCases:
     def test_context_manager_without_any_run(self, tmp_path):
         """Enter and exit without calling run() — should not crash."""
         s = _make_scraper(tmp_path)
@@ -906,18 +907,19 @@ class TestEdgeCases:
         mock_result = MagicMock()
         mock_result.success = True
         mock_result.final_script = (
-            "async def scrape(page, url, checkpoint):\n"
-            "    return [{'title': 'Regenerated'}]\n"
+            "async def scrape(page, url, checkpoint):\n    return [{'title': 'Regenerated'}]\n"
         )
         mock_result.return_value = json.dumps([{"title": "Regenerated"}])
 
         mock_agent = AsyncMock()
         mock_agent.run = AsyncMock(return_value=mock_result)
 
-        with patch("scout.agent.loop.AgentLoop", return_value=mock_agent), \
-             patch("scout.agent.llm.LLMConfig"), \
-             patch.object(s, "_check_api_key"), \
-             patch.object(s, "_check_playwright"):
+        with (
+            patch("scout.agent.loop.AgentLoop", return_value=mock_agent),
+            patch("scout.agent.llm.LLMConfig"),
+            patch.object(s, "_check_api_key"),
+            patch.object(s, "_check_playwright"),
+        ):
             async with s:
                 result = await s.async_regenerate()
                 assert result.script_generated is True
@@ -926,7 +928,8 @@ class TestEdgeCases:
     async def test_validation_error_in_context_managed_run(self, tmp_path):
         """Schema validation failure should propagate correctly."""
         s = Scraper(
-            "https://example.com", "test",
+            "https://example.com",
+            "test",
             schema=[{"title": str, "price": float}],
             script=str(tmp_path / "scraper.py"),
             ai_review=True,
@@ -939,9 +942,7 @@ class TestEdgeCases:
 
         mock_mgr, mock_page = _mock_browser_manager()
 
-        with patch(
-            "scout.runtime.environment.BrowserManager", return_value=mock_mgr
-        ):
+        with patch("scout.runtime.environment.BrowserManager", return_value=mock_mgr):
             s._context_managed = True
             s._cm_start_time = 0.0
             s._cm_page_count = 0
@@ -956,9 +957,7 @@ class TestEdgeCases:
 
         mock_mgr, mock_page = _mock_browser_manager()
 
-        with patch(
-            "scout.runtime.environment.BrowserManager", return_value=mock_mgr
-        ):
+        with patch("scout.runtime.environment.BrowserManager", return_value=mock_mgr):
             try:
                 with s:
                     s.run()

@@ -17,8 +17,8 @@ from scout.agent.timeout_predict import (
     predict_timeout,
 )
 
-
 # ── Helpers ──────────────────────────────────────────────────────
+
 
 def _t(code: str) -> float:
     """Shortcut: dedent + predict."""
@@ -28,6 +28,7 @@ def _t(code: str) -> float:
 # ═════════════════════════════════════════════════════════════════
 #  1. Baseline / edge cases
 # ═════════════════════════════════════════════════════════════════
+
 
 class TestBaseline:
     """The algorithm should never go below BASELINE."""
@@ -55,6 +56,7 @@ class TestBaseline:
 # ═════════════════════════════════════════════════════════════════
 #  2. Single Patchright calls
 # ═════════════════════════════════════════════════════════════════
+
 
 class TestSingleCalls:
     def test_goto(self):
@@ -103,6 +105,7 @@ class TestSingleCalls:
 # ═════════════════════════════════════════════════════════════════
 #  3. Multiple sequential calls
 # ═════════════════════════════════════════════════════════════════
+
 
 class TestSequentialCalls:
     def test_navigate_wait_extract(self):
@@ -157,6 +160,7 @@ class TestSequentialCalls:
 # ═════════════════════════════════════════════════════════════════
 #  4. Loops
 # ═════════════════════════════════════════════════════════════════
+
 
 class TestLoops:
     def test_for_range_literal(self):
@@ -276,6 +280,7 @@ class TestLoops:
 #  5. Context managers
 # ═════════════════════════════════════════════════════════════════
 
+
 class TestContextManagers:
     def test_expect_navigation(self):
         code = """
@@ -300,6 +305,7 @@ class TestContextManagers:
 #  6. If/else branches (take the max)
 # ═════════════════════════════════════════════════════════════════
 
+
 class TestBranching:
     def test_if_else_takes_max(self):
         code = """
@@ -320,6 +326,7 @@ class TestBranching:
 #  7. Try/except
 # ═════════════════════════════════════════════════════════════════
 
+
 class TestTryExcept:
     def test_try_except(self):
         code = """
@@ -338,6 +345,7 @@ class TestTryExcept:
 # ═════════════════════════════════════════════════════════════════
 #  8. scroll_to_bottom helper
 # ═════════════════════════════════════════════════════════════════
+
 
 class TestScrollHelper:
     def test_scroll_with_max_scrolls(self):
@@ -366,6 +374,7 @@ class TestScrollHelper:
 #  9. Timeout kwarg extraction
 # ═════════════════════════════════════════════════════════════════
 
+
 class TestTimeoutKwarg:
     def test_wait_for_function_with_timeout(self):
         code = "await page.wait_for_function('() => true', timeout=45_000)"
@@ -390,6 +399,7 @@ class TestTimeoutKwarg:
 # ═════════════════════════════════════════════════════════════════
 #  10. Duration argument extraction
 # ═════════════════════════════════════════════════════════════════
+
 
 class TestDurationArg:
     def test_wait_for_timeout_ms(self):
@@ -425,6 +435,7 @@ class TestDurationArg:
 # ═════════════════════════════════════════════════════════════════
 #  11. Function definitions
 # ═════════════════════════════════════════════════════════════════
+
 
 class TestFunctionDefs:
     def test_function_body_await_floor(self):
@@ -463,6 +474,7 @@ class TestFunctionDefs:
 # ═════════════════════════════════════════════════════════════════
 #  12. Cross-block function context
 # ═════════════════════════════════════════════════════════════════
+
 
 class TestFunctionContext:
     """When function_sources is passed, predict_timeout sees bodies
@@ -553,6 +565,7 @@ class TestFunctionContext:
 # ═════════════════════════════════════════════════════════════════
 #  13. Realistic agent code patterns
 # ═════════════════════════════════════════════════════════════════
+
 
 class TestRealisticPatterns:
     def test_simple_extraction(self):
@@ -670,6 +683,7 @@ class TestRealisticPatterns:
 #  13. MAX_TIMEOUT cap
 # ═════════════════════════════════════════════════════════════════
 
+
 class TestCap:
     def test_never_exceeds_max(self):
         """No matter how heavy the code, we cap at MAX_TIMEOUT."""
@@ -696,6 +710,7 @@ class TestCap:
 #  14. Performance
 # ═════════════════════════════════════════════════════════════════
 
+
 class TestPerformance:
     def test_fast_on_large_code(self):
         """Algorithm should handle 500-line agent code in < 50ms."""
@@ -719,6 +734,7 @@ class TestPerformance:
 # ═════════════════════════════════════════════════════════════════
 #  15. Chained calls & edge cases
 # ═════════════════════════════════════════════════════════════════
+
 
 class TestEdgeCases:
     def test_chained_locator_click(self):

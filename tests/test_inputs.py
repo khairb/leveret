@@ -4,21 +4,20 @@ from __future__ import annotations
 
 import pytest
 
+from scout.errors import ConfigError
 from scout.inputs import (
+    _PHASE3_EXAMPLE_NO_INPUTS,
     Input,
-    normalize_inputs,
-    build_inputs_section,
-    build_inputs_hint,
-    build_inputs_rule,
     build_inputs_fragments,
+    build_inputs_hint,
     build_inputs_phase3_example,
+    build_inputs_rule,
+    build_inputs_section,
     format_inputs_metadata,
+    normalize_inputs,
     parse_inputs_metadata,
     validate_inputs_against_metadata,
-    _PHASE3_EXAMPLE_NO_INPUTS,
 )
-from scout.errors import ConfigError
-
 
 # ═══════════════════════════════════════════════════════════════
 #  Input class
@@ -26,7 +25,6 @@ from scout.errors import ConfigError
 
 
 class TestInputClass:
-
     def test_string_value_infers_str(self):
         i = Input("hello")
         assert i.value == "hello"
@@ -77,7 +75,6 @@ class TestInputClass:
 
 
 class TestNormalizeInputs:
-
     def test_none_returns_none(self):
         assert normalize_inputs(None) == (None, None)
 
@@ -95,18 +92,22 @@ class TestNormalizeInputs:
         assert defs[1]["type"] is int
 
     def test_input_instances(self):
-        values, defs = normalize_inputs({
-            "city": Input("Berlin", description="City"),
-        })
+        values, defs = normalize_inputs(
+            {
+                "city": Input("Berlin", description="City"),
+            }
+        )
         assert values == {"city": "Berlin"}
         assert defs[0]["description"] == "City"
         assert defs[0]["type"] is str
 
     def test_mixed_bare_and_input(self):
-        values, defs = normalize_inputs({
-            "q": "python",
-            "city": Input("Berlin", description="City"),
-        })
+        values, defs = normalize_inputs(
+            {
+                "q": "python",
+                "city": Input("Berlin", description="City"),
+            }
+        )
         assert values == {"q": "python", "city": "Berlin"}
         assert defs[0]["description"] is None
         assert defs[1]["description"] == "City"
@@ -130,7 +131,6 @@ class TestNormalizeInputs:
 
 
 class TestBuildInputsSection:
-
     def _defs(self, raw):
         _, defs = normalize_inputs(raw)
         return defs
@@ -143,18 +143,26 @@ class TestBuildInputsSection:
         assert 'inputs["q"]' in section
 
     def test_multiple_fields(self):
-        section = build_inputs_section(self._defs({
-            "query": "python",
-            "location": "Berlin",
-        }))
+        section = build_inputs_section(
+            self._defs(
+                {
+                    "query": "python",
+                    "location": "Berlin",
+                }
+            )
+        )
         assert 'inputs["query"]' in section
         assert 'inputs["location"]' in section
         assert "and" in section
 
     def test_description_included(self):
-        section = build_inputs_section(self._defs({
-            "city": Input("Berlin", description="City to filter"),
-        }))
+        section = build_inputs_section(
+            self._defs(
+                {
+                    "city": Input("Berlin", description="City to filter"),
+                }
+            )
+        )
         assert "City to filter" in section
 
     def test_int_example(self):
@@ -168,7 +176,6 @@ class TestBuildInputsSection:
 
 
 class TestBuildInputsHint:
-
     def test_contains_access_pattern(self):
         _, defs = normalize_inputs({"q": "python", "loc": "Berlin"})
         hint = build_inputs_hint(defs)
@@ -178,7 +185,6 @@ class TestBuildInputsHint:
 
 
 class TestBuildInputsRule:
-
     def test_rule_number(self):
         _, defs = normalize_inputs({"q": "python"})
         rule = build_inputs_rule(defs)
@@ -192,7 +198,6 @@ class TestBuildInputsRule:
 
 
 class TestBuildInputsPhase3:
-
     def test_has_inputs_param(self):
         _, defs = normalize_inputs({"q": "python"})
         example = build_inputs_phase3_example(defs)
@@ -206,7 +211,6 @@ class TestBuildInputsPhase3:
 
 
 class TestBuildInputsFragments:
-
     def test_all_keys_present(self):
         _, defs = normalize_inputs({"q": "python"})
         fragments = build_inputs_fragments(defs)
@@ -222,7 +226,6 @@ class TestBuildInputsFragments:
 
 
 class TestFormatInputsMetadata:
-
     def test_single_field(self):
         _, defs = normalize_inputs({"q": "hello"})
         assert format_inputs_metadata(defs) == "q (str)"
@@ -238,7 +241,6 @@ class TestFormatInputsMetadata:
 
 
 class TestParseInputsMetadata:
-
     def test_round_trip_single(self):
         _, defs = normalize_inputs({"q": "hello"})
         meta = format_inputs_metadata(defs)
@@ -262,7 +264,6 @@ class TestParseInputsMetadata:
 
 
 class TestValidateInputsAgainstMetadata:
-
     def test_both_none_ok(self):
         validate_inputs_against_metadata(None, None)
 

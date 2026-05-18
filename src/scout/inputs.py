@@ -10,7 +10,6 @@ teach the LLM to use ``inputs["key"]`` instead of hardcoding values.
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 
@@ -61,8 +60,7 @@ class Input:
         if type_ is not None:
             if type_ not in _SUPPORTED_TYPES:
                 raise ConfigError(
-                    f"Input type_ must be one of str, int, float, bool "
-                    f"(got {type_.__name__})"
+                    f"Input type_ must be one of str, int, float, bool (got {type_.__name__})"
                 )
             self.type_ = type_
         else:
@@ -112,8 +110,7 @@ def normalize_inputs(
 
     if not isinstance(raw, dict):
         raise ConfigError(
-            f"inputs must be a dict mapping names to values "
-            f"(got {type(raw).__name__})"
+            f"inputs must be a dict mapping names to values (got {type(raw).__name__})"
         )
 
     example_values: dict[str, Any] = {}
@@ -146,12 +143,14 @@ def normalize_inputs(
             description = None
 
         example_values[key] = example
-        input_defs.append({
-            "name": key,
-            "type": type_,
-            "description": description,
-            "example": example,
-        })
+        input_defs.append(
+            {
+                "name": key,
+                "type": type_,
+                "description": description,
+                "example": example,
+            }
+        )
 
     return example_values, input_defs
 
@@ -159,6 +158,7 @@ def normalize_inputs(
 # ═══════════════════════════════════════════════════════════════
 #  Prompt builders
 # ═══════════════════════════════════════════════════════════════
+
 
 def _access_pattern_list(input_defs: list[dict[str, Any]]) -> str:
     """Build a human-readable list of ``inputs["key"]`` references.
@@ -175,10 +175,7 @@ def _access_pattern_list(input_defs: list[dict[str, Any]]) -> str:
     if len(refs) <= 3:
         return ", ".join(refs[:-1]) + " and " + refs[-1]
     # 4+ fields — show first 3, summarize the rest.
-    return (
-        ", ".join(refs[:3])
-        + " and the other inputs fields"
-    )
+    return ", ".join(refs[:3]) + " and the other inputs fields"
 
 
 def _example_repr(value: Any) -> str:
@@ -236,18 +233,16 @@ def build_inputs_rule(input_defs: list[dict[str, Any]]) -> str:
     # Build anti-pattern examples from actual example values.
     anti_examples = []
     for d in input_defs[:2]:  # Cap at 2 for readability.
-        anti_examples.append(
-            f'{_example_repr(d["example"])} → inputs["{d["name"]}"]'
-        )
+        anti_examples.append(f'{_example_repr(d["example"])} → inputs["{d["name"]}"]')
     anti_str = ", ".join(anti_examples)
 
     return (
-        f'\n11. **Use `inputs` for all user-provided values — never '
-        f'hardcode them.** '
-        f'The `inputs` variable contains values that change every run. '
-        f'Always access them as {access} — never write the literal value '
-        f'in your code. If you find yourself typing a literal like '
-        f'{anti_str} — replace it with the corresponding '
+        f"\n11. **Use `inputs` for all user-provided values — never "
+        f"hardcode them.** "
+        f"The `inputs` variable contains values that change every run. "
+        f"Always access them as {access} — never write the literal value "
+        f"in your code. If you find yourself typing a literal like "
+        f"{anti_str} — replace it with the corresponding "
         f'inputs["..."] access.'
     )
 
@@ -323,14 +318,13 @@ def build_inputs_fragments(
 #  Metadata helpers
 # ═══════════════════════════════════════════════════════════════
 
+
 def format_inputs_metadata(input_defs: list[dict[str, Any]]) -> str:
     """Format input definitions for the script metadata header.
 
     Produces: ``query (str), location (str) and max_results (int)``
     """
-    parts = [
-        f"{d['name']} ({_TYPE_NAMES[d['type']]})" for d in input_defs
-    ]
+    parts = [f"{d['name']} ({_TYPE_NAMES[d['type']]})" for d in input_defs]
     if len(parts) == 1:
         return parts[0]
     return ", ".join(parts[:-1]) + " and " + parts[-1]
@@ -384,7 +378,7 @@ def validate_inputs_against_metadata(
         if key not in inputs:
             raise ConfigError(
                 f"Input mismatch — this script expects inputs: "
-                f"{expected_meta}, but \"{key}\" is missing."
+                f'{expected_meta}, but "{key}" is missing.'
             )
 
     # Check for unexpected keys.
@@ -393,7 +387,7 @@ def validate_inputs_against_metadata(
             raise ConfigError(
                 f"Input mismatch — this script expects inputs: "
                 f"{expected_meta}, but received unexpected key "
-                f"\"{key}\"."
+                f'"{key}".'
             )
 
     # Check type compatibility.
@@ -408,7 +402,7 @@ def validate_inputs_against_metadata(
             continue
         if actual_type is not expected_type:
             raise ConfigError(
-                f"Input type mismatch — \"{key}\" expects "
+                f'Input type mismatch — "{key}" expects '
                 f"{_TYPE_NAMES.get(expected_type, expected_type.__name__)} "
                 f"but got {actual_type.__name__} ({actual_val!r})."
             )

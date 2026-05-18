@@ -14,7 +14,6 @@ Tests cover:
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -121,8 +120,7 @@ def _build_conversation(n_turns: int) -> list[dict]:
             f"--- [nav] navigation (3 interactive) ---\n"
             f"Home | Products | About | Contact\n"
             f"--- [content-{i}] main (10 interactive) ---\n"
-            f"Product listings with {i * 5} items visible\n"
-            + "y" * 800
+            f"Product listings with {i * 5} items visible\n" + "y" * 800
         )
         msgs.append(_tool_result(f"t-{i}", result))
         msgs.append(_status_msg(i))
@@ -209,6 +207,7 @@ class TestCompressionThresholds:
     def test_classify_unknown_claude(self):
         """Unknown claude variants should get high fractions."""
         from scout.agent.context import _classify_model
+
         assert _classify_model("claude-future-model-99") == 0.75
         assert _classify_model("claude-opus-99") == 0.80
         assert _classify_model("claude-haiku-99") == 0.65
@@ -216,6 +215,7 @@ class TestCompressionThresholds:
     def test_classify_unknown_mini(self):
         """Unknown mini models should get low fractions."""
         from scout.agent.context import _classify_model
+
         assert _classify_model("some-provider-mini-3") == 0.20
         assert _classify_model("mistral-small-latest") == 0.20
         assert _classify_model("gemma-nano-2") == 0.20
@@ -272,9 +272,7 @@ class TestRecentWindow:
         assert start < len(msgs)
         # Verify the preserved window has at least 5 assistant messages
         preserved = msgs[start:]
-        assistant_count = sum(
-            1 for m in preserved if m.get("role") == "assistant"
-        )
+        assistant_count = sum(1 for m in preserved if m.get("role") == "assistant")
         assert assistant_count >= 5
 
     def test_fewer_than_5_pairs_preserves_all(self):
@@ -295,8 +293,7 @@ class TestProtectedMessages:
 
     def test_script_submission_detected(self):
         msg = _assistant(
-            "Here's the final script:\n\n"
-            "async def scrape(page, start_url, checkpoint):\n    pass"
+            "Here's the final script:\n\nasync def scrape(page, start_url, checkpoint):\n    pass"
         )
         assert _is_script_submission(msg)
 
@@ -305,7 +302,10 @@ class TestProtectedMessages:
         msg = {
             "role": "assistant",
             "content": [
-                {"type": "text", "text": "async def scrape(page, start_url, checkpoint):\n    pass"},
+                {
+                    "type": "text",
+                    "text": "async def scrape(page, start_url, checkpoint):\n    pass",
+                },
             ],
         }
         assert _is_script_submission(msg)
@@ -511,7 +511,9 @@ class TestCompressHistory:
         original_count = len(cm.messages)
 
         with patch("scout.agent.summarizer.run_summarizer", new_callable=AsyncMock) as mock:
-            mock.return_value = "**Turn 1** — Navigated to example.com.\n**Turn 2** — Found 10 items."
+            mock.return_value = (
+                "**Turn 1** — Navigated to example.com.\n**Turn 2** — Found 10 items."
+            )
 
             meta = await cm.compress_history(
                 task_description="Extract products",
@@ -569,8 +571,12 @@ class TestCompressHistory:
 
         # Add more turns (large enough to trigger compression again)
         for i in range(16, 26):
-            cm.messages.append(_assistant(f"Turn {i} reasoning: exploring more sections " + "z" * 800))
-            cm.messages.append(_tool_result(f"t-{i}", f"Result for turn {i} with data " + "w" * 800))
+            cm.messages.append(
+                _assistant(f"Turn {i} reasoning: exploring more sections " + "z" * 800)
+            )
+            cm.messages.append(
+                _tool_result(f"t-{i}", f"Result for turn {i} with data " + "w" * 800)
+            )
             cm.messages.append(_status_msg(i))
 
         with patch("scout.agent.summarizer.run_summarizer", new_callable=AsyncMock) as mock:
@@ -578,9 +584,7 @@ class TestCompressHistory:
             await cm.compress_history("Extract products", "anthropic:claude-haiku-4-5")
 
         # Both summaries should exist
-        summary_count = sum(
-            1 for m in cm.messages if _is_summary_message(m)
-        )
+        summary_count = sum(1 for m in cm.messages if _is_summary_message(m))
         assert summary_count == 2
 
         # First summary preserved
@@ -605,9 +609,7 @@ class TestCompressHistory:
             mock.return_value = "Compressed summary"
             await cm.compress_history("Extract products", "anthropic:claude-haiku-4-5")
 
-        all_content = " ".join(
-            str(m.get("content", "")) for m in cm.messages
-        )
+        all_content = " ".join(str(m.get("content", "")) for m in cm.messages)
         assert "## Function Rejected" in all_content
         assert "async def scrape(" in all_content
 
@@ -619,11 +621,16 @@ class TestCompressHistory:
 
         # Insert TWO script+rejection pairs
         # First (older) — at position 7
-        msgs.insert(7, _script_submission("async def scrape(page, start_url, checkpoint):\n    # attempt 1"))
+        msgs.insert(
+            7, _script_submission("async def scrape(page, start_url, checkpoint):\n    # attempt 1")
+        )
         msgs.insert(8, _rejection("attempt 1 failed", attempt=1))
 
         # Second (latest) — at position 16
-        msgs.insert(16, _script_submission("async def scrape(page, start_url, checkpoint):\n    # attempt 2"))
+        msgs.insert(
+            16,
+            _script_submission("async def scrape(page, start_url, checkpoint):\n    # attempt 2"),
+        )
         msgs.insert(17, _rejection("attempt 2 failed", attempt=2))
 
         cm.messages = msgs
@@ -632,16 +639,14 @@ class TestCompressHistory:
             mock.return_value = "Summary: attempt 1 tried X and failed"
             await cm.compress_history("Extract products", "anthropic:claude-haiku-4-5")
 
-        all_content = " ".join(
-            str(m.get("content", "")) for m in cm.messages
-        )
+        all_content = " ".join(str(m.get("content", "")) for m in cm.messages)
         # Latest rejection preserved
         assert "attempt 2 failed" in all_content
         # Older rejection was summarized away (only in summary text)
         rejection_count = sum(
-            1 for m in cm.messages
-            if isinstance(m.get("content", ""), str)
-            and "## Function Rejected" in m["content"]
+            1
+            for m in cm.messages
+            if isinstance(m.get("content", ""), str) and "## Function Rejected" in m["content"]
         )
         assert rejection_count == 1, f"Expected 1 rejection, found {rejection_count}"
 
@@ -650,20 +655,16 @@ class TestCompressHistory:
         """Last 5 interactions stay verbatim after compression."""
         cm = conversation_15_turns
         # Capture the last few assistant messages before compression
-        last_assistants_before = [
-            m for m in cm.messages[-20:] if m.get("role") == "assistant"
-        ][-5:]
+        last_assistants_before = [m for m in cm.messages[-20:] if m.get("role") == "assistant"][-5:]
 
         with patch("scout.agent.summarizer.run_summarizer", new_callable=AsyncMock) as mock:
             mock.return_value = "Compressed"
             await cm.compress_history("Extract products", "anthropic:claude-haiku-4-5")
 
         # Those same assistant messages should appear after compression
-        last_assistants_after = [
-            m for m in cm.messages if m.get("role") == "assistant"
-        ][-5:]
+        last_assistants_after = [m for m in cm.messages if m.get("role") == "assistant"][-5:]
 
-        for before, after in zip(last_assistants_before, last_assistants_after):
+        for before, after in zip(last_assistants_before, last_assistants_after, strict=False):
             assert before["content"] == after["content"]
 
     @pytest.mark.asyncio
@@ -786,8 +787,7 @@ class TestCompressHistoryEdgeCases:
             if cm.messages[i]["role"] == "assistant":
                 # Previous should be user (tool result or text)
                 assert cm.messages[i - 1]["role"] == "user", (
-                    f"Message {i} is assistant but message {i-1} is "
-                    f"{cm.messages[i-1]['role']}"
+                    f"Message {i} is assistant but message {i - 1} is {cm.messages[i - 1]['role']}"
                 )
 
     @pytest.mark.asyncio
@@ -824,9 +824,7 @@ class TestCompressHistoryEdgeCases:
             await cm.compress_history("Extract products", "anthropic:claude-haiku-4-5")
 
         # All three summaries should exist in order
-        summaries = [
-            m for m in cm.messages if _is_summary_message(m)
-        ]
+        summaries = [m for m in cm.messages if _is_summary_message(m)]
         assert len(summaries) == 3
         assert "Summary 1" in summaries[0]["content"]
         assert "Summary 2" in summaries[1]["content"]
@@ -916,7 +914,7 @@ class TestCompressionNoticeMarker:
             "[Context compressed — earlier exploration "
             "(turns 1-10) condensed below. "
             "Your findings are preserved. Re-inspect any page "
-            'state with show_page(page) or '
+            "state with show_page(page) or "
             'zoom_section(page, "id").]'
         )
         assert "show_page(page)" in notice_text
@@ -924,7 +922,10 @@ class TestCompressionNoticeMarker:
 
     def test_summary_marker_is_detectable(self):
         """Summary marker must be reliably detected."""
-        msg = {"role": "user", "content": "[EXPLORATION SUMMARY — Turns 3-12]\n\n**Turn 3** — stuff"}
+        msg = {
+            "role": "user",
+            "content": "[EXPLORATION SUMMARY — Turns 3-12]\n\n**Turn 3** — stuff",
+        }
         assert _is_summary_message(msg)
 
     def test_notice_is_not_summary(self):
@@ -964,12 +965,14 @@ class TestSerializerRobustness:
             _assistant("trying something"),
             {
                 "role": "user",
-                "content": [{
-                    "type": "tool_result",
-                    "tool_use_id": "t-1",
-                    "content": "TimeoutError: page.click timed out",
-                    "is_error": True,
-                }],
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "t-1",
+                        "content": "TimeoutError: page.click timed out",
+                        "is_error": True,
+                    }
+                ],
             },
         ]
         text = _serialize_messages_for_summarizer(msgs, start_turn=1)

@@ -27,41 +27,37 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+
+# Import for type checking only — CompiledSchema is optional at init.
+from typing import TYPE_CHECKING, Any
 
 from ..page.manager import PageStateManager
 from ..runtime.environment import (
     ScrapingRuntime,
     SnapshotConfig,
 )
-
-from .checkpoint import (
-    create_checkpoint_guard,
-    create_expand_checkpoint_function,
-    format_checkpoint_summary,
-    read_checkpoints,
-)
-from .wrapper import (
-    build_combined_output,
-    generate_subprocess_wrapper,
-    parse_return_value,
-)
-from .context import (
-    ConversationManager,
-    _PAGE_VIEW_START,
-    _ZOOM_START,
-    get_compression_threshold,
-)
+from . import console
 from .bridge import (
     ShowPageResult,
     create_post_exec_hook,
     create_show_page_function,
     create_zoom_section_function,
 )
+from .checkpoint import (
+    create_checkpoint_guard,
+    create_expand_checkpoint_function,
+    format_checkpoint_summary,
+    read_checkpoints,
+)
+from .context import (
+    _PAGE_VIEW_START,
+    _ZOOM_START,
+    ConversationManager,
+    get_compression_threshold,
+)
+from .demo_overlay import DemoOverlay
 from .llm import LLMConfig, call_llm
 from .planner import generate_exploration_plan
-from .requirements import generate_requirements, revise_requirements
-from .validator import AttemptRecord, validate_output
 from .prompt import (
     build_initial_user_message,
     build_show_page_analysis_prompt_a,
@@ -71,6 +67,8 @@ from .prompt import (
     build_system_prompt,
     build_zoom_structural_capture_prompt,
 )
+from .requirements import generate_requirements, revise_requirements
+from .selector_extractor import extract_selectors
 from .show_page_context import (
     INDIRECT_NEIGHBOR_RADIUS,
     NEIGHBOR_RADIUS,
@@ -84,14 +82,14 @@ from .show_page_context import (
     get_sections_by_id,
     page_similarity,
 )
-from .tools import TOOL_SCHEMAS, ToolResult, execute_tool
+from .tools import TOOL_SCHEMAS, execute_tool
 from .trace import Tracer
-from .demo_overlay import DemoOverlay
-from .selector_extractor import extract_selectors
-from . import console
-
-# Import for type checking only — CompiledSchema is optional at init.
-from typing import TYPE_CHECKING
+from .validator import AttemptRecord, validate_output
+from .wrapper import (
+    build_combined_output,
+    generate_subprocess_wrapper,
+    parse_return_value,
+)
 
 if TYPE_CHECKING:
     from ..schema.compiler import CompiledSchema
@@ -130,14 +128,13 @@ async def _kill_subprocess_tree(pid: int) -> None:
     except (ProcessLookupError, PermissionError, OSError):
         pass
 
+
 # ═══════════════════════════════════════════════════════════════
 #  Constants
 # ═══════════════════════════════════════════════════════════════
 
 # Regex to extract fenced Python code blocks from agent text.
-_PYTHON_FENCE_RE = re.compile(
-    r"```python\s*\n(.*?)```", re.DOTALL
-)
+_PYTHON_FENCE_RE = re.compile(r"```python\s*\n(.*?)```", re.DOTALL)
 
 # Regex to extract section IDs from zoom markers.
 _ZOOM_IDS_RE = re.compile(r"__ZOOM_START__\|([^|]*)\|")
@@ -145,10 +142,12 @@ _ZOOM_IDS_RE = re.compile(r"__ZOOM_START__\|([^|]*)\|")
 # Regex for stripping internal markers from overlay output.
 _TURN_TAG_RE = re.compile(r"__TURN_\d+__\n?")
 _PAGE_BLOCK_RE = re.compile(
-    r"__PAGE_VIEW_START__.*?__PAGE_VIEW_END__\n?", re.DOTALL,
+    r"__PAGE_VIEW_START__.*?__PAGE_VIEW_END__\n?",
+    re.DOTALL,
 )
 _ZOOM_BLOCK_RE = re.compile(
-    r"__ZOOM_START__\|[^|]*\|.*?__ZOOM_END__\n?", re.DOTALL,
+    r"__ZOOM_START__\|[^|]*\|.*?__ZOOM_END__\n?",
+    re.DOTALL,
 )
 
 
@@ -182,10 +181,7 @@ def _extract_zoom_selectors(
             if not section:
                 continue
             selectors.append(section.start_element.css_selector)
-            if (
-                section.end_element.css_selector
-                != section.start_element.css_selector
-            ):
+            if section.end_element.css_selector != section.start_element.css_selector:
                 selectors.append(section.end_element.css_selector)
     return selectors
 
@@ -193,6 +189,7 @@ def _extract_zoom_selectors(
 # ═══════════════════════════════════════════════════════════════
 #  Result
 # ═══════════════════════════════════════════════════════════════
+
 
 @dataclass
 class AgentResult:
@@ -214,6 +211,7 @@ class AgentResult:
 # ═══════════════════════════════════════════════════════════════
 #  Agent Loop
 # ═══════════════════════════════════════════════════════════════
+
 
 class AgentLoop:
     """Orchestrates the scraping agent from initialization to script output.
@@ -271,8 +269,8 @@ class AgentLoop:
         self._demo = demo
         self._stop_on_captcha = stop_on_captcha
         self._disable_validator = disable_validator
-        self._inputs = inputs                # example values dict
-        self._input_defs = input_defs        # structured metadata
+        self._inputs = inputs  # example values dict
+        self._input_defs = input_defs  # structured metadata
         self._overlay: DemoOverlay | None = None
         self._overlay_done_pushed = False
 
@@ -280,8 +278,11 @@ class AgentLoop:
         # even when AgentLoop is used directly (e.g. from CLI).
         if launch_options is None:
             from ..browser import resolve_launch_options
+
             self._launch_options = resolve_launch_options(
-                None, headless=self._headless, demo=self._demo,
+                None,
+                headless=self._headless,
+                demo=self._demo,
             )
         else:
             self._launch_options = launch_options
@@ -322,20 +323,17 @@ class AgentLoop:
             runtime, psm, initial_page_view = await self._initialize(url)
 
             # Count sections for display.
-            section_count = (
-                len(psm.current_state.sections) if psm.current_state else 0
-            )
+            section_count = len(psm.current_state.sections) if psm.current_state else 0
             console.print_page_loaded(url, section_count)
 
             schema_prompt = (
-                self._compiled_schema.prompt
-                if self._compiled_schema is not None
-                else ""
+                self._compiled_schema.prompt if self._compiled_schema is not None else ""
             )
             # Build inputs prompt fragments (if inputs defined).
             inputs_fragments = None
             if self._input_defs:
                 from ..inputs import build_inputs_fragments
+
                 inputs_fragments = build_inputs_fragments(self._input_defs)
 
             system_prompt = build_system_prompt(
@@ -372,10 +370,12 @@ class AgentLoop:
             inputs_hint = ""
             if self._input_defs:
                 from ..inputs import build_inputs_hint
+
                 inputs_hint = build_inputs_hint(self._input_defs)
 
             initial_msg = build_initial_user_message(
-                task, url,
+                task,
+                url,
                 exploration_checklist=exploration_checklist,
                 inputs_hint=inputs_hint,
             )
@@ -414,9 +414,7 @@ class AgentLoop:
             explore_gate_msg_index: int | None = None
             active_script_result: InProcessScriptResult | None = None
             exploration_page = runtime.page  # Save original page ref
-            checkpoint_base_dir = Path(
-                tempfile.mkdtemp(prefix="scrape_checkpoints_")
-            )
+            checkpoint_base_dir = Path(tempfile.mkdtemp(prefix="scrape_checkpoints_"))
 
             # Show-page context management state.
             show_page_state = ShowPageState()
@@ -444,10 +442,7 @@ class AgentLoop:
                 # ── History compression check ─────────────────
                 # Compress if the last LLM call's input tokens
                 # exceeded the model-specific threshold.
-                if (
-                    last_input_tokens > compression_threshold
-                    and turn_number > 2
-                ):
+                if last_input_tokens > compression_threshold and turn_number > 2:
                     try:
                         comp_meta = await conversation.compress_history(
                             task_description=task,
@@ -464,8 +459,7 @@ class AgentLoop:
                             tracer.log_compression(comp_meta)
                     except Exception:
                         logger.warning(
-                            "History compression failed — continuing "
-                            "without compression",
+                            "History compression failed — continuing without compression",
                             exc_info=True,
                         )
 
@@ -474,8 +468,7 @@ class AgentLoop:
                     current_tools = TOOL_SCHEMAS
                 else:
                     current_tools = [
-                        t for t in TOOL_SCHEMAS
-                        if t["name"] != "last_resort_antibot_escape"
+                        t for t in TOOL_SCHEMAS if t["name"] != "last_resort_antibot_escape"
                     ]
                 messages_for_api = conversation.get_messages()
                 tracer.log_llm_request(messages_for_api, current_tools)
@@ -520,9 +513,7 @@ class AgentLoop:
                             await self._overlay.push_thinking(b.text)
 
                 # Store the assistant message.
-                conversation.add_assistant_message(
-                    _serialize_content_blocks(content_blocks)
-                )
+                conversation.add_assistant_message(_serialize_content_blocks(content_blocks))
 
                 # ── Phase 2+3: show_page analysis & filtering ────
                 was_analysis_turn = pending_show_page is not None
@@ -532,71 +523,53 @@ class AgentLoop:
                     if reasoning.strip():
                         # Phase 3 — filter the page view.
                         sections_for_ref = [
-                            (s.section_id, s.content,
-                             s.interactive_elements)
+                            (s.section_id, s.content, s.interactive_elements)
                             for s in pending_show_page.sections
                         ]
-                        referenced, el_matches = (
-                            get_referenced_sections(
-                                reasoning, sections_for_ref,
-                            )
+                        referenced, el_matches = get_referenced_sections(
+                            reasoning,
+                            sections_for_ref,
                         )
                         sections_for_filter = [
-                            (s.section_id, s.content,
-                             s.semantic_role, s.interactive_count)
+                            (s.section_id, s.content, s.semantic_role, s.interactive_count)
                             for s in pending_show_page.sections
                         ]
 
                         # Variant B carry-forward: seed with
                         # previous Variant A's kept sections.
-                        if (
-                            not pending_is_variant_a
-                            and show_page_state.last_variant_a_kept
-                        ):
-                            referenced |= (
-                                show_page_state.last_variant_a_kept
-                            )
+                        if not pending_is_variant_a and show_page_state.last_variant_a_kept:
+                            referenced |= show_page_state.last_variant_a_kept
 
                         # Indirect reference detection.
-                        indirect_refs, indirect_matches = (
-                            get_indirect_references(
-                                reasoning,
-                                sections_for_filter,
-                                referenced,
-                            )
+                        indirect_refs, indirect_matches = get_indirect_references(
+                            reasoning,
+                            sections_for_filter,
+                            referenced,
                         )
 
                         # Extract the page header line so it
                         # survives filtering (preserves URL).
                         pv_text = pending_show_page.text_output
                         first_line = pv_text.split("\n", 1)[0]
-                        page_header = (
-                            first_line
-                            if first_line.startswith("===")
-                            else None
-                        )
+                        page_header = first_line if first_line.startswith("===") else None
                         filtered = build_filtered_output(
-                            sections_for_filter, referenced,
+                            sections_for_filter,
+                            referenced,
                             page_header=page_header,
                             indirect_refs=indirect_refs,
-                            indirect_neighbor_radius=(
-                                INDIRECT_NEIGHBOR_RADIUS
-                            ),
+                            indirect_neighbor_radius=(INDIRECT_NEIGHBOR_RADIUS),
                         )
 
                         # Append section metadata for later
                         # skeleton/stub conversion.
                         i_elements_map = {
-                            s.section_id: s.interactive_elements
-                            for s in pending_show_page.sections
+                            s.section_id: s.interactive_elements for s in pending_show_page.sections
                         }
                         meta = build_section_meta(
                             sections_for_filter,
                             interactive_elements_map=i_elements_map,
                         )
-                        filtered_with_meta = (
-                            filtered + "\n" + meta
-                        )
+                        filtered_with_meta = filtered + "\n" + meta
                         conversation.replace_last_show_page_result(
                             filtered_with_meta,
                         )
@@ -630,12 +603,8 @@ class AgentLoop:
                         # carry-forward.  Only meaningful when
                         # reasoning was non-empty (Phase 3 ran).
                         if reasoning.strip():
-                            show_page_state.last_variant_a_kept = (
-                                referenced.copy()
-                            )
-                            show_page_state.last_variant_a_indirect = (
-                                indirect_refs.copy()
-                            )
+                            show_page_state.last_variant_a_kept = referenced.copy()
+                            show_page_state.last_variant_a_indirect = indirect_refs.copy()
                     pending_show_page = None
                     if self._overlay:
                         await self._overlay.hide_page_overlay()
@@ -646,9 +615,7 @@ class AgentLoop:
                     zoom_prompt_msg_index = None
 
                 # Collect tool_use blocks.
-                tool_uses = [
-                    b for b in content_blocks if b.type == "tool_use"
-                ]
+                tool_uses = [b for b in content_blocks if b.type == "tool_use"]
 
                 if not tool_uses:
                     # No tool calls — the agent responded with text.
@@ -677,14 +644,16 @@ class AgentLoop:
                             "then write the corrected function."
                         )
                         tracer.log_system_event(
-                            "debug_required", text=debug_msg,
+                            "debug_required",
+                            text=debug_msg,
                         )
                         console.print_debug_required()
                         conversation.add_user_message(debug_msg)
                         continue
                     if script:
                         valid, error_msg = _validate_script(
-                            script, has_inputs=bool(self._inputs),
+                            script,
+                            has_inputs=bool(self._inputs),
                         )
                         tracer.log_script_extracted(script, valid, error_msg)
                         console.print_script_found(valid, error_msg)
@@ -695,10 +664,7 @@ class AgentLoop:
                             # tool calls before accepting a
                             # structurally valid script.
                             if python_step_count < 2:
-                                remaining = (
-                                    self._max_script_attempts
-                                    - script_attempts
-                                )
+                                remaining = self._max_script_attempts - script_attempts
                                 explore_msg = (
                                     "Do not rush to submit the "
                                     "final script \u2014 you have "
@@ -706,9 +672,7 @@ class AgentLoop:
                                 )
                                 if remaining < 3:
                                     explore_msg += (
-                                        f", and only {remaining}"
-                                        f" remain; use them "
-                                        f"carefully"
+                                        f", and only {remaining} remain; use them carefully"
                                     )
                                 explore_msg += (
                                     ". Before writing the "
@@ -726,9 +690,7 @@ class AgentLoop:
                                 conversation.add_user_message(
                                     explore_msg,
                                 )
-                                explore_gate_msg_index = (
-                                    len(conversation.messages) - 1
-                                )
+                                explore_gate_msg_index = len(conversation.messages) - 1
                                 continue
 
                             # Agent submitted a script — clear
@@ -746,23 +708,21 @@ class AgentLoop:
                                 console.print_generating_requirements()
                                 if self._overlay:
                                     await self._overlay.push_validation(
-                                        "reqs", "Defining expectations\u2026",
+                                        "reqs",
+                                        "Defining expectations\u2026",
                                     )
-                                requirements = (
-                                    await generate_requirements(
-                                        task=task,
-                                        conversation_history=(
-                                            conversation.messages
-                                        ),
-                                        llm_config=self._validator_config,
-                                    )
+                                requirements = await generate_requirements(
+                                    task=task,
+                                    conversation_history=(conversation.messages),
+                                    llm_config=self._validator_config,
                                 )
                                 console.print_requirements_generated(
                                     requirements,
                                 )
                                 if self._overlay:
                                     await self._overlay.push_validation_update(
-                                        "reqs", status="ok",
+                                        "reqs",
+                                        status="ok",
                                         label="Expectations defined",
                                     )
                                 tracer.log_system_event(
@@ -779,13 +739,8 @@ class AgentLoop:
                                 # The old exploration page was closed
                                 # during the page switch — open a fresh
                                 # one in the exploration browser.
-                                if (
-                                    exploration_page is None
-                                    or exploration_page.is_closed()
-                                ):
-                                    exploration_page = (
-                                        await runtime._browser_mgr.new_page()
-                                    )
+                                if exploration_page is None or exploration_page.is_closed():
+                                    exploration_page = await runtime._browser_mgr.new_page()
                                 runtime.repl.inject(
                                     page=exploration_page,
                                 )
@@ -801,16 +756,14 @@ class AgentLoop:
                             run_number = script_attempts + 1
                             run_dir = checkpoint_base_dir / f"run_{run_number}"
                             _script_t0 = time.time()
-                            script_run = (
-                                await _run_script_in_process(
-                                    script,
-                                    start_url=url,
-                                    timeout=self._script_timeout,
-                                    checkpoint_dir=run_dir,
-                                    sandbox=self._sandbox,
-                                    launch_options=self._launch_options,
-                                    inputs=self._inputs,
-                                )
+                            script_run = await _run_script_in_process(
+                                script,
+                                start_url=url,
+                                timeout=self._script_timeout,
+                                checkpoint_dir=run_dir,
+                                sandbox=self._sandbox,
+                                launch_options=self._launch_options,
+                                inputs=self._inputs,
                             )
                             _script_elapsed = time.time() - _script_t0
                             # Track for cleanup (finally block).
@@ -822,7 +775,8 @@ class AgentLoop:
                             # Build combined output for display and
                             # validation (stdout + return value JSON).
                             combined_output = build_combined_output(
-                                stdout, return_value_json,
+                                stdout,
+                                return_value_json,
                             )
 
                             # Read checkpoints and update the
@@ -830,19 +784,19 @@ class AgentLoop:
                             checkpoints = read_checkpoints(run_dir)
                             self._checkpoint_run_dir_ref[0] = run_dir
                             console.print_script_output(
-                                combined_output, stderr, returncode,
+                                combined_output,
+                                stderr,
+                                returncode,
                             )
                             if self._overlay:
                                 _sandbox_blocked = (
                                     self._sandbox
                                     and returncode != 0
-                                    and (
-                                        "SANDBOX VIOLATION" in stderr
-                                        or "sandbox mode" in stderr
-                                    )
+                                    and ("SANDBOX VIOLATION" in stderr or "sandbox mode" in stderr)
                                 )
                                 await self._overlay.push_script_output(
-                                    combined_output, returncode,
+                                    combined_output,
+                                    returncode,
                                     duration_s=f"{_script_elapsed:.1f}",
                                     timeout_s=f"{self._script_timeout:.0f}",
                                     sandbox_blocked=_sandbox_blocked,
@@ -874,8 +828,7 @@ class AgentLoop:
                                 # a security risk (prompt injection could
                                 # probe for bypass patterns).
                                 is_sandbox_violation = (
-                                    self._sandbox
-                                    and "SANDBOX VIOLATION" in stderr
+                                    self._sandbox and "SANDBOX VIOLATION" in stderr
                                 )
                                 if is_sandbox_violation:
                                     sandbox_rejections += 1
@@ -883,6 +836,7 @@ class AgentLoop:
                                         from ..errors import (
                                             SandboxViolationError,
                                         )
+
                                         raise SandboxViolationError(
                                             "Scout detected a potential "
                                             "security threat.\n\n"
@@ -921,7 +875,8 @@ class AgentLoop:
                                 if self._compiled_schema is not None:
                                     if self._overlay:
                                         await self._overlay.push_validation(
-                                            "schema", "Checking data format\u2026",
+                                            "schema",
+                                            "Checking data format\u2026",
                                         )
                                     if return_value_json is not None:
                                         try:
@@ -935,11 +890,9 @@ class AgentLoop:
                                         # validate None.
                                         return_data = None
 
-                                    valid, schema_feedback = (
-                                        self._compiled_schema.validate(
-                                            return_data,
-                                            tolerance=self._tolerance,
-                                        )
+                                    valid, schema_feedback = self._compiled_schema.validate(
+                                        return_data,
+                                        tolerance=self._tolerance,
                                     )
                                     tracer.log_system_event(
                                         "schema_validation",
@@ -949,7 +902,8 @@ class AgentLoop:
                                         await self._overlay.push_validation_update(
                                             "schema",
                                             status="ok" if valid else "err",
-                                            label="Data format " + ("correct" if valid else "incorrect"),
+                                            label="Data format "
+                                            + ("correct" if valid else "incorrect"),
                                             detail=schema_feedback if not valid else "",
                                         )
                                     if not valid:
@@ -963,41 +917,31 @@ class AgentLoop:
                                 elif self._approval_mode == "auto":
                                     if self._overlay:
                                         await self._overlay.push_validation(
-                                            "llm", "Reviewing results\u2026",
+                                            "llm",
+                                            "Reviewing results\u2026",
                                         )
-                                    approved, feedback = (
-                                        await validate_output(
-                                            task=task,
-                                            script=script,
-                                            stdout=combined_output,
-                                            stderr=stderr,
-                                            returncode=returncode,
-                                            llm_config=(
-                                                self._validator_config
-                                            ),
-                                            attempt_history=(
-                                                attempt_history
-                                                if attempt_history
-                                                else None
-                                            ),
-                                            requirements=requirements,
-                                            trace_dir=tracer.run_dir,
-                                            checkpoints_summary=(
-                                                cp_summary
-                                            ),
-                                            attempt_number=(
-                                                script_attempts + 1
-                                            ),
-                                            max_attempts=(
-                                                self._max_script_attempts
-                                            ),
-                                        )
+                                    approved, feedback = await validate_output(
+                                        task=task,
+                                        script=script,
+                                        stdout=combined_output,
+                                        stderr=stderr,
+                                        returncode=returncode,
+                                        llm_config=(self._validator_config),
+                                        attempt_history=(
+                                            attempt_history if attempt_history else None
+                                        ),
+                                        requirements=requirements,
+                                        trace_dir=tracer.run_dir,
+                                        checkpoints_summary=(cp_summary),
+                                        attempt_number=(script_attempts + 1),
+                                        max_attempts=(self._max_script_attempts),
                                     )
                                     if approved:
                                         console.print_validator_approved()
                                         if self._overlay:
                                             await self._overlay.push_validation_update(
-                                                "llm", status="ok",
+                                                "llm",
+                                                status="ok",
                                                 label="Results approved",
                                             )
                                     else:
@@ -1006,14 +950,13 @@ class AgentLoop:
                                         )
                                         if self._overlay:
                                             await self._overlay.push_validation_update(
-                                                "llm", status="err",
+                                                "llm",
+                                                status="err",
                                                 label="Results need changes",
                                                 detail=feedback[:200] if feedback else "",
                                             )
                                 else:
-                                    approved, feedback = (
-                                        await console.ask_user_approval()
-                                    )
+                                    approved, feedback = await console.ask_user_approval()
 
                             if approved:
                                 if self._overlay:
@@ -1029,7 +972,8 @@ class AgentLoop:
                                 if tracer.run_dir:
                                     out_path = tracer.run_dir / "output.txt"
                                     out_path.write_text(
-                                        combined_output, encoding="utf-8",
+                                        combined_output,
+                                        encoding="utf-8",
                                     )
 
                                 # Show results viewer immediately — before
@@ -1037,7 +981,8 @@ class AgentLoop:
                                 if self._overlay and self._demo:
                                     try:
                                         await self._overlay.push_done(
-                                            True, "",
+                                            True,
+                                            "",
                                         )
                                         if result.return_value:
                                             await self._overlay.push_results(
@@ -1046,8 +991,7 @@ class AgentLoop:
                                             await self._overlay.wait_for_dismiss(
                                                 main_page=(
                                                     psm.page
-                                                    if psm.page
-                                                    and not psm.page.is_closed()
+                                                    if psm.page and not psm.page.is_closed()
                                                     else None
                                                 ),
                                             )
@@ -1086,21 +1030,21 @@ class AgentLoop:
                                 # Update overlay to track the new page
                                 # so highlights appear during retries.
                                 if self._overlay:
-                                    self._overlay._main_page = (
-                                        script_run.page
-                                    )
+                                    self._overlay._main_page = script_run.page
                                     self._overlay._hl_ready = False
                                     await self._overlay._setup_highlight_host()
                             # Record attempt and feed back.
                             script_attempts += 1
-                            attempt_history.append(AttemptRecord(
-                                attempt_number=script_attempts,
-                                script=script,
-                                stdout_sample=combined_output[:3000],
-                                stderr=stderr,
-                                returncode=returncode,
-                                rejection_feedback=feedback,
-                            ))
+                            attempt_history.append(
+                                AttemptRecord(
+                                    attempt_number=script_attempts,
+                                    script=script,
+                                    stdout_sample=combined_output[:3000],
+                                    stderr=stderr,
+                                    returncode=returncode,
+                                    rejection_feedback=feedback,
+                                )
+                            )
                             tracer.log_system_event(
                                 "script_rejected",
                                 feedback=feedback,
@@ -1127,23 +1071,17 @@ class AgentLoop:
                                 evidence = [
                                     {
                                         "attempt_number": rec.attempt_number,
-                                        "rejection_feedback": (
-                                            rec.rejection_feedback
-                                        ),
+                                        "rejection_feedback": (rec.rejection_feedback),
                                         "stdout_sample": rec.stdout_sample,
                                         "returncode": rec.returncode,
                                     }
                                     for rec in attempt_history
                                 ]
-                                requirements = (
-                                    await revise_requirements(
-                                        task=task,
-                                        original_requirements=requirements,
-                                        attempt_history=evidence,
-                                        llm_config=(
-                                            self._validator_config
-                                        ),
-                                    )
+                                requirements = await revise_requirements(
+                                    task=task,
+                                    original_requirements=requirements,
+                                    attempt_history=evidence,
+                                    llm_config=(self._validator_config),
                                 )
                                 console.print_requirements_revised(
                                     requirements,
@@ -1164,8 +1102,11 @@ class AgentLoop:
                                 break
 
                             rejection_msg = _build_rejection_message(
-                                feedback, stdout, stderr,
-                                returncode, script_attempts,
+                                feedback,
+                                stdout,
+                                stderr,
+                                returncode,
+                                script_attempts,
                                 self._max_script_attempts,
                                 checkpoints=checkpoints,
                                 return_value_json=return_value_json,
@@ -1183,7 +1124,8 @@ class AgentLoop:
                                 f"corrected function in a Python code block."
                             )
                             tracer.log_system_event(
-                                "script_syntax_error", error=error_msg,
+                                "script_syntax_error",
+                                error=error_msg,
                             )
                             conversation.add_user_message(fix_msg)
                             continue
@@ -1203,8 +1145,7 @@ class AgentLoop:
                                 )
                             else:
                                 conversation.add_user_message(
-                                    "Analysis received. Continue with "
-                                    "your task."
+                                    "Analysis received. Continue with your task."
                                 )
                         else:
                             if needs_debugging:
@@ -1226,7 +1167,8 @@ class AgentLoop:
                                     "block."
                                 )
                             tracer.log_system_event(
-                                "nudge_sent", text=nudge,
+                                "nudge_sent",
+                                text=nudge,
                             )
                             console.print_nudge()
                             conversation.add_user_message(nudge)
@@ -1249,8 +1191,7 @@ class AgentLoop:
                 # Check if the agent called last_resort_antibot_escape.
                 # This terminates the run immediately.
                 antibot_block = next(
-                    (b for b in tool_uses
-                     if b.name == "last_resort_antibot_escape"),
+                    (b for b in tool_uses if b.name == "last_resort_antibot_escape"),
                     None,
                 )
                 if antibot_block is not None:
@@ -1261,13 +1202,13 @@ class AgentLoop:
                     details = (
                         f"Provider: {provider}\n"
                         f"Strategies tried ({len(strategies)}):\n"
-                        + "".join(
-                            f"  - {s}\n" for s in strategies
-                        )
+                        + "".join(f"  - {s}\n" for s in strategies)
                         + f"Evidence: {evidence}"
                     )
                     console.print_antibot_escape(
-                        provider, strategies, evidence,
+                        provider,
+                        strategies,
+                        evidence,
                     )
                     tracer.log_tool_call(
                         antibot_block.name,
@@ -1282,9 +1223,7 @@ class AgentLoop:
                     )
                     result.blocked_by_antibot = True
                     result.antibot_details = details
-                    result.error = (
-                        f"Blocked by anti-bot system ({provider})"
-                    )
+                    result.error = f"Blocked by anti-bot system ({provider})"
                     break
 
                 # Execute each tool call.
@@ -1296,10 +1235,7 @@ class AgentLoop:
                         # Remove the exploration gate message
                         # once the threshold is met so it
                         # doesn't confuse smaller models.
-                        if (
-                            python_step_count >= 2
-                            and explore_gate_msg_index is not None
-                        ):
+                        if python_step_count >= 2 and explore_gate_msg_index is not None:
                             conversation.remove_message(
                                 explore_gate_msg_index,
                             )
@@ -1308,8 +1244,10 @@ class AgentLoop:
                             debugging_turn_count += 1
 
                     console.print_tool_call(
-                        block.name, block.input,
-                        step_count, self._max_steps,
+                        block.name,
+                        block.input,
+                        step_count,
+                        self._max_steps,
                     )
                     deferred_hl: list | None = None
                     if self._overlay and block.name == "python":
@@ -1318,41 +1256,39 @@ class AgentLoop:
                         try:
                             extractions = extract_selectors(code)
                             if extractions:
-                                hl_stats = (
-                                    await self._overlay
-                                    .highlight_interactions(
-                                        extractions,
-                                    )
+                                hl_stats = await self._overlay.highlight_interactions(
+                                    extractions,
                                 )
                                 # Stash after-nav results to draw
                                 # after code execution completes.
-                                deferred_hl = hl_stats.get(
-                                    "deferred", [],
-                                ) or None
+                                deferred_hl = (
+                                    hl_stats.get(
+                                        "deferred",
+                                        [],
+                                    )
+                                    or None
+                                )
                                 # Observability: log what the
                                 # highlight system detected.
                                 by_cat: dict[str, int] = {}
                                 for r in extractions:
-                                    by_cat[r.action_category] = (
-                                        by_cat.get(r.action_category, 0)
-                                        + 1
-                                    )
-                                filtered_out = sum(
-                                    1 for r in extractions
-                                    if r.after_navigation
-                                )
+                                    by_cat[r.action_category] = by_cat.get(r.action_category, 0) + 1
+                                filtered_out = sum(1 for r in extractions if r.after_navigation)
                                 console.print_interaction_highlights(
                                     total_extracted=len(extractions),
                                     by_category=by_cat,
                                     filtered_out=filtered_out,
                                     resolved=hl_stats.get(
-                                        "resolved_count", 0,
+                                        "resolved_count",
+                                        0,
                                     ),
                                     dropped_overlap=hl_stats.get(
-                                        "dropped_overlap", 0,
+                                        "dropped_overlap",
+                                        0,
                                     ),
                                     details=hl_stats.get(
-                                        "details", [],
+                                        "details",
+                                        [],
                                     ),
                                 )
                             else:
@@ -1374,7 +1310,8 @@ class AgentLoop:
                         _timeout_budget = ""
                         if block.name == "python":
                             from .timeout_predict import predict_timeout as _pt
-                            from .tools import MIN_TIMEOUT, MAX_TIMEOUT
+                            from .tools import MAX_TIMEOUT, MIN_TIMEOUT
+
                             _pred = _pt(code, runtime.repl.function_sources)
                             _agent_t = block.input.get("timeout")
                             if _agent_t is not None:
@@ -1411,20 +1348,19 @@ class AgentLoop:
                     # selectors) now that the new page has loaded.
                     if deferred_hl and self._overlay:
                         try:
-                            df_stats = (
-                                await self._overlay
-                                .highlight_interactions(
-                                    deferred_hl,
-                                    _deferred=True,
-                                )
+                            df_stats = await self._overlay.highlight_interactions(
+                                deferred_hl,
+                                _deferred=True,
                             )
                             console.print_deferred_highlights(
                                 count=len(deferred_hl),
                                 resolved=df_stats.get(
-                                    "resolved_count", 0,
+                                    "resolved_count",
+                                    0,
                                 ),
                                 drawn=df_stats.get(
-                                    "drawn_count", 0,
+                                    "drawn_count",
+                                    0,
                                 ),
                             )
                         except Exception:
@@ -1434,10 +1370,7 @@ class AgentLoop:
                             )
 
                     # Log and print timeout diagnostics if present.
-                    if (
-                        runtime.history.last
-                        and runtime.history.last.diagnostics
-                    ):
+                    if runtime.history.last and runtime.history.last.diagnostics:
                         diag = runtime.history.last.diagnostics
                         tracer.log_system_event(
                             "timeout_diagnostics",
@@ -1446,8 +1379,11 @@ class AgentLoop:
                             pending_requests=len(diag.pending_requests),
                             failed_requests=len(diag.failed_requests),
                             console_errors=len(
-                                [l for l in diag.console_logs
-                                 if l.get("level") in ("error", "warning")]
+                                [
+                                    l
+                                    for l in diag.console_logs
+                                    if l.get("level") in ("error", "warning")
+                                ]
                             ),
                             partial_stdout_len=len(diag.partial_stdout),
                             diagnostics_summary=diag.summary()[:2000],
@@ -1485,7 +1421,8 @@ class AgentLoop:
                             # for boundaries so we don't cut mid-page.
                             _search_from = _oi
                             _pve = _content.find(
-                                "__PAGE_VIEW_END__", _oi,
+                                "__PAGE_VIEW_END__",
+                                _oi,
                             )
                             if _pve != -1:
                                 _search_from = _pve
@@ -1518,21 +1455,21 @@ class AgentLoop:
                             timeout_info=tool_result.timeout_info or "",
                         )
 
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tool_result.tool_use_id,
-                        "content": tool_result.content,
-                        **({"is_error": True} if tool_result.is_error else {}),
-                    })
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_result.tool_use_id,
+                            "content": tool_result.content,
+                            **({"is_error": True} if tool_result.is_error else {}),
+                        }
+                    )
 
                 conversation.add_tool_results(tool_results, turn=turn_number)
 
                 # Neutral turn status — inform the agent of its
                 # position without pressuring it to finish early.
                 steps_remaining = self._max_steps - step_count
-                python_remaining = (
-                    self._max_python_steps - python_step_count
-                )
+                python_remaining = self._max_python_steps - python_step_count
                 status_msg = (
                     f"[Turn {step_count}/{self._max_steps} — "
                     f"{steps_remaining} remaining"
@@ -1541,7 +1478,8 @@ class AgentLoop:
                     f" {python_remaining} remaining]"
                 )
                 tracer.log_system_event(
-                    "turn_status", text=status_msg,
+                    "turn_status",
+                    text=status_msg,
                 )
                 console.print_turn_status(status_msg)
                 if step_count % 10 == 0:
@@ -1579,8 +1517,7 @@ class AgentLoop:
 
                 # ── Phase 1: detect show_page and inject prompt ──
                 is_show_page_turn = any(
-                    isinstance(tr.get("content"), str)
-                    and _PAGE_VIEW_START in tr["content"]
+                    isinstance(tr.get("content"), str) and _PAGE_VIEW_START in tr["content"]
                     for tr in tool_results
                 )
                 sp_result = self._show_page_result_ref[0]
@@ -1602,10 +1539,8 @@ class AgentLoop:
                         )
                         await self._overlay.show_page_overlay()
                     self._show_page_result_ref[0] = None
-                    pending_is_variant_a = (
-                        show_page_state.should_force_full_analysis(
-                            sp_result.raw_text,
-                        )
+                    pending_is_variant_a = show_page_state.should_force_full_analysis(
+                        sp_result.raw_text,
                     )
                     if needs_debugging and pending_is_variant_a:
                         prompt = build_show_page_debugging_prompt_a()
@@ -1616,9 +1551,7 @@ class AgentLoop:
                     else:
                         prompt = build_show_page_analysis_prompt_b()
                     conversation.add_user_message(prompt)
-                    analysis_prompt_msg_index = (
-                        len(conversation.messages) - 1
-                    )
+                    analysis_prompt_msg_index = len(conversation.messages) - 1
                     pending_show_page = sp_result
                     tracer.log_system_event(
                         "show_page_phase1",
@@ -1631,18 +1564,13 @@ class AgentLoop:
                 # analysis prompt (which covers structural capture).
                 if not is_show_page_turn:
                     is_zoom_turn = any(
-                        isinstance(tr.get("content"), str)
-                        and _ZOOM_START in tr["content"]
+                        isinstance(tr.get("content"), str) and _ZOOM_START in tr["content"]
                         for tr in tool_results
                     )
                     if is_zoom_turn:
-                        zoom_prompt = (
-                            build_zoom_structural_capture_prompt()
-                        )
+                        zoom_prompt = build_zoom_structural_capture_prompt()
                         conversation.add_user_message(zoom_prompt)
-                        zoom_prompt_msg_index = (
-                            len(conversation.messages) - 1
-                        )
+                        zoom_prompt_msg_index = len(conversation.messages) - 1
                         tracer.log_system_event(
                             "zoom_structural_capture",
                         )
@@ -1651,10 +1579,7 @@ class AgentLoop:
                         if self._overlay:
                             for _tr in tool_results:
                                 _trc = _tr.get("content", "")
-                                if (
-                                    isinstance(_trc, str)
-                                    and _ZOOM_START in _trc
-                                ):
+                                if isinstance(_trc, str) and _ZOOM_START in _trc:
                                     _zm = _ZOOM_IDS_RE.search(_trc)
                                     _zids = _zm.group(1) if _zm else ""
                                     _zs = _trc.find("\n", _trc.find(_ZOOM_START)) + 1
@@ -1664,18 +1589,18 @@ class AgentLoop:
                                     _zhtml = _trc[_zs:_ze].strip()
                                     # Strip __TURN_N__ tag if present.
                                     if _zhtml.startswith("__TURN_"):
-                                        _zhtml = _zhtml[
-                                            _zhtml.find("\n") + 1:
-                                        ]
+                                        _zhtml = _zhtml[_zhtml.find("\n") + 1 :]
                                     await self._overlay.push_zoom_view(
-                                        _zids, _zhtml[:5000],
+                                        _zids,
+                                        _zhtml[:5000],
                                     )
                                     break
 
                         # Highlight zoomed sections on the main page.
                         if self._overlay:
                             hl_sels = _extract_zoom_selectors(
-                                tool_results, psm,
+                                tool_results,
+                                psm,
                             )
                             if hl_sels:
                                 await self._overlay.highlight_sections(
@@ -1744,10 +1669,13 @@ class AgentLoop:
                 script = _extract_final_script(text)
                 if script:
                     valid, error_msg = _validate_script(
-                        script, has_inputs=bool(self._inputs),
+                        script,
+                        has_inputs=bool(self._inputs),
                     )
                     tracer.log_script_extracted(
-                        script, valid, error_msg,
+                        script,
+                        valid,
+                        error_msg,
                     )
                     if valid:
                         result.final_script = script
@@ -1792,15 +1720,19 @@ class AgentLoop:
             # delay from script browser cleanup).  The flag
             # _overlay_done_pushed guards against double-pushing.
             if self._overlay and not getattr(
-                self, "_overlay_done_pushed", False,
+                self,
+                "_overlay_done_pushed",
+                False,
             ):
                 try:
                     await self._overlay.push_done(
-                        result.success, result.error or "",
+                        result.success,
+                        result.error or "",
                     )
                 except Exception:
                     logger.debug(
-                        "[overlay] push_done failed", exc_info=True,
+                        "[overlay] push_done failed",
+                        exc_info=True,
                     )
 
             if runtime is not None:
@@ -1830,9 +1762,7 @@ class AgentLoop:
 
     # ── Initialization ────────────────────────────────────────
 
-    async def _initialize(
-        self, url: str
-    ) -> tuple[ScrapingRuntime, PageStateManager, str]:
+    async def _initialize(self, url: str) -> tuple[ScrapingRuntime, PageStateManager, str]:
         """Launch browser, navigate, capture initial page view.
 
         Returns:
@@ -1867,7 +1797,9 @@ class AgentLoop:
         self._show_page_result_ref: list[Any] = [None]
         self._turn_ref: list[int] = [0]
         show_page_fn = create_show_page_function(
-            psm_ref, self._show_page_result_ref, self._turn_ref,
+            psm_ref,
+            self._show_page_result_ref,
+            self._turn_ref,
         )
         zoom_section_fn = create_zoom_section_function(psm_ref, self._turn_ref)
         self._checkpoint_run_dir_ref: list[Any] = [None]
@@ -1890,23 +1822,19 @@ class AgentLoop:
             runtime.repl.inject(inputs=self._inputs)
 
         # Navigate to the target URL — triggers the hook.
-        goto_code = (
-            f'await page.goto("{url}", '
-            f'wait_until="domcontentloaded", timeout=30000)'
-        )
+        goto_code = f'await page.goto("{url}", wait_until="domcontentloaded", timeout=30000)'
         initial_result = await runtime.execute(goto_code)
 
         if not initial_result.success:
-            raise RuntimeError(
-                f"Failed to navigate to {url}: {initial_result.error}"
-            )
+            raise RuntimeError(f"Failed to navigate to {url}: {initial_result.error}")
 
         # Demo overlay — load into the separate popup window immediately
         # so the user sees the panel while the page finishes loading.
         if self._demo and runtime.overlay_page:
             self._overlay = DemoOverlay()
             await self._overlay.init(
-                runtime.overlay_page, main_page=runtime.page,
+                runtime.overlay_page,
+                main_page=runtime.page,
             )
             # Planning is already running in the background — show
             # the spinner immediately instead of fake boot messages.
@@ -1931,6 +1859,7 @@ class AgentLoop:
 #  Helpers
 # ═══════════════════════════════════════════════════════════════
 
+
 def _debugging_reminder(turn_count: int) -> str | None:
     """Return a periodic debugging reminder, or None if not due.
 
@@ -1949,14 +1878,8 @@ def _debugging_reminder(turn_count: int) -> str | None:
     tier = (turn_count - 3) // 4
     reminders = [
         # Tier 0 (turns 3-4): gentle
-        (
-            "Once you understand the root cause, write and submit "
-            "the corrected `scrape` function."
-        ),
-        (
-            "Focus on what specifically failed and why. Then submit "
-            "the fixed `scrape` function."
-        ),
+        ("Once you understand the root cause, write and submit the corrected `scrape` function."),
+        ("Focus on what specifically failed and why. Then submit the fixed `scrape` function."),
         # Tier 1 (turns 7-8): moderate
         (
             "You have enough context to fix the `scrape` function. "
@@ -1988,12 +1911,14 @@ def _serialize_content_blocks(blocks: list) -> list[dict]:
         if b.type == "text":
             serialized.append({"type": "text", "text": b.text})
         elif b.type == "tool_use":
-            serialized.append({
-                "type": "tool_use",
-                "id": b.id,
-                "name": b.name,
-                "input": b.input,
-            })
+            serialized.append(
+                {
+                    "type": "tool_use",
+                    "id": b.id,
+                    "name": b.name,
+                    "input": b.input,
+                }
+            )
         else:
             # Unknown block type — store as text.
             serialized.append({"type": "text", "text": str(b)})
@@ -2029,7 +1954,9 @@ _REQUIRED_SIG_WITH_INPUTS = "async def scrape(page, start_url, inputs, checkpoin
 
 
 def _validate_script(
-    script: str, *, has_inputs: bool = False,
+    script: str,
+    *,
+    has_inputs: bool = False,
 ) -> tuple[bool, str]:
     """Validate the agent's function code.
 
@@ -2045,14 +1972,8 @@ def _validate_script(
     Returns ``(True, "")`` on success or ``(False, error_message)`` on
     the first failure.
     """
-    expected_params = (
-        _EXPECTED_PARAMS_WITH_INPUTS if has_inputs
-        else _EXPECTED_PARAMS_NO_INPUTS
-    )
-    required_sig = (
-        _REQUIRED_SIG_WITH_INPUTS if has_inputs
-        else _REQUIRED_SIG_NO_INPUTS
-    )
+    expected_params = _EXPECTED_PARAMS_WITH_INPUTS if has_inputs else _EXPECTED_PARAMS_NO_INPUTS
+    required_sig = _REQUIRED_SIG_WITH_INPUTS if has_inputs else _REQUIRED_SIG_NO_INPUTS
 
     # Step 1: Syntax.
     try:
@@ -2062,14 +1983,13 @@ def _validate_script(
 
     # Step 2: Find the scrape function.
     scrape_funcs = [
-        node for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name == "scrape"
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "scrape"
     ]
     if not scrape_funcs:
         return False, (
-            "No function named `scrape` found. Your code must define:\n"
-            f"    {required_sig}"
+            f"No function named `scrape` found. Your code must define:\n    {required_sig}"
         )
 
     func = scrape_funcs[-1]  # last definition wins
@@ -2135,7 +2055,10 @@ async def _run_script_subprocess(
     """
     cp_dir = str(checkpoint_dir) if checkpoint_dir else "/tmp/scrape_checkpoints"
     wrapper_code = generate_subprocess_wrapper(
-        script, url, cp_dir, sandbox=sandbox,
+        script,
+        url,
+        cp_dir,
+        sandbox=sandbox,
     )
 
     script_dir = Path(tempfile.mkdtemp(prefix="scrape_run_"))
@@ -2144,14 +2067,16 @@ async def _run_script_subprocess(
         script_path.write_text(wrapper_code, encoding="utf-8")
 
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, str(script_path),
+            sys.executable,
+            str(script_path),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,  # Own process group for clean kill
         )
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout,
+                proc.communicate(),
+                timeout=timeout,
             )
         except asyncio.TimeoutError:
             await _kill_subprocess_tree(proc.pid)
@@ -2181,6 +2106,7 @@ async def _run_script_subprocess(
 #  In-process script runner (keeps the page alive for debugging)
 # ═══════════════════════════════════════════════════════════════
 
+
 class InProcessScriptResult:
     """Result of running the scrape function in-process.
 
@@ -2189,8 +2115,14 @@ class InProcessScriptResult:
     """
 
     __slots__ = (
-        "stdout", "return_value_json", "stderr", "returncode",
-        "page", "context", "pw", "profile_dir",
+        "stdout",
+        "return_value_json",
+        "stderr",
+        "returncode",
+        "page",
+        "context",
+        "pw",
+        "profile_dir",
     )
 
     def __init__(self) -> None:
@@ -2198,10 +2130,10 @@ class InProcessScriptResult:
         self.return_value_json: str | None = None
         self.stderr: str = ""
         self.returncode: int = 0
-        self.page: Any = None          # Patchright Page — still live
-        self.context: Any = None       # BrowserContext — for cleanup
-        self.pw: Any = None            # Playwright instance — for cleanup
-        self.profile_dir: str = ""     # Temp profile — for cleanup
+        self.page: Any = None  # Patchright Page — still live
+        self.context: Any = None  # BrowserContext — for cleanup
+        self.pw: Any = None  # Playwright instance — for cleanup
+        self.profile_dir: str = ""  # Temp profile — for cleanup
 
     async def cleanup(self) -> None:
         """Close the script browser and free resources.
@@ -2254,6 +2186,7 @@ async def _run_script_in_process(
         value, error info, **and the live page object**.
     """
     from patchright.async_api import async_playwright
+
     from ..runtime.environment import BrowserManager
 
     cp_dir = str(checkpoint_dir) if checkpoint_dir else "/tmp/scrape_checkpoints"
@@ -2284,11 +2217,7 @@ async def _run_script_in_process(
                 timezone_id="America/New_York",
                 args=stealth_args,
             )
-        page = (
-            context.pages[0]
-            if context.pages
-            else await context.new_page()
-        )
+        page = context.pages[0] if context.pages else await context.new_page()
         if not is_demo:
             _vp = (launch_options or {}).get("viewport") or {"width": 1920, "height": 1080}
             await page.set_viewport_size(_vp)
@@ -2334,16 +2263,8 @@ async def _run_script_in_process(
             cp_path = os.path.join(cp_dir, f"{cp_id}.json")
             with open(cp_path, "w") as f:
                 json.dump(data, f, indent=2, default=str)
-            t = (
-                (title[:50] + "\u2026")
-                if len(title) > 50
-                else title
-            )
-            dp = (
-                f" | data_preview={len(data_preview)} items"
-                if data_preview
-                else ""
-            )
+            t = (title[:50] + "\u2026") if len(title) > 50 else title
+            dp = f" | data_preview={len(data_preview)} items" if data_preview else ""
             print(
                 f"[{cp_id} {label}] url={cp_url} | "
                 f'title="{t}" | elements={element_count}'
@@ -2352,13 +2273,15 @@ async def _run_script_in_process(
 
         # ── Define the scrape function in a clean namespace ──
         import io as _io
+
         if sandbox:
             from ..runtime.sandbox import (
-                compile_restricted_agent_code,
+                SandboxError,
                 build_restricted_globals,
                 build_safe_pre_imports,
-                SandboxError,
+                compile_restricted_agent_code,
             )
+
             try:
                 exec_globals = build_restricted_globals(build_safe_pre_imports())
                 exec(compile_restricted_agent_code(script), exec_globals)
@@ -2417,6 +2340,7 @@ async def _run_script_in_process(
             scrape_error = f"Function timed out after {timeout} seconds"
         except Exception:
             import traceback
+
             scrape_error = traceback.format_exc()
         finally:
             sys.stdout = old_stdout
@@ -2442,8 +2366,7 @@ async def _run_script_in_process(
         except TypeError as exc:
             type_name = type(return_data).__name__
             result.stderr = (
-                f"scrape() returned type '{type_name}' which is "
-                f"not JSON-serializable: {exc}"
+                f"scrape() returned type '{type_name}' which is not JSON-serializable: {exc}"
             )
             result.returncode = 1
 
@@ -2452,6 +2375,7 @@ async def _run_script_in_process(
     except Exception:
         # Browser launch or navigation failure.
         import traceback
+
         result.stderr = traceback.format_exc()
         result.returncode = 1
         result.context = context
@@ -2479,41 +2403,25 @@ def _build_rejection_message(
     if script_source:
         src = script_source.strip()
         if len(src) > 4000:
-            src = (
-                src[:2000]
-                + "\n\n... (truncated) ...\n\n"
-                + src[-2000:]
-            )
+            src = src[:2000] + "\n\n... (truncated) ...\n\n" + src[-2000:]
         parts.append(f"**Your function:**\n```python\n{src}\n```\n")
 
     if stdout.strip():
         output = stdout.strip()
         if len(output) > 3000:
-            output = (
-                output[:1500]
-                + "\n\n... (truncated) ...\n\n"
-                + output[-1500:]
-            )
+            output = output[:1500] + "\n\n... (truncated) ...\n\n" + output[-1500:]
         parts.append(f"**Progress output:**\n```\n{output}\n```\n")
 
     if return_value_json is not None:
         rv_display = return_value_json.strip()
         if len(rv_display) > 3000:
-            rv_display = (
-                rv_display[:1500]
-                + "\n\n... (truncated) ...\n\n"
-                + rv_display[-1500:]
-            )
+            rv_display = rv_display[:1500] + "\n\n... (truncated) ...\n\n" + rv_display[-1500:]
         parts.append(f"**Return value:**\n```json\n{rv_display}\n```\n")
     elif returncode == 0:
-        parts.append(
-            "**Return value:** (none — function did not return a value)\n"
-        )
+        parts.append("**Return value:** (none — function did not return a value)\n")
 
     if stderr.strip():
-        parts.append(
-            f"**Errors:**\n```\n{stderr.strip()[:2000]}\n```\n"
-        )
+        parts.append(f"**Errors:**\n```\n{stderr.strip()[:2000]}\n```\n")
 
     parts.append(f"**Exit code:** {returncode}\n")
     parts.append(f"**Attempt:** {attempt}/{max_attempts}\n")
@@ -2567,11 +2475,7 @@ def _emit_show_page_log(
     total_sections = len(sections_for_filter)
     total_page_chars = len(pending_show_page.text_output)
     filtered_page_chars = len(filtered)
-    compression_ratio = (
-        filtered_page_chars / total_page_chars
-        if total_page_chars > 0
-        else 0.0
-    )
+    compression_ratio = filtered_page_chars / total_page_chars if total_page_chars > 0 else 0.0
 
     # Similarity score.
     if show_page_state.last_analyzed_text is not None:
@@ -2588,10 +2492,7 @@ def _emit_show_page_log(
     element_matched_sections = referenced - id_mentioned
 
     # Compute kept / neighbor / distant counts.
-    kept_indices = {
-        i for i, s in enumerate(sections_for_filter)
-        if s[0] in referenced
-    }
+    kept_indices = {i for i, s in enumerate(sections_for_filter) if s[0] in referenced}
     neighbor_indices: set[int] = set()
     for ki in kept_indices:
         for offset in range(-NEIGHBOR_RADIUS, NEIGHBOR_RADIUS + 1):
@@ -2625,13 +2526,15 @@ def _emit_show_page_log(
                 context = reasoning[start:end].replace("\n", " ").strip()
             else:
                 context = ""
-            element_match_logs.append(ElementMatch(
-                marker=marker,
-                marker_type=attr,
-                reasoning_context=context,
-                matched_sections=m.sections_with_same_element,
-                is_ambiguous=len(m.sections_with_same_element) > 1,
-            ))
+            element_match_logs.append(
+                ElementMatch(
+                    marker=marker,
+                    marker_type=attr,
+                    reasoning_context=context,
+                    matched_sections=m.sections_with_same_element,
+                    is_ambiguous=len(m.sections_with_same_element) > 1,
+                )
+            )
 
     _indirect = indirect_refs or set()
 

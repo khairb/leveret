@@ -111,14 +111,14 @@ try:
     result = scraper.run()
 except (ValidationError, ScriptError):
     # Site changed — regenerate with the same task and schema
-    result = scraper.run(auto_fix="always")
+    result = scraper.run(auto_regenerate="always")
 ```
 
 This works, but it's blunt. A timeout might mean the site is down, not that your scraper is broken. An empty response might mean Cloudflare is blocking you, not that the selectors changed. Regenerating when the problem isn't your script wastes an API call and produces a new script that fails the same way.
 
-### Auto-fix
+### Auto-regeneration
 
-`auto_fix` handles this. Instead of regenerating on every failure, Scout diagnoses the failure first — retries the script, inspects the page, and only regenerates when there's evidence the script is actually stale:
+`auto_regenerate` handles this. Instead of regenerating on every failure, Scout diagnoses the failure first — retries the script, inspects the page, and only regenerates when there's evidence the script is actually stale:
 
 ```python
 scraper = Scraper(
@@ -126,7 +126,7 @@ scraper = Scraper(
     "Extract all products",
     schema=Items({"name": str, "price": float}, min=10),
     script="scrapers/products.py",
-    auto_fix=True,
+    auto_regenerate=True,
 )
 
 # If the cached script fails, Scout diagnoses the failure before deciding what to do.
@@ -134,40 +134,40 @@ scraper = Scraper(
 result = scraper.run()
 ```
 
-When a cached script fails with `auto_fix` enabled, Scout runs it up to three times, collecting signals each time: what kind of error occurred, whether the error is consistent across retries, and whether the page is actually serving real content or an anti-bot challenge. Then it decides:
+When a cached script fails with `auto_regenerate` enabled, Scout runs it up to three times, collecting signals each time: what kind of error occurred, whether the error is consistent across retries, and whether the page is actually serving real content or an anti-bot challenge. Then it decides:
 
 - **Script is stale** (selectors broke, page restructured) — regenerate automatically
 - **Site is blocking you** (Cloudflare, Akamai, DataDome, etc.) — raise immediately, no point regenerating
 - **Site is down** (503, connection refused, DNS failure) — raise immediately
 - **Error is intermittent** (different failure each retry) — raise, something environmental is wrong
 
-After regeneration, Scout validates the new script before saving it. If the new script fails with the same error pattern, it raises `AutoFixError` instead of looping.
+After regeneration, Scout validates the new script before saving it. If the new script fails with the same error pattern, it raises `AutoRegenerateError` instead of looping.
 
 ```python
-result.auto_fixed  # True if auto-fix triggered regeneration on this run
+result.auto_regenerated  # True if auto-regeneration triggered regeneration on this run
 ```
 
 Three modes control how aggressively Scout regenerates:
 
 ```python
-auto_fix="conservative"   # only regenerates on clear-cut cases (crashes, parse errors)
-auto_fix=True             # balanced (default when True) — regenerates timeouts on real pages too
-auto_fix="aggressive"     # regenerates on weaker evidence, tolerates noisier signals
+auto_regenerate="cautious"   # only regenerates on clear-cut cases (crashes, parse errors)
+auto_regenerate=True          # balanced (default when True) — regenerates timeouts on real pages too
+auto_regenerate="eager"       # regenerates on weaker evidence, tolerates noisier signals
 
-# For type-safe code, use the AutoFixMode enum:
-from scout import AutoFixMode
-auto_fix=AutoFixMode.BALANCED
+# For type-safe code, use the RegenerateMode enum:
+from scout import RegenerateMode
+auto_regenerate=RegenerateMode.BALANCED
 ```
 
-You can override `auto_fix` per-call — the constructor sets the default, `run()` overrides for that run:
+You can override `auto_regenerate` per-call — the constructor sets the default, `run()` overrides for that run:
 
 ```python
-scraper = Scraper(..., auto_fix=True)
+scraper = Scraper(..., auto_regenerate=True)
 
-scraper.run()                          # uses balanced (from constructor)
-scraper.run(auto_fix="always")         # force regeneration on this run
-scraper.run(auto_fix=False)            # disable auto-fix for this run
-scraper.run()                          # back to balanced
+scraper.run()                               # uses balanced (from constructor)
+scraper.run(auto_regenerate="always")        # force regeneration on this run
+scraper.run(auto_regenerate=False)           # disable auto-regeneration for this run
+scraper.run()                               # back to balanced
 ```
 
 ## Install
@@ -312,18 +312,18 @@ scraper = Scraper(
     script="scraper.py",          # where to save/load the script (None = in-memory only)
     model="claude-haiku-4-5",     # which model writes the scraper
     headless=True,                # False to watch the browser work
-    timeout=600,                  # max seconds for script execution
-    max_attempts=6,               # how many times the agent can retry during generation
-    auto_fix=False,               # True, "conservative", "balanced", or "aggressive"
-    protect_script=False,         # True = block regeneration if script was manually edited
+    run_timeout=600,              # max seconds for script execution
+    generation_attempts=6,        # how many times the agent can retry during generation
+    auto_regenerate=False,        # True, "cautious", "balanced", or "eager"
+    protect_manual_edits=False,   # True = block regeneration if script was manually edited
     launch_options=None,          # browser config — any Playwright launch_persistent_context() kwarg
     api_key=None,                 # or set ANTHROPIC_API_KEY
 )
 
 result = scraper.run()                    # generate (if needed) + execute + validate
 result = scraper.run(url="...")           # same scraper, different page
-result = scraper.run(auto_fix="always")   # force regeneration on this run
-result = scraper.run(auto_fix=False)      # disable auto-fix for this run
+result = scraper.run(auto_regenerate="always")   # force regeneration on this run
+result = scraper.run(auto_regenerate=False)      # disable auto-regeneration for this run
 
 await scraper.async_run()                 # async version
 
@@ -340,7 +340,7 @@ scraper.close()                           # close the browser (automatic with `w
 result.data          # your data, validated against the schema
 result.url           # the URL that was scraped
 result.cached        # True = ran from saved script, False = freshly generated
-result.auto_fixed    # True = auto-fix regenerated the script on this run
+result.auto_regenerated  # True = auto-regeneration regenerated the script on this run
 result.timestamp     # when the scrape happened (ISO 8601)
 result.script_path   # where the script lives on disk
 ```
@@ -369,19 +369,19 @@ Development:                        Production:
 
 Scout doesn't create config directories, caches, or dotfiles. The only thing it writes is the file you point `script=` at.
 
-For unattended pipelines, `auto_fix=True` lets Scout recover from site changes without manual intervention — generate once, deploy, and let it self-heal when selectors break.
+For unattended pipelines, `auto_regenerate=True` lets Scout recover from site changes without manual intervention — generate once, deploy, and let it self-heal when selectors break.
 
 ## Limitations
 
 Scout is designed for the long tail of scraping jobs — the sites that are annoying to maintain a scraper for, not the ones that are hostile to scrape.
 
-- **Anti-bot systems**: Patchright handles basic bot detection, but CAPTCHAs and the most aggressive systems (Cloudflare under strict mode, Akamai, PerimeterX) will sometimes block it. When they do, the agent fails visibly during generation. With `auto_fix` enabled, Scout detects these blocks and raises immediately instead of wasting an API call on regeneration.
+- **Anti-bot systems**: Patchright handles basic bot detection, but CAPTCHAs and the most aggressive systems (Cloudflare under strict mode, Akamai, PerimeterX) will sometimes block it. When they do, the agent fails visibly during generation. With `auto_regenerate` enabled, Scout detects these blocks and raises immediately instead of wasting an API call on regeneration.
 - **Complex SPAs**: Single-page apps with heavy custom widgets or non-standard component libraries can be harder for the agent to navigate. If it can't figure out a page, try rephrasing the task with more specific instructions.
-- **Generation cost**: Every generation uses model tokens. The recurring runs are free. For most use cases — generate once, run for months — the cost is negligible. Auto-fix adds a regeneration only when the diagnosis confirms the script is stale, not on every failure.
+- **Generation cost**: Every generation uses model tokens. The recurring runs are free. For most use cases — generate once, run for months — the cost is negligible. Auto-regeneration adds a regeneration only when the diagnosis confirms the script is stale, not on every failure.
 
 ## Contributing
 
-The most useful thing you can do right now: try Scout on a real site and [open an issue](https://github.com/user/scout/issues) with the URL, the task description, and what happened. Sites that break Scout are the most valuable feedback.
+The most useful thing you can do right now: try Scout on a real site and [open an issue](https://github.com/mkhairbarghouth/scout/issues) with the URL, the task description, and what happened. Sites that break Scout are the most valuable feedback.
 
 ## License
 

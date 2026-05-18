@@ -15,9 +15,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from ..page.manager import PageStateManager
-    from ..page.converter import RenderedInteractiveElement
     from playwright.async_api import Page
+
+    from ..page.converter import RenderedInteractiveElement
+    from ..page.manager import PageStateManager
     from ..runtime.environment import ExecutionResult
 
 
@@ -160,8 +161,10 @@ def create_zoom_section_function(
             return None
 
         if not section_ids:
-            print("[zoom_section] No section IDs provided. "
-                  "Pass one or more section IDs from the show_page output.")
+            print(
+                "[zoom_section] No section IDs provided. "
+                "Pass one or more section IDs from the show_page output."
+            )
             return None
 
         html = psm.zoom_in(*section_ids)

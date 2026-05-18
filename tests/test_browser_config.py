@@ -9,11 +9,8 @@ Covers:
 
 from __future__ import annotations
 
-import pytest
-
 from scout import LaunchOptions, Scraper
-from scout.browser import STEALTH_ARGS, SCOUT_DEFAULTS, resolve_launch_options
-
+from scout.browser import resolve_launch_options
 
 VALID_URL = "https://example.com"
 VALID_TASK = "Extract data"
@@ -32,11 +29,13 @@ def _make(**overrides):
 # LaunchOptions TypedDict
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestLaunchOptionsTypedDict:
     """LaunchOptions is importable and constructable."""
 
     def test_import(self):
         from scout import LaunchOptions
+
         assert LaunchOptions is not None
 
     def test_construct_with_common_options(self):
@@ -60,6 +59,7 @@ class TestLaunchOptionsTypedDict:
 # ═══════════════════════════════════════════════════════════════════════════
 # resolve_launch_options
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestResolveLaunchOptions:
     """Merge logic for user options + Scout defaults."""
@@ -126,6 +126,7 @@ class TestResolveLaunchOptions:
 # Scraper integration
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestScraperLaunchOptions:
     """Scraper accepts launch_options and passes them through."""
 
@@ -159,6 +160,7 @@ class TestScraperLaunchOptions:
 # Wrapper template integration
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestWrapperTemplate:
     """Subprocess wrapper receives launch options."""
 
@@ -166,10 +168,11 @@ class TestWrapperTemplate:
         from scout.agent.wrapper import generate_subprocess_wrapper
 
         opts = resolve_launch_options(
-            {"locale": "de-DE"}, headless=True,
+            {"locale": "de-DE"},
+            headless=True,
         )
         wrapper = generate_subprocess_wrapper(
-            'async def scrape(page, start_url, checkpoint):\n    return []',
+            "async def scrape(page, start_url, checkpoint):\n    return []",
             "https://example.com",
             "/tmp/cp",
             launch_options=opts,
@@ -181,7 +184,7 @@ class TestWrapperTemplate:
         from scout.agent.wrapper import generate_subprocess_wrapper
 
         wrapper = generate_subprocess_wrapper(
-            'async def scrape(page, start_url, checkpoint):\n    return []',
+            "async def scrape(page, start_url, checkpoint):\n    return []",
             "https://example.com",
             "/tmp/cp",
         )

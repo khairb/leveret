@@ -6,11 +6,12 @@ that are not relevant for scraping, while preserving the essential structure
 needed for query selection and data extraction.
 """
 
+import logging
 import re
 import time
+
 from bs4 import BeautifulSoup, Comment, NavigableString
 
-import logging
 from .classes import clean_html as clean_unstable_classes
 
 # ---------------------------------------------------------------------------
@@ -297,11 +298,11 @@ DEFAULT_KEEP_LAST = 3
 def _should_remove_attribute(attr_name: str) -> bool:
     """Check if an attribute should be removed."""
     attr_lower = attr_name.lower()
-    
+
     # Always keep whitelisted attributes
     if attr_lower in ATTRIBUTES_TO_KEEP:
         return False
-    
+
     # Keep data-* attributes by default (they're often useful for scraping)
     # unless they match a specific pattern to remove
     if attr_lower.startswith("data-"):
@@ -309,16 +310,16 @@ def _should_remove_attribute(attr_name: str) -> bool:
             if pattern.match(attr_lower):
                 return True
         return False  # Keep other data-* attributes
-    
+
     # Remove if in the removal set
     if attr_lower in ATTRIBUTES_TO_REMOVE:
         return True
-    
+
     # Check prefix patterns
     for pattern in ATTRIBUTE_PREFIX_PATTERNS:
         if pattern.match(attr_lower):
             return True
-    
+
     return False
 
 
@@ -331,7 +332,7 @@ def _is_boilerplate_element(element, use_boilerplate_patterns: bool = True) -> b
         for pattern in BOILERPLATE_COMPILED:
             if pattern.search(element_id):
                 return True
-    
+
     # Check classes
     classes = element.get("class", [])
     if isinstance(classes, str):
@@ -341,16 +342,16 @@ def _is_boilerplate_element(element, use_boilerplate_patterns: bool = True) -> b
             for pattern in BOILERPLATE_COMPILED:
                 if pattern.search(cls):
                     return True
-    
+
     # Check semantic elements
     if element.name in {"nav", "aside", "footer", "header"}:
         return True
-    
+
     # Check role attribute
     role = element.get("role", "").lower()
     if role in {"navigation", "banner", "contentinfo", "complementary", "search"}:
         return True
-    
+
     return False
 
 
@@ -360,18 +361,18 @@ def _is_empty_element(element) -> bool:
     # Self-closing elements that might be meaningful
     if element.name in {"img", "input", "br", "hr", "source", "track", "embed", "area"}:
         return False
-    
+
     # Check if element has any non-whitespace text content
     text = element.get_text(strip=True)
     if text:
         return False
-    
+
     # Check if element has any meaningful attributes
     meaningful_attrs = {"id", "class", "name", "data-", "role", "aria-"}
     for attr in element.attrs:
         if attr in meaningful_attrs or attr.startswith("data-"):
             return False
-    
+
     # Check if it has non-empty children
     for child in element.children:
         if isinstance(child, NavigableString):
@@ -380,7 +381,7 @@ def _is_empty_element(element) -> bool:
         elif hasattr(child, "name") and child.name:
             if not _is_empty_element(child):
                 return False
-    
+
     return True
 
 
@@ -396,10 +397,7 @@ def _truncate_long_attributes(element) -> None:
             # BeautifulSoup stores multi-value attrs (e.g. class) as lists — skip.
             continue
         attr_lower = attr.lower()
-        is_candidate = (
-            attr_lower in ATTRIBUTES_TO_TRUNCATE
-            or attr_lower.startswith("data-")
-        )
+        is_candidate = attr_lower in ATTRIBUTES_TO_TRUNCATE or attr_lower.startswith("data-")
         if is_candidate and len(value) > MAX_ATTR_LENGTH:
             element[attr] = value[:MAX_ATTR_LENGTH] + "...(omitted)"
 
@@ -590,12 +588,14 @@ def _get_indices_to_preserve(
             dominant_to_all_idx[id(child)] = all_idx
 
     # Create reverse mapping: dominant element index -> element
-    dominant_idx_to_element = {i: el for i, el in enumerate(dominant_elements)}
+    {i: el for i, el in enumerate(dominant_elements)}
 
     # Start with first N and last N
     preserve_indices: set[int] = set()
     preserve_indices.update(range(min(keep_first, len(dominant_elements))))
-    preserve_indices.update(range(max(0, len(dominant_elements) - keep_last), len(dominant_elements)))
+    preserve_indices.update(
+        range(max(0, len(dominant_elements) - keep_last), len(dominant_elements))
+    )
 
     # Find dominant elements adjacent to non-dominant elements
     for all_idx, child in enumerate(all_children):
@@ -687,21 +687,20 @@ def _truncate_dominant_with_adjacency(
     stats["dominant_count"] = len(dominant_group)
 
     # Step 3: Determine which elements to preserve
-    preserve_indices = _get_indices_to_preserve(
-        all_children, dominant_group, keep_first, keep_last
-    )
+    preserve_indices = _get_indices_to_preserve(all_children, dominant_group, keep_first, keep_last)
 
     # Calculate how many were preserved due to adjacency
     # (beyond the basic first N and last N)
-    basic_preserve_count = min(keep_first, len(dominant_group)) + min(keep_last, max(0, len(dominant_group) - keep_first))
-    stats["preserved_adjacent"] = len(preserve_indices) - min(basic_preserve_count, len(dominant_group))
+    basic_preserve_count = min(keep_first, len(dominant_group)) + min(
+        keep_last, max(0, len(dominant_group) - keep_first)
+    )
+    stats["preserved_adjacent"] = len(preserve_indices) - min(
+        basic_preserve_count, len(dominant_group)
+    )
 
     # Step 4: Determine elements to remove
     # (dominant elements that are NOT in preserve set)
-    to_remove = [
-        el for i, el in enumerate(dominant_group)
-        if i not in preserve_indices
-    ]
+    to_remove = [el for i, el in enumerate(dominant_group) if i not in preserve_indices]
 
     if not to_remove:
         return stats
@@ -757,14 +756,13 @@ def _find_repeating_runs(
     runs = []
     current_run = [children[0]]
 
-    for i, element in enumerate(children[1:], 1):
+    for _i, element in enumerate(children[1:], 1):
         # Get previous elements from current run (up to lookback)
         prev_elements = current_run[-lookback:]
 
         # Count how many previous elements this one is similar to
         similar_count = sum(
-            1 for prev in prev_elements
-            if _is_similar(element, prev, class_threshold)
+            1 for prev in prev_elements if _is_similar(element, prev, class_threshold)
         )
 
         # Threshold: similar to at least 2 of last 3, or all if fewer
@@ -941,9 +939,7 @@ def _truncate_all_repeating(
 
         # Strategy 3: Fall back to sliding window detection for generic containers
         if not runs:
-            runs = _find_repeating_runs(
-                element, min_items, lookback, class_threshold
-            )
+            runs = _find_repeating_runs(element, min_items, lookback, class_threshold)
             method = "sliding_window"
 
         # Process each run found
@@ -1021,17 +1017,17 @@ def _format_html(
     )
 
     soup = BeautifulSoup(html, "lxml")
-    
+
     # Remove comments
     for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
         comment.extract()
-    
+
     # Remove head section if requested
     if remove_head:
         head = soup.find("head")
         if head:
             head.decompose()
-    
+
     # Remove unwanted elements
     for tag_name in ELEMENTS_TO_REMOVE:
         for element in soup.find_all(tag_name):
@@ -1042,7 +1038,7 @@ def _format_html(
         for element in soup.find_all(tag_name):
             # Keep the element and its attributes, but clear contents
             element.clear()
-    
+
     # Remove boilerplate sections if requested
     if remove_boilerplate:
         # We need to collect elements first, then remove them
@@ -1050,10 +1046,10 @@ def _format_html(
         to_remove = []
         for element in soup.find_all(True):  # All tags
             # check if it has class "adx-disclosure-card"
-           
+
             if _is_boilerplate_element(element, use_boilerplate_patterns=use_boilerplate_patterns):
                 to_remove.append(element)
-        
+
         for element in to_remove:
             # Only decompose if it hasn't been removed already (nested boilerplate)
             if element.parent is not None:
@@ -1071,7 +1067,9 @@ def _format_html(
         if truncate_stats["elements_removed"] > 0:
             size_after_truncation = len(str(soup))
             reduction = size_before_truncation - size_after_truncation
-            reduction_pct = (reduction / size_before_truncation) * 100 if size_before_truncation > 0 else 0
+            reduction_pct = (
+                (reduction / size_before_truncation) * 100 if size_before_truncation > 0 else 0
+            )
             logger.info(
                 f"Repeating elements truncation: "
                 f"{truncate_stats['runs_collapsed']}/{truncate_stats['runs_found']} runs collapsed, "
@@ -1087,7 +1085,7 @@ def _format_html(
         for attr in list(element.attrs.keys()):
             if _should_remove_attribute(attr):
                 attrs_to_delete.append(attr)
-        
+
         for attr in attrs_to_delete:
             del element[attr]
 
@@ -1097,27 +1095,27 @@ def _format_html(
         # Limit classes if requested
         if limit_classes:
             _limit_class_count(element, max_classes)
-        
+
         # Truncate text if requested
         if truncate_text:
             _truncate_text(element, max_text_length)
-    
+
     # Remove empty elements if requested
     if remove_empty:
         # Multiple passes may be needed as removing children may make parents empty
         changed = True
         max_passes = 5  # Prevent infinite loops
         passes = 0
-        
+
         while changed and passes < max_passes:
             changed = False
             passes += 1
-            
+
             for element in soup.find_all(True):
                 if element.name not in {"html", "body"} and _is_empty_element(element):
                     element.decompose()
                     changed = True
-    
+
     # Return result
     if prettify:
         result = soup.prettify()
@@ -1137,7 +1135,11 @@ def _format_html(
 
     if size_before_class_clean != size_after_class_clean:
         class_clean_reduction = size_before_class_clean - size_after_class_clean
-        class_clean_pct = (class_clean_reduction / size_before_class_clean) * 100 if size_before_class_clean > 0 else 0
+        class_clean_pct = (
+            (class_clean_reduction / size_before_class_clean) * 100
+            if size_before_class_clean > 0
+            else 0
+        )
         logger.debug(
             f"Class cleaning: {size_before_class_clean:,} -> {size_after_class_clean:,} chars "
             f"({class_clean_pct:.1f}% reduction)"
@@ -1210,8 +1212,6 @@ def format_html_conservative(html: str, truncate_repeating=True) -> str:
 
 # Example usage and testing
 if __name__ == "__main__":
-    import sys
-
     # Test with inline HTML - simple case (no widgets)
     test_html_simple = """
     <html>
@@ -1259,7 +1259,7 @@ if __name__ == "__main__":
 
     # Try to load file, fall back to test HTML
     try:
-        with open("app/domains/scraping/agent/generated_scrapers/view.html", "r") as f:
+        with open("app/domains/scraping/agent/generated_scrapers/view.html") as f:
             sample_html = f.read()
         print(f"Loaded HTML file: {len(sample_html):,} characters")
     except FileNotFoundError:
@@ -1306,7 +1306,9 @@ if __name__ == "__main__":
         children_after = [c for c in search_results.children if hasattr(c, "name") and c.name]
         for i, child in enumerate(children_after):
             classes = " ".join(child.get("class", []))
-            text = child.get_text(strip=True)[:50] if hasattr(child, "get_text") else str(child)[:50]
+            text = (
+                child.get_text(strip=True)[:50] if hasattr(child, "get_text") else str(child)[:50]
+            )
             print(f"  [{i}] <{child.name} class='{classes}'> {text}...")
 
     print("\n" + "=" * 60)
@@ -1338,16 +1340,18 @@ if __name__ == "__main__":
     print("LENGTH COMPARISON")
     print("=" * 60)
     print(f"Original:     {len(sample_html):,} characters")
-    print(f"Conservative: {len(sanitized_html):,} characters ({len(sanitized_html) / len(sample_html) * 100:.1f}% of original)")
-    print(f"Aggressive:   {len(sanitized_html_aggressive):,} characters ({len(sanitized_html_aggressive) / len(sample_html) * 100:.1f}% of original)")
+    print(
+        f"Conservative: {len(sanitized_html):,} characters ({len(sanitized_html) / len(sample_html) * 100:.1f}% of original)"
+    )
+    print(
+        f"Aggressive:   {len(sanitized_html_aggressive):,} characters ({len(sanitized_html_aggressive) / len(sample_html) * 100:.1f}% of original)"
+    )
 
     # Show truncated result for visual inspection
     print("\n" + "=" * 60)
     print("TRUNCATED OUTPUT (first 2000 chars)")
     print("=" * 60)
     print(sanitized_html_aggressive[:2000])
-
-
 
 
 """

@@ -77,15 +77,9 @@ def format_checkpoint_summary(checkpoints: list[dict]) -> str:
         dp = ""
         if cp.get("data_preview"):
             dp = f" | data_preview={len(cp['data_preview'])} items"
-        lines.append(
-            f"[{cp_id} {label}] url={url} | "
-            f'title="{t}" | elements={elems}{dp} | {ts}s'
-        )
+        lines.append(f'[{cp_id} {label}] url={url} | title="{t}" | elements={elems}{dp} | {ts}s')
 
-    lines.append(
-        "\nTo inspect any checkpoint's full page state, call: "
-        'expand_checkpoint("CP-1")'
-    )
+    lines.append('\nTo inspect any checkpoint\'s full page state, call: expand_checkpoint("CP-1")')
     return "\n".join(lines)
 
 
@@ -106,9 +100,9 @@ def _build_checkpoint_page_view(
 
     Returns a :class:`ShowPageResult` ready for the filtering pipeline.
     """
-    from .bridge import ShowPageResult, ShowPageSectionData
     from ..page.sanitize import format_html_conservative
     from ..page.sectioner import section_page
+    from .bridge import ShowPageResult, ShowPageSectionData
 
     label = data.get("label", "?")
     ts = data.get("timestamp_s", 0)
@@ -119,7 +113,8 @@ def _build_checkpoint_page_view(
 
     if raw_html:
         sanitized = format_html_conservative(
-            raw_html, truncate_repeating=False,
+            raw_html,
+            truncate_repeating=False,
         )
         sections = section_page(sanitized, None)
     else:
@@ -130,10 +125,7 @@ def _build_checkpoint_page_view(
         section_data: list[ShowPageSectionData] = []
         for s in sections:
             i_count = s.interactive_count
-            h = (
-                f"--- [{s.id}] {s.semantic_role} "
-                f"({i_count} interactive) ---"
-            )
+            h = f"--- [{s.id}] {s.semantic_role} ({i_count} interactive) ---"
             parts.append(h)
             parts.append(s.text)
             parts.append("")
@@ -278,6 +270,7 @@ def create_expand_checkpoint_function(
 
         # Populate the shared sidecar ref for the filtering pipeline.
         from .bridge import ShowPageResult
+
         result_ref[0] = ShowPageResult(
             text_output=combined_text,
             raw_text="\n".join(all_raw_parts),
@@ -299,19 +292,19 @@ _CHECKPOINT_GUARD_MESSAGE = (
     "\n"
     "In this environment you already have full page observability:\n"
     "  • await show_page(page)  — see the full page as sectioned text\n"
-    "  • await zoom_section(page, \"section-id\")  — inspect the DOM "
+    '  • await zoom_section(page, "section-id")  — inspect the DOM '
     "HTML of any section\n"
     "\n"
     "checkpoint() is for your final scrape function only. The function "
     "runs in a separate process where you cannot call show_page or "
     "zoom_section. Checkpoints give you that same visibility — each "
     "checkpoint captures the page state at a key moment so that if the "
-    "function is rejected, you can call expand_checkpoint(\"CP-1\") to "
+    'function is rejected, you can call expand_checkpoint("CP-1") to '
     "see what happened.\n"
     "\n"
     "Use checkpoint as a parameter in your scrape function:\n"
     "  async def scrape(page, start_url, checkpoint):\n"
-    "      await checkpoint(\"label\")"
+    '      await checkpoint("label")'
 )
 
 

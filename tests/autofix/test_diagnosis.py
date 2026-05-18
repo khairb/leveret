@@ -15,31 +15,24 @@ Tests cover:
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from scout.autofix.diagnosis import (
-    diagnose,
-    format_diagnosis_message,
     _check_e_eligibility,
-    _category_label,
-    _stability_label,
-    _page_summary,
+    diagnose,
 )
 from scout.autofix.types import (
     AttemptResult,
     AutoFixAction,
-    RegenerateMode,
     DiagnosisResult,
     ErrorCategory,
-    Fingerprint,
     PageSignals,
     PageVerificationResult,
+    RegenerateMode,
     StabilityLevel,
 )
-
 
 # -- Helpers ---------------------------------------------------------------
 
@@ -91,6 +84,7 @@ TARGET_URL = "https://example.com/products"
 
 
 # -- Patching asyncio.sleep to avoid real delays --
+
 
 @pytest.fixture(autouse=True)
 def _no_sleep():
@@ -545,10 +539,10 @@ class TestPageVerification:
             http_status=200,
             page_url="https://example.com/products",
             content=(
-                '<html><head><title>Just a moment...</title></head>'
+                "<html><head><title>Just a moment...</title></head>"
                 '<body><form class="challenge-form">'
                 '<input type="hidden" name="__cf_chl_f_tk" value="abc">'
-                '</form></body></html>'
+                "</form></body></html>"
             ),
             headers={"cf-mitigated": "challenge"},
         )
@@ -563,9 +557,7 @@ class TestPageVerification:
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
-        assert all(
-            r == PageVerificationResult.ANTI_BOT for r in result.page_results
-        )
+        assert all(r == PageVerificationResult.ANTI_BOT for r in result.page_results)
 
     @pytest.mark.asyncio
     async def test_server_error_blocks_cautious(self):
@@ -608,9 +600,7 @@ class TestPageVerification:
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
-        assert all(
-            r == PageVerificationResult.NO_RESPONSE for r in result.page_results
-        )
+        assert all(r == PageVerificationResult.NO_RESPONSE for r in result.page_results)
 
 
 # -- Test: E eligibility --------------------------------------------------
@@ -745,6 +735,7 @@ class TestExecuteFnCrashProtection:
     @pytest.mark.asyncio
     async def test_all_executions_crash(self):
         """All 3 execute_fn calls raise -> 3 failed attempts, no crash."""
+
         async def always_crash():
             raise ValueError("Boom!")
 
@@ -774,12 +765,15 @@ class TestDelays:
         ]
         execute_fn = _make_execute_fn(results)
 
-        with patch(
-            "scout.autofix.diagnosis.asyncio.sleep",
-            new_callable=AsyncMock,
-        ) as mock_sleep, patch(
-            "scout.autofix.diagnosis.random.uniform",
-            return_value=4.0,
+        with (
+            patch(
+                "scout.autofix.diagnosis.asyncio.sleep",
+                new_callable=AsyncMock,
+            ) as mock_sleep,
+            patch(
+                "scout.autofix.diagnosis.random.uniform",
+                return_value=4.0,
+            ),
         ):
             await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
@@ -814,13 +808,16 @@ class TestDelays:
         ]
         execute_fn = _make_execute_fn(results)
 
-        with patch(
-            "scout.autofix.diagnosis.asyncio.sleep",
-            new_callable=AsyncMock,
-        ), patch(
-            "scout.autofix.diagnosis.random.uniform",
-            return_value=3.5,
-        ) as mock_uniform:
+        with (
+            patch(
+                "scout.autofix.diagnosis.asyncio.sleep",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "scout.autofix.diagnosis.random.uniform",
+                return_value=3.5,
+            ) as mock_uniform,
+        ):
             await diagnose(execute_fn, TARGET_URL, RegenerateMode.BALANCED)
 
             for call in mock_uniform.call_args_list:
@@ -1003,9 +1000,7 @@ class TestEdgeCases:
 
         assert isinstance(result, DiagnosisResult)
         assert result.action == AutoFixAction.RAISE
-        assert all(
-            r == PageVerificationResult.REDIRECTED for r in result.page_results
-        )
+        assert all(r == PageVerificationResult.REDIRECTED for r in result.page_results)
 
     @pytest.mark.asyncio
     async def test_e_eligible_defaults_true_for_non_e(self):
@@ -1031,6 +1026,7 @@ class TestEdgeCases:
         The full chain: crash -> AttemptResult(page_signals=None)
         -> verify_page(None, ...) -> NO_RESPONSE.
         """
+
         async def crash_once_then_fail():
             crash_once_then_fail.calls += 1
             if crash_once_then_fail.calls == 1:
@@ -1040,7 +1036,9 @@ class TestEdgeCases:
         crash_once_then_fail.calls = 0
 
         result = await diagnose(
-            crash_once_then_fail, TARGET_URL, RegenerateMode.BALANCED,
+            crash_once_then_fail,
+            TARGET_URL,
+            RegenerateMode.BALANCED,
         )
 
         assert isinstance(result, DiagnosisResult)

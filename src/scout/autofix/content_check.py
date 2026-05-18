@@ -31,7 +31,8 @@ _MAX_SIZE = 10_240  # 10KB
 
 # Primary: password input field (very high confidence)
 _LOGIN_PASSWORD_RE = re.compile(
-    r"<input[^>]+type=[\"']password[\"']", re.IGNORECASE,
+    r"<input[^>]+type=[\"']password[\"']",
+    re.IGNORECASE,
 )
 
 # Secondary: title contains login/signin + page has a form
@@ -45,100 +46,120 @@ _FORM_TAG_RE = re.compile(r"<form[\s>]", re.IGNORECASE)
 # ── Category 2: Maintenance / Error Pages ──────────────────────
 
 _MAINTENANCE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"under\s+maintenance", re.IGNORECASE),
-     "under maintenance"),
-    (re.compile(r"maintenance\s+mode", re.IGNORECASE),
-     "maintenance mode"),
-    (re.compile(r"we[''\u2019]ll\s+be\s+(right\s+)?back", re.IGNORECASE),
-     "we'll be back"),
-    (re.compile(r"we\s+will\s+be\s+(right\s+)?back", re.IGNORECASE),
-     "we will be back"),
-    (re.compile(r"something\s+went\s+wrong", re.IGNORECASE),
-     "something went wrong"),
-    (re.compile(r"temporarily\s+unavailable", re.IGNORECASE),
-     "temporarily unavailable"),
-    (re.compile(r"scheduled\s+(down\s*time|maintenance)", re.IGNORECASE),
-     "scheduled downtime/maintenance"),
-    (re.compile(r"currently\s+unavailable", re.IGNORECASE),
-     "currently unavailable"),
-    (re.compile(r"be\s+right\s+back", re.IGNORECASE),
-     "be right back"),
-    (re.compile(
-        r"experiencing\s+(technical\s+)?difficulties", re.IGNORECASE,
-    ), "experiencing difficulties"),
-    (re.compile(r"under\s+construction", re.IGNORECASE),
-     "under construction"),
+    (re.compile(r"under\s+maintenance", re.IGNORECASE), "under maintenance"),
+    (re.compile(r"maintenance\s+mode", re.IGNORECASE), "maintenance mode"),
+    (re.compile(r"we[''\u2019]ll\s+be\s+(right\s+)?back", re.IGNORECASE), "we'll be back"),
+    (re.compile(r"we\s+will\s+be\s+(right\s+)?back", re.IGNORECASE), "we will be back"),
+    (re.compile(r"something\s+went\s+wrong", re.IGNORECASE), "something went wrong"),
+    (re.compile(r"temporarily\s+unavailable", re.IGNORECASE), "temporarily unavailable"),
+    (
+        re.compile(r"scheduled\s+(down\s*time|maintenance)", re.IGNORECASE),
+        "scheduled downtime/maintenance",
+    ),
+    (re.compile(r"currently\s+unavailable", re.IGNORECASE), "currently unavailable"),
+    (re.compile(r"be\s+right\s+back", re.IGNORECASE), "be right back"),
+    (
+        re.compile(
+            r"experiencing\s+(technical\s+)?difficulties",
+            re.IGNORECASE,
+        ),
+        "experiencing difficulties",
+    ),
+    (re.compile(r"under\s+construction", re.IGNORECASE), "under construction"),
 ]
 
 # "coming soon" restricted to <title> or <h1> to avoid product teasers
 _COMING_SOON_TITLE_RE = re.compile(
-    r"<title>[^<]*coming\s+soon[^<]*</title>", re.IGNORECASE,
+    r"<title>[^<]*coming\s+soon[^<]*</title>",
+    re.IGNORECASE,
 )
 _COMING_SOON_H1_RE = re.compile(
-    r"<h1[^>]*>[^<]*coming\s+soon[^<]*</h1>", re.IGNORECASE,
+    r"<h1[^>]*>[^<]*coming\s+soon[^<]*</h1>",
+    re.IGNORECASE,
 )
 
 
 # ── Category 3: Non-Standard Rate Limiting ─────────────────────
 
 _RATE_LIMIT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"too\s+many\s+requests", re.IGNORECASE),
-     "too many requests"),
-    (re.compile(r"rate\s+limit", re.IGNORECASE),
-     "rate limit"),
-    (re.compile(
-        r"you[''\u2019]re\s+browsing\s+too\s+fast", re.IGNORECASE,
-    ), "browsing too fast"),
+    (re.compile(r"too\s+many\s+requests", re.IGNORECASE), "too many requests"),
+    (re.compile(r"rate\s+limit", re.IGNORECASE), "rate limit"),
+    (
+        re.compile(
+            r"you[''\u2019]re\s+browsing\s+too\s+fast",
+            re.IGNORECASE,
+        ),
+        "browsing too fast",
+    ),
 ]
 
 # "slow down" requires context words to avoid false positives
 _SLOW_DOWN_RE = re.compile(
-    r"slow\s+down", re.IGNORECASE,
+    r"slow\s+down",
+    re.IGNORECASE,
 )
 _SLOW_DOWN_CONTEXT_RE = re.compile(
-    r"request|try\s+again|wait", re.IGNORECASE,
+    r"request|try\s+again|wait",
+    re.IGNORECASE,
 )
 
 # Auto-refresh meta tag + wait/try/moment context
 _META_REFRESH_RE = re.compile(
-    r'<meta\s+http-equiv=["\']refresh["\']', re.IGNORECASE,
+    r'<meta\s+http-equiv=["\']refresh["\']',
+    re.IGNORECASE,
 )
 _META_REFRESH_CONTEXT_RE = re.compile(
-    r"wait|try|moment", re.IGNORECASE,
+    r"wait|try|moment",
+    re.IGNORECASE,
 )
 
 
 # ── Category 4: Geographic Restrictions ────────────────────────
 
 _GEO_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(
-        r"not\s+available\s+in\s+your\s+(country|region|area|location)",
-        re.IGNORECASE,
-    ), "not available in your region"),
-    (re.compile(r"geo(graphically)?\s*restrict", re.IGNORECASE),
-     "geographically restricted"),
-    (re.compile(r"region(al)?\s+restriction", re.IGNORECASE),
-     "regional restriction"),
-    (re.compile(
-        r"blocked\s+in\s+your\s+(country|region)", re.IGNORECASE,
-    ), "blocked in your region"),
-    (re.compile(
-        r"not\s+accessible\s+from\s+your\s+location", re.IGNORECASE,
-    ), "not accessible from your location"),
+    (
+        re.compile(
+            r"not\s+available\s+in\s+your\s+(country|region|area|location)",
+            re.IGNORECASE,
+        ),
+        "not available in your region",
+    ),
+    (re.compile(r"geo(graphically)?\s*restrict", re.IGNORECASE), "geographically restricted"),
+    (re.compile(r"region(al)?\s+restriction", re.IGNORECASE), "regional restriction"),
+    (
+        re.compile(
+            r"blocked\s+in\s+your\s+(country|region)",
+            re.IGNORECASE,
+        ),
+        "blocked in your region",
+    ),
+    (
+        re.compile(
+            r"not\s+accessible\s+from\s+your\s+location",
+            re.IGNORECASE,
+        ),
+        "not accessible from your location",
+    ),
 ]
 
 
 # ── Category 5: Account Suspended / Banned ─────────────────────
 
 _SUSPENDED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(
-        r"account\s+(has\s+been\s+)?(suspended|banned|disabled|terminated)",
-        re.IGNORECASE,
-    ), "account suspended/banned"),
-    (re.compile(
-        r"(ip|address)\s+(has\s+been\s+)?(blocked|banned)",
-        re.IGNORECASE,
-    ), "IP blocked/banned"),
+    (
+        re.compile(
+            r"account\s+(has\s+been\s+)?(suspended|banned|disabled|terminated)",
+            re.IGNORECASE,
+        ),
+        "account suspended/banned",
+    ),
+    (
+        re.compile(
+            r"(ip|address)\s+(has\s+been\s+)?(blocked|banned)",
+            re.IGNORECASE,
+        ),
+        "IP blocked/banned",
+    ),
 ]
 
 

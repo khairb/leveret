@@ -161,9 +161,9 @@ def _summarize_conversation(messages: list[dict]) -> str:
             text = content
             if len(text) > max_content_chars:
                 text = (
-                    text[:max_content_chars // 2]
+                    text[: max_content_chars // 2]
                     + "\n\n... (truncated) ...\n\n"
-                    + text[-max_content_chars // 2:]
+                    + text[-max_content_chars // 2 :]
                 )
             parts.append(f"### {role.upper()} (message {i + 1})\n\n{text}\n")
 
@@ -177,9 +177,9 @@ def _summarize_conversation(messages: list[dict]) -> str:
                     text = block.get("text", "")
                     if len(text) > max_content_chars:
                         text = (
-                            text[:max_content_chars // 2]
+                            text[: max_content_chars // 2]
                             + "\n\n... (truncated) ...\n\n"
-                            + text[-max_content_chars // 2:]
+                            + text[-max_content_chars // 2 :]
                         )
                     block_parts.append(text)
 
@@ -200,9 +200,9 @@ def _summarize_conversation(messages: list[dict]) -> str:
                     if isinstance(result_content, str):
                         if len(result_content) > max_content_chars:
                             result_content = (
-                                result_content[:max_content_chars // 2]
+                                result_content[: max_content_chars // 2]
                                 + "\n\n... (truncated) ...\n\n"
-                                + result_content[-max_content_chars // 2:]
+                                + result_content[-max_content_chars // 2 :]
                             )
                         is_error = block.get("is_error", False)
                         label = "Tool ERROR" if is_error else "Tool result"
@@ -210,8 +210,7 @@ def _summarize_conversation(messages: list[dict]) -> str:
 
             if block_parts:
                 parts.append(
-                    f"### {role.upper()} (message {i + 1})\n\n"
-                    + "\n\n".join(block_parts) + "\n"
+                    f"### {role.upper()} (message {i + 1})\n\n" + "\n\n".join(block_parts) + "\n"
                 )
 
     return "\n---\n\n".join(parts)
@@ -244,16 +243,15 @@ async def generate_requirements(
 
     conversation_summary = _summarize_conversation(conversation_history)
 
-    user_message = (
-        f"## Original Task\n\n{task}\n\n"
-        f"## Exploration History\n\n{conversation_summary}"
-    )
+    user_message = f"## Original Task\n\n{task}\n\n## Exploration History\n\n{conversation_summary}"
 
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": user_message},
     ]
 
-    logger.info("Generating requirements from %d conversation messages...", len(conversation_history))
+    logger.info(
+        "Generating requirements from %d conversation messages...", len(conversation_history)
+    )
 
     response = await call_llm(
         llm_config,
@@ -270,7 +268,8 @@ async def generate_requirements(
     duration = time.time() - start
     logger.info(
         "Requirements generated in %.1fs (%d chars)",
-        duration, len(requirements),
+        duration,
+        len(requirements),
     )
 
     return requirements.strip()
@@ -441,7 +440,8 @@ async def revise_requirements(
     duration = time.time() - start
     logger.info(
         "Requirements revised in %.1fs (%d chars)",
-        duration, len(revised),
+        duration,
+        len(revised),
     )
 
     return revised.strip()

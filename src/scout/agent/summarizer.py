@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
 
 from .llm import LLMConfig, call_llm
 
@@ -246,7 +245,7 @@ def _serialize_messages_for_summarizer(
             if isinstance(content, list):
                 for block in content:
                     if block.get("type") == "text" and block.get("text", "").strip():
-                        parts.append(f"ASSISTANT (reasoning):")
+                        parts.append("ASSISTANT (reasoning):")
                         parts.append(block["text"].strip())
                         parts.append("")
                     elif block.get("type") == "tool_use":
@@ -255,13 +254,13 @@ def _serialize_messages_for_summarizer(
                         # Show tool call concisely
                         if name == "python":
                             code = args.get("code", "")
-                            parts.append(f"TOOL CALL: python")
+                            parts.append("TOOL CALL: python")
                             parts.append(f"```python\n{code}\n```")
                         else:
                             parts.append(f"TOOL CALL: {name}({args})")
                         parts.append("")
             elif isinstance(content, str) and content.strip():
-                parts.append(f"ASSISTANT:")
+                parts.append("ASSISTANT:")
                 parts.append(content.strip())
                 parts.append("")
 
@@ -362,9 +361,7 @@ def _infer_turn_range(
         return min(found_turns), max(found_turns)
 
     # Fallback: count assistant messages as turns
-    assistant_count = sum(
-        1 for msg in messages if msg.get("role") == "assistant"
-    )
+    assistant_count = sum(1 for msg in messages if msg.get("role") == "assistant")
     return fallback_start, fallback_start + max(assistant_count - 1, 0)
 
 
@@ -409,8 +406,7 @@ async def _call_summarizer(
 
     # Extract text from response
     text_parts = [
-        block.text for block in response.content
-        if block.type == "text" and block.text.strip()
+        block.text for block in response.content if block.type == "text" and block.text.strip()
     ]
     return "\n".join(text_parts).strip()
 
@@ -427,10 +423,7 @@ def _find_turn_midpoint(messages: list[dict]) -> int:
     assistant message — so the first half ends on a complete
     interaction (assistant + user pair).
     """
-    assistant_indices = [
-        i for i, msg in enumerate(messages)
-        if msg.get("role") == "assistant"
-    ]
+    assistant_indices = [i for i, msg in enumerate(messages) if msg.get("role") == "assistant"]
     if len(assistant_indices) < 2:
         return len(messages) // 2
 
@@ -471,13 +464,19 @@ async def run_summarizer(
 
     logger.info(
         "Summarizer: %d messages, ~%d tokens estimated, turns %d-%d",
-        len(messages), token_estimate, start_turn, end_turn,
+        len(messages),
+        token_estimate,
+        start_turn,
+        end_turn,
     )
 
     if token_estimate < _SPLIT_THRESHOLD:
         # Single call — within the reliable extraction window
         return await _call_summarizer(
-            messages, task_description, start_turn, end_turn,
+            messages,
+            task_description,
+            start_turn,
+            end_turn,
             llm_config=llm_config,
         )
 
@@ -488,7 +487,7 @@ async def run_summarizer(
         # Overlap: include 1 interaction pair (2 messages) from the boundary
         overlap = min(2, midpoint)
         first_half = messages[:midpoint]
-        second_half = messages[midpoint - overlap:]
+        second_half = messages[midpoint - overlap :]
 
         first_start, first_end = _infer_turn_range(first_half, start_turn)
         second_start, second_end = _infer_turn_range(second_half, first_end)
@@ -496,20 +495,28 @@ async def run_summarizer(
         logger.info(
             "Summarizer: splitting into 2 calls — "
             "first: %d msgs (turns %d-%d), second: %d msgs (turns %d-%d)",
-            len(first_half), first_start, first_end,
-            len(second_half), second_start, second_end,
+            len(first_half),
+            first_start,
+            first_end,
+            len(second_half),
+            second_start,
+            second_end,
         )
 
         summary_a, summary_b = await asyncio.gather(
             _call_summarizer(
-                first_half, task_description,
-                first_start, first_end,
+                first_half,
+                task_description,
+                first_start,
+                first_end,
                 llm_config=llm_config,
                 split_note=_SPLIT_FIRST_HALF_NOTE,
             ),
             _call_summarizer(
-                second_half, task_description,
-                second_start, second_end,
+                second_half,
+                task_description,
+                second_start,
+                second_end,
                 llm_config=llm_config,
                 split_note=_SPLIT_SECOND_HALF_NOTE,
             ),
@@ -522,8 +529,8 @@ async def run_summarizer(
 
     overlap = min(2, third)
     part_1 = messages[:third]
-    part_2 = messages[third - overlap:two_thirds]
-    part_3 = messages[two_thirds - overlap:]
+    part_2 = messages[third - overlap : two_thirds]
+    part_3 = messages[two_thirds - overlap :]
 
     t1_start, t1_end = _infer_turn_range(part_1, start_turn)
     t2_start, t2_end = _infer_turn_range(part_2, t1_end)
@@ -531,22 +538,33 @@ async def run_summarizer(
 
     logger.info(
         "Summarizer: splitting into 3 calls — %d/%d/%d msgs",
-        len(part_1), len(part_2), len(part_3),
+        len(part_1),
+        len(part_2),
+        len(part_3),
     )
 
     s1, s2, s3 = await asyncio.gather(
         _call_summarizer(
-            part_1, task_description, t1_start, t1_end,
+            part_1,
+            task_description,
+            t1_start,
+            t1_end,
             llm_config=llm_config,
             split_note=_SPLIT_FIRST_HALF_NOTE,
         ),
         _call_summarizer(
-            part_2, task_description, t2_start, t2_end,
+            part_2,
+            task_description,
+            t2_start,
+            t2_end,
             llm_config=llm_config,
             split_note=_SPLIT_SECOND_HALF_NOTE,
         ),
         _call_summarizer(
-            part_3, task_description, t3_start, t3_end,
+            part_3,
+            task_description,
+            t3_start,
+            t3_end,
             llm_config=llm_config,
             split_note=_SPLIT_SECOND_HALF_NOTE,
         ),

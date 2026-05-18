@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from scout.agent.prompt import build_system_prompt, build_initial_user_message
-from scout.inputs import normalize_inputs, build_inputs_fragments, build_inputs_hint
+from scout.agent.prompt import build_initial_user_message, build_system_prompt
+from scout.inputs import build_inputs_fragments, build_inputs_hint, normalize_inputs
 
 
 class TestSystemPromptNoInputs:
@@ -89,7 +89,6 @@ class TestSystemPromptWithInputs:
 
 
 class TestInitialMessageNoInputs:
-
     def test_no_inputs_hint(self):
         msg = build_initial_user_message("task", "https://example.com")
         assert "inputs" not in msg.lower()
@@ -100,12 +99,13 @@ class TestInitialMessageNoInputs:
 
 
 class TestInitialMessageWithInputs:
-
     def test_inputs_hint_appended(self):
         _, defs = normalize_inputs({"q": "python"})
         hint = build_inputs_hint(defs)
         msg = build_initial_user_message(
-            "task", "https://example.com", inputs_hint=hint,
+            "task",
+            "https://example.com",
+            inputs_hint=hint,
         )
         assert "`inputs` dict" in msg
         assert 'inputs["q"]' in msg
@@ -114,6 +114,8 @@ class TestInitialMessageWithInputs:
         _, defs = normalize_inputs({"q": "python"})
         hint = build_inputs_hint(defs)
         msg = build_initial_user_message(
-            "task", "https://example.com", inputs_hint=hint,
+            "task",
+            "https://example.com",
+            inputs_hint=hint,
         )
         assert "show_page(page)" in msg

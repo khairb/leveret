@@ -9,40 +9,40 @@ The goal is to catch subtle bugs that only appear with complex,
 production-realistic inputs.
 """
 
-import json
-import math
-
 import pytest
 
-from scout.schema.compiler import CompiledSchema, compile_schema
+from scout.schema.compiler import compile_schema
 from scout.schema.types import Field, List
-
 
 # ═══════════════════════════════════════════════════════════════════
 #  Scenario 1: E-commerce product catalog
 #  3 levels of nesting, 12 fields, all constraint types
 # ═══════════════════════════════════════════════════════════════════
 
-ECOMMERCE_SCHEMA = List({
-    "title": Field(str, min_length=1),
-    "price": Field(float, min=0),
-    "currency": Field(str, enum=["USD", "EUR", "GBP"]),
-    "rating": Field(int, min=1, max=5, optional=True),
-    "description": Field(str, min_length=20),
-    "in_stock": bool,
-    "specs": dict,
-    "tags": [str],
-    "variants": [{
-        "sku": str,
-        "color": str,
-        "size": Field(str, enum=["XS", "S", "M", "L", "XL", "XXL"]),
-        "price_override": Field(float, min=0, optional=True),
-    }],
-}, min_items=20)
+ECOMMERCE_SCHEMA = List(
+    {
+        "title": Field(str, min_length=1),
+        "price": Field(float, min=0),
+        "currency": Field(str, enum=["USD", "EUR", "GBP"]),
+        "rating": Field(int, min=1, max=5, optional=True),
+        "description": Field(str, min_length=20),
+        "in_stock": bool,
+        "specs": dict,
+        "tags": [str],
+        "variants": [
+            {
+                "sku": str,
+                "color": str,
+                "size": Field(str, enum=["XS", "S", "M", "L", "XL", "XXL"]),
+                "price_override": Field(float, min=0, optional=True),
+            }
+        ],
+    },
+    min_items=20,
+)
 
 
 class TestEcommerceScenario:
-
     @pytest.fixture
     def cs(self):
         return compile_schema(ECOMMERCE_SCHEMA)
@@ -76,9 +76,21 @@ class TestEcommerceScenario:
 
     def test_prompt_contains_all_fields(self, cs):
         prompt = cs.prompt
-        for field in ["title", "price", "currency", "rating", "description",
-                       "in_stock", "specs", "tags", "variants", "sku",
-                       "color", "size", "price_override"]:
+        for field in [
+            "title",
+            "price",
+            "currency",
+            "rating",
+            "description",
+            "in_stock",
+            "specs",
+            "tags",
+            "variants",
+            "sku",
+            "color",
+            "size",
+            "price_override",
+        ]:
             assert field in prompt, f"Field {field!r} missing from prompt"
 
     def test_prompt_contains_all_constraints(self, cs):
@@ -169,23 +181,25 @@ class TestEcommerceScenario:
 #  Nested optional objects, pattern constraints
 # ═══════════════════════════════════════════════════════════════════
 
-JOB_SCHEMA = List({
-    "title": Field(str, min_length=3),
-    "company": str,
-    "location": str,
-    "salary": {
-        "min": Field(int, min=0, optional=True),
-        "max": Field(int, min=0, optional=True),
-        "currency": Field(str, enum=["USD", "EUR", "GBP"], optional=True),
+JOB_SCHEMA = List(
+    {
+        "title": Field(str, min_length=3),
+        "company": str,
+        "location": str,
+        "salary": {
+            "min": Field(int, min=0, optional=True),
+            "max": Field(int, min=0, optional=True),
+            "currency": Field(str, enum=["USD", "EUR", "GBP"], optional=True),
+        },
+        "posted": Field(str, pattern=r"\d{4}-\d{2}-\d{2}"),
+        "remote": bool,
+        "skills": [str],
     },
-    "posted": Field(str, pattern=r"\d{4}-\d{2}-\d{2}"),
-    "remote": bool,
-    "skills": [str],
-}, min_items=10)
+    min_items=10,
+)
 
 
 class TestJobListingsScenario:
-
     @pytest.fixture
     def cs(self):
         return compile_schema(JOB_SCHEMA)
@@ -212,15 +226,18 @@ class TestJobListingsScenario:
 
     def test_salary_as_number_not_object(self, cs):
         """Agent flattened the salary object to a number."""
-        data = [{
-            "title": "Engineer",
-            "company": "Acme",
-            "location": "NYC",
-            "salary": 100000,  # should be an object
-            "posted": "2024-03-15",
-            "remote": True,
-            "skills": ["Python"],
-        } for _ in range(10)]
+        data = [
+            {
+                "title": "Engineer",
+                "company": "Acme",
+                "location": "NYC",
+                "salary": 100000,  # should be an object
+                "posted": "2024-03-15",
+                "remote": True,
+                "skills": ["Python"],
+            }
+            for _ in range(10)
+        ]
 
         valid, msg = cs.validate(data)
         assert valid is False
@@ -229,30 +246,36 @@ class TestJobListingsScenario:
 
     def test_salary_optional_fields_all_null(self, cs):
         """All salary sub-fields null (they're optional)."""
-        data = [{
-            "title": "Engineer",
-            "company": "Acme",
-            "location": "NYC",
-            "salary": {"min": None, "max": None, "currency": None},
-            "posted": "2024-03-15",
-            "remote": True,
-            "skills": [],
-        } for _ in range(10)]
+        data = [
+            {
+                "title": "Engineer",
+                "company": "Acme",
+                "location": "NYC",
+                "salary": {"min": None, "max": None, "currency": None},
+                "posted": "2024-03-15",
+                "remote": True,
+                "skills": [],
+            }
+            for _ in range(10)
+        ]
 
         valid, msg = cs.validate(data)
         assert valid is True
 
     def test_date_pattern_violations(self, cs):
         """Agent extracted dates in wrong format."""
-        data = [{
-            "title": "Engineer",
-            "company": "Acme",
-            "location": "NYC",
-            "salary": {"min": 80000, "max": 120000, "currency": "USD"},
-            "posted": "March 15, 2024",  # wrong format
-            "remote": True,
-            "skills": ["Python"],
-        } for _ in range(10)]
+        data = [
+            {
+                "title": "Engineer",
+                "company": "Acme",
+                "location": "NYC",
+                "salary": {"min": 80000, "max": 120000, "currency": "USD"},
+                "posted": "March 15, 2024",  # wrong format
+                "remote": True,
+                "skills": ["Python"],
+            }
+            for _ in range(10)
+        ]
 
         valid, msg = cs.validate(data)
         assert valid is False
@@ -260,15 +283,18 @@ class TestJobListingsScenario:
         assert "March 15, 2024" in msg
 
     def test_negative_salary(self, cs):
-        data = [{
-            "title": "Engineer",
-            "company": "Acme",
-            "location": "NYC",
-            "salary": {"min": -50000, "max": 120000, "currency": "USD"},
-            "posted": "2024-03-15",
-            "remote": True,
-            "skills": [],
-        } for _ in range(10)]
+        data = [
+            {
+                "title": "Engineer",
+                "company": "Acme",
+                "location": "NYC",
+                "salary": {"min": -50000, "max": 120000, "currency": "USD"},
+                "posted": "2024-03-15",
+                "remote": True,
+                "skills": [],
+            }
+            for _ in range(10)
+        ]
 
         valid, msg = cs.validate(data)
         assert valid is False
@@ -284,18 +310,21 @@ class TestJobListingsScenario:
 SERP_SCHEMA = {
     "total_results": int,
     "query": str,
-    "results": List({
-        "title": str,
-        "url": Field(str, min_length=10),
-        "snippet": Field(str, max_length=500),
-        "published": Field(str, pattern=r"\d{4}-\d{2}-\d{2}", optional=True),
-        "source": str,
-    }, min_items=10, max_items=50),
+    "results": List(
+        {
+            "title": str,
+            "url": Field(str, min_length=10),
+            "snippet": Field(str, max_length=500),
+            "published": Field(str, pattern=r"\d{4}-\d{2}-\d{2}", optional=True),
+            "source": str,
+        },
+        min_items=10,
+        max_items=50,
+    ),
 }
 
 
 class TestSearchResultsScenario:
-
     @pytest.fixture
     def cs(self):
         return compile_schema(SERP_SCHEMA)
@@ -325,8 +354,10 @@ class TestSearchResultsScenario:
 
     def test_returned_as_list_instead_of_object(self, cs):
         """Agent returned list of results instead of the wrapper object."""
-        data = [{"title": "R", "url": "https://x.com/1",
-                 "snippet": "s", "source": "x.com"} for _ in range(20)]
+        data = [
+            {"title": "R", "url": "https://x.com/1", "snippet": "s", "source": "x.com"}
+            for _ in range(20)
+        ]
         valid, msg = cs.validate(data)
         assert valid is False
         assert "Expected an object" in msg
@@ -337,8 +368,7 @@ class TestSearchResultsScenario:
             "total_results": 100,
             "query": "test",
             "results": [
-                {"title": f"R{i}", "url": f"https://x.com/{i}",
-                 "snippet": "ok", "source": "x.com"}
+                {"title": f"R{i}", "url": f"https://x.com/{i}", "snippet": "ok", "source": "x.com"}
                 for i in range(60)  # max is 50
             ],
         }
@@ -352,9 +382,12 @@ class TestSearchResultsScenario:
             "total_results": 10,
             "query": "test",
             "results": [
-                {"title": "R", "url": "https://x.com/1",
-                 "snippet": "x" * 600,  # max_length=500
-                 "source": "x.com"}
+                {
+                    "title": "R",
+                    "url": "https://x.com/1",
+                    "snippet": "x" * 600,  # max_length=500
+                    "source": "x.com",
+                }
                 for _ in range(10)
             ],
         }
@@ -368,34 +401,38 @@ class TestSearchResultsScenario:
 #  Scenario 4: Real estate listings — 4 levels deep
 # ═══════════════════════════════════════════════════════════════════
 
-REALESTATE_SCHEMA = List({
-    "title": Field(str, min_length=5),
-    "price": Field(float, min=0),
-    "address": {
-        "street": str,
-        "city": str,
-        "state": Field(str, min_length=2, max_length=2),
-        "zip": Field(str, pattern=r"\d{5}"),
+REALESTATE_SCHEMA = List(
+    {
+        "title": Field(str, min_length=5),
+        "price": Field(float, min=0),
+        "address": {
+            "street": str,
+            "city": str,
+            "state": Field(str, min_length=2, max_length=2),
+            "zip": Field(str, pattern=r"\d{5}"),
+        },
+        "bedrooms": Field(int, min=0),
+        "bathrooms": Field(float, min=0),
+        "sqft": Field(int, min=100, optional=True),
+        "listing_type": Field(str, enum=["sale", "rent", "auction"]),
+        "features": [str],
+        "images": [
+            {
+                "url": Field(str, min_length=10),
+                "alt": Field(str, optional=True),
+            }
+        ],
+        "agent": {
+            "name": str,
+            "phone": Field(str, pattern=r"\d{3}-\d{3}-\d{4}", optional=True),
+            "company": str,
+        },
     },
-    "bedrooms": Field(int, min=0),
-    "bathrooms": Field(float, min=0),
-    "sqft": Field(int, min=100, optional=True),
-    "listing_type": Field(str, enum=["sale", "rent", "auction"]),
-    "features": [str],
-    "images": [{
-        "url": Field(str, min_length=10),
-        "alt": Field(str, optional=True),
-    }],
-    "agent": {
-        "name": str,
-        "phone": Field(str, pattern=r"\d{3}-\d{3}-\d{4}", optional=True),
-        "company": str,
-    },
-}, min_items=15)
+    min_items=15,
+)
 
 
 class TestRealEstateScenario:
-
     @pytest.fixture
     def cs(self):
         return compile_schema(REALESTATE_SCHEMA)
@@ -416,8 +453,10 @@ class TestRealEstateScenario:
             "listing_type": ["sale", "rent", "auction"][i % 3],
             "features": ["garage", "pool"] if i % 2 == 0 else ["garden"],
             "images": [
-                {"url": f"https://img.example.com/listing-{i}-{j}.jpg",
-                 "alt": f"Photo {j}" if j % 2 == 0 else None}
+                {
+                    "url": f"https://img.example.com/listing-{i}-{j}.jpg",
+                    "alt": f"Photo {j}" if j % 2 == 0 else None,
+                }
                 for j in range(3)
             ],
             "agent": {
@@ -488,8 +527,8 @@ class TestRealEstateScenario:
 #  Scenario 5: Type coercion edge cases at scale
 # ═══════════════════════════════════════════════════════════════════
 
-class TestTypeCoercionEdgeCases:
 
+class TestTypeCoercionEdgeCases:
     def test_int_field_accepts_json_numbers_without_decimals(self):
         """JSON has no int/float distinction. json.loads gives float for 42.0."""
         cs = compile_schema([{"count": int}])
@@ -563,8 +602,8 @@ class TestTypeCoercionEdgeCases:
 #  Scenario 6: Error formatting stress tests
 # ═══════════════════════════════════════════════════════════════════
 
-class TestErrorFormattingStress:
 
+class TestErrorFormattingStress:
     def test_many_different_error_types_capped_at_10(self):
         """15 fields all with wrong types — should cap at 10 groups."""
         schema = [{f"f{i}": int for i in range(15)}]
@@ -575,6 +614,7 @@ class TestErrorFormattingStress:
         assert valid is False
         # Count error group markers at start of line: "  [N] "
         import re
+
         group_markers = re.findall(r"^\s+\[\d+\]", msg, re.MULTILINE)
         assert len(group_markers) == 10
         assert "and 5 more" in msg
@@ -620,9 +660,7 @@ class TestErrorFormattingStress:
     def test_optional_note_appears_for_optional_constraint_error(self):
         """When an optional field has a constraint violation (not null,
         but invalid value), the note should mention null is valid."""
-        cs = compile_schema([{
-            "rating": Field(int, min=1, max=5, optional=True)
-        }])
+        cs = compile_schema([{"rating": Field(int, min=1, max=5, optional=True)}])
         data = [{"rating": 0}]  # present but invalid
 
         valid, msg = cs.validate(data)
@@ -636,13 +674,11 @@ class TestErrorFormattingStress:
 #  Verify that child errors are NOT reported when parent fails
 # ═══════════════════════════════════════════════════════════════════
 
-class TestHierarchicalShortCircuiting:
 
+class TestHierarchicalShortCircuiting:
     def test_wrong_type_does_not_recurse(self):
         """If address is a string, don't report missing street/city."""
-        cs = compile_schema([{
-            "address": {"street": str, "city": str, "zip": str}
-        }])
+        cs = compile_schema([{"address": {"street": str, "city": str, "zip": str}}])
         data = [{"address": "123 Main St"}]
 
         valid, msg = cs.validate(data)
@@ -654,10 +690,14 @@ class TestHierarchicalShortCircuiting:
 
     def test_missing_field_does_not_check_constraints(self):
         """If a field is missing, don't also report constraint errors."""
-        cs = compile_schema([{
-            "name": Field(str, min_length=10),
-            "age": Field(int, min=0),
-        }])
+        cs = compile_schema(
+            [
+                {
+                    "name": Field(str, min_length=10),
+                    "age": Field(int, min=0),
+                }
+            ]
+        )
         data = [{}]  # both missing
 
         valid, msg = cs.validate(data)
@@ -669,10 +709,15 @@ class TestHierarchicalShortCircuiting:
 
     def test_null_for_none_return(self):
         """None return is one error, not a cascade."""
-        cs = compile_schema(List({
-            "title": Field(str, min_length=1),
-            "price": Field(float, min=0),
-        }, min_items=20))
+        cs = compile_schema(
+            List(
+                {
+                    "title": Field(str, min_length=1),
+                    "price": Field(float, min=0),
+                },
+                min_items=20,
+            )
+        )
 
         valid, msg = cs.validate(None)
         assert valid is False
@@ -684,25 +729,36 @@ class TestHierarchicalShortCircuiting:
 #  Scenario 8: Prompt rendering for spec case 4 (exact match)
 # ═══════════════════════════════════════════════════════════════════
 
+
 class TestSpecCase4ExactMatch:
     """Verify the deeply nested spec example renders correctly."""
 
     @pytest.fixture
     def cs(self):
-        return compile_schema(List({
-            "category": str,
-            "products": List({
-                "title": Field(str, min_length=1),
-                "price": Field(float, min=0),
-                "rating": Field(int, min=1, max=5, optional=True),
-                "variants": [{
-                    "color": str,
-                    "size": str,
-                    "in_stock": bool,
-                }],
-                "specs": dict,
-            }, min_items=1),
-        }, min_items=3))
+        return compile_schema(
+            List(
+                {
+                    "category": str,
+                    "products": List(
+                        {
+                            "title": Field(str, min_length=1),
+                            "price": Field(float, min=0),
+                            "rating": Field(int, min=1, max=5, optional=True),
+                            "variants": [
+                                {
+                                    "color": str,
+                                    "size": str,
+                                    "in_stock": bool,
+                                }
+                            ],
+                            "specs": dict,
+                        },
+                        min_items=1,
+                    ),
+                },
+                min_items=3,
+            )
+        )
 
     def test_structure_has_correct_nesting(self, cs):
         struct = cs.prompt.split("### Structure")[1].split("### Requirements")[0]
@@ -750,6 +806,7 @@ class TestSpecCase4ExactMatch:
 #  Scenario 9: Full pipeline — compile → prompt → validate → format
 #  Tests that all layers agree with each other
 # ═══════════════════════════════════════════════════════════════════
+
 
 class TestFullPipelineAgreement:
     """The prompt tells the agent what to return. The validator checks

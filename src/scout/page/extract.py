@@ -1,6 +1,7 @@
-from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 import copy
 from enum import Enum
+
+from bs4 import BeautifulSoup, Comment, Tag
 
 
 class NodeLabel(Enum):
@@ -45,6 +46,7 @@ def extract_sections(sections: list[tuple[Tag, Tag]]) -> Tag:
 # Validation
 # ---------------------------------------------------------------------------
 
+
 def _validate_sections(sections):
     """Validate that all elements are Tags in the same document."""
     root = None
@@ -71,6 +73,7 @@ def _get_root(element):
 # Document order indexing
 # ---------------------------------------------------------------------------
 
+
 def _build_document_order(root):
     """
     Walk the tree in document order and assign an index to each Tag.
@@ -94,6 +97,7 @@ def _build_document_order(root):
 # ---------------------------------------------------------------------------
 # Labeling
 # ---------------------------------------------------------------------------
+
 
 def _label_nodes(sections, tag_order, root):
     """
@@ -145,6 +149,7 @@ def _get_label(tag, labels):
 # ---------------------------------------------------------------------------
 # Cloning
 # ---------------------------------------------------------------------------
+
 
 def _clone_with_labels(node, labels):
     """
@@ -209,7 +214,7 @@ def _group_children_by_label(children, labels):
     for child in children:
         label = _get_label(child, labels)
         # Treat INSIDE and BOUNDARY the same: "kept"
-        is_outside = (label == NodeLabel.OUTSIDE)
+        is_outside = label == NodeLabel.OUTSIDE
 
         if current_type is None:
             current_type = NodeLabel.OUTSIDE if is_outside else NodeLabel.INSIDE
@@ -232,6 +237,7 @@ def _group_children_by_label(children, labels):
 # ---------------------------------------------------------------------------
 # Placeholder helpers (same logic as original)
 # ---------------------------------------------------------------------------
+
 
 def _create_placeholder_tag(original_tag, soup=None):
     """Create an empty tag with '...' content."""

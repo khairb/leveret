@@ -18,15 +18,14 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Optional
 
 from lxml import html as lxml_html
 from lxml.html import HtmlElement
 
-
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class InteractiveElement:
@@ -47,12 +46,12 @@ class RenderedInteractiveElement:
     the show_page context scoring algorithm (Task 3).
     """
 
-    iid: int                       # matches data-iid
-    tag: str                       # "button", "input", "a", ...
-    attributes: dict[str, str]     # all ALLOWED_ATTRIBUTES present on this element
-    classes: list[str]             # class list (split), empty if no class attr
-    element_text: str | None       # visible text content (trimmed)
-    full_tag_str: str              # opening tag exactly as rendered
+    iid: int  # matches data-iid
+    tag: str  # "button", "input", "a", ...
+    attributes: dict[str, str]  # all ALLOWED_ATTRIBUTES present on this element
+    classes: list[str]  # class list (split), empty if no class attr
+    element_text: str | None  # visible text content (trimmed)
+    full_tag_str: str  # opening tag exactly as rendered
 
 
 # ---------------------------------------------------------------------------
@@ -60,39 +59,114 @@ class RenderedInteractiveElement:
 # ---------------------------------------------------------------------------
 
 # Attributes we preserve on interactive element tags.
-ALLOWED_ATTRIBUTES: frozenset[str] = frozenset({
-    "href", "src", "type", "name", "value", "placeholder",
-    "role", "aria-label", "aria-expanded", "aria-haspopup",
-    "data-testid", "id", "action", "method",
-})
+ALLOWED_ATTRIBUTES: frozenset[str] = frozenset(
+    {
+        "href",
+        "src",
+        "type",
+        "name",
+        "value",
+        "placeholder",
+        "role",
+        "aria-label",
+        "aria-expanded",
+        "aria-haspopup",
+        "data-testid",
+        "id",
+        "action",
+        "method",
+    }
+)
 
 # Tags whose entire subtree is always excluded.
-EXCLUDED_TAGS: frozenset[str] = frozenset({
-    "script", "style", "noscript", "template",
-    # <head> contents are never visible page content
-    "head",
-    # SVG is presentational — emit aria-label if present, skip otherwise
-    "svg",
-    # <textarea> and <xmp> contain raw text that is not visible page content
-    "textarea", "xmp",
-})
+EXCLUDED_TAGS: frozenset[str] = frozenset(
+    {
+        "script",
+        "style",
+        "noscript",
+        "template",
+        # <head> contents are never visible page content
+        "head",
+        # SVG is presentational — emit aria-label if present, skip otherwise
+        "svg",
+        # <textarea> and <xmp> contain raw text that is not visible page content
+        "textarea",
+        "xmp",
+    }
+)
 
 # Void (self-closing) HTML elements — no closing tag emitted.
-VOID_ELEMENTS: frozenset[str] = frozenset({
-    "area", "base", "br", "col", "embed", "hr", "img",
-    "input", "link", "meta", "param", "source", "track", "wbr",
-})
+VOID_ELEMENTS: frozenset[str] = frozenset(
+    {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+)
 
 # Block-level elements — we insert line breaks around these.
-BLOCK_ELEMENTS: frozenset[str] = frozenset({
-    "address", "article", "aside", "blockquote", "body", "br",
-    "caption", "col", "colgroup", "dd", "details", "dialog", "div",
-    "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form",
-    "h1", "h2", "h3", "h4", "h5", "h6", "header", "hgroup", "hr",
-    "html", "legend", "li", "main", "nav", "ol", "p", "pre",
-    "section", "summary", "table", "tbody", "td", "tfoot", "th",
-    "thead", "tr", "ul",
-})
+BLOCK_ELEMENTS: frozenset[str] = frozenset(
+    {
+        "address",
+        "article",
+        "aside",
+        "blockquote",
+        "body",
+        "br",
+        "caption",
+        "col",
+        "colgroup",
+        "dd",
+        "details",
+        "dialog",
+        "div",
+        "dl",
+        "dt",
+        "fieldset",
+        "figcaption",
+        "figure",
+        "footer",
+        "form",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "header",
+        "hgroup",
+        "hr",
+        "html",
+        "legend",
+        "li",
+        "main",
+        "nav",
+        "ol",
+        "p",
+        "pre",
+        "section",
+        "summary",
+        "table",
+        "tbody",
+        "td",
+        "tfoot",
+        "th",
+        "thead",
+        "tr",
+        "ul",
+    }
+)
 
 # Regex to detect obvious inline hiding via the style attribute.
 _INLINE_HIDDEN_RE = re.compile(
@@ -107,6 +181,7 @@ _INLINE_HIDDEN_RE = re.compile(
 # ---------------------------------------------------------------------------
 # Hidden-element detection (Python safety net)
 # ---------------------------------------------------------------------------
+
 
 def _is_hidden(el: HtmlElement) -> bool:
     """Check if an element should be treated as hidden.
@@ -137,8 +212,10 @@ def _is_hidden(el: HtmlElement) -> bool:
 # Interactive element tag rendering
 # ---------------------------------------------------------------------------
 
+
 def _merge_allowed_attributes(
-    el: HtmlElement, meta: Optional[InteractiveElement],
+    el: HtmlElement,
+    meta: InteractiveElement | None,
 ) -> dict[str, str]:
     """Merge DOM and metadata attributes, keeping only ALLOWED_ATTRIBUTES.
 
@@ -156,7 +233,7 @@ def _merge_allowed_attributes(
     return attrs
 
 
-def _build_opening_tag(el: HtmlElement, meta: Optional[InteractiveElement]) -> str:
+def _build_opening_tag(el: HtmlElement, meta: InteractiveElement | None) -> str:
     """Build the opening HTML tag for an interactive element, keeping only
     allowed attributes."""
     tag = el.tag
@@ -181,6 +258,7 @@ def _build_closing_tag(tag: str) -> str:
 # ---------------------------------------------------------------------------
 # Core tree walker
 # ---------------------------------------------------------------------------
+
 
 class _TreeWalker:
     """Walks the lxml DOM tree depth-first, producing text output."""
@@ -240,8 +318,8 @@ class _TreeWalker:
         # Check if this element is interactive (has data-iid).
         iid_str = el.get("data-iid")
         is_interactive = iid_str is not None
-        iid: Optional[int] = None
-        meta: Optional[InteractiveElement] = None
+        iid: int | None = None
+        meta: InteractiveElement | None = None
 
         if is_interactive:
             try:
@@ -261,14 +339,16 @@ class _TreeWalker:
             self._parts.append(opening)
 
             # Capture rendered interactive element for sidecar data.
-            self.rendered_elements.append(RenderedInteractiveElement(
-                iid=iid,  # type: ignore[arg-type]
-                tag=tag,
-                attributes=_merge_allowed_attributes(el, meta),
-                classes=el.get("class", "").split(),
-                element_text=(el.text_content() or "").strip() or None,
-                full_tag_str=opening,
-            ))
+            self.rendered_elements.append(
+                RenderedInteractiveElement(
+                    iid=iid,  # type: ignore[arg-type]
+                    tag=tag,
+                    attributes=_merge_allowed_attributes(el, meta),
+                    classes=el.get("class", "").split(),
+                    element_text=(el.text_content() or "").strip() or None,
+                    full_tag_str=opening,
+                )
+            )
 
             if tag in VOID_ELEMENTS:
                 # Self-closing interactive element (e.g. <input>). Done.
@@ -341,9 +421,10 @@ class _TreeWalker:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def _run_walker(
     html_string: str,
-    interactive_elements: Optional[list[InteractiveElement]] = None,
+    interactive_elements: list[InteractiveElement] | None = None,
 ) -> _TreeWalker | None:
     """Parse HTML and walk the tree, returning the walker (or None on failure)."""
     if not html_string or not html_string.strip():
@@ -369,7 +450,7 @@ def _run_walker(
 
 def html_to_text(
     html_string: str,
-    interactive_elements: Optional[list[InteractiveElement]] = None,
+    interactive_elements: list[InteractiveElement] | None = None,
 ) -> str:
     """Convert an HTML string to a text representation.
 
@@ -394,7 +475,7 @@ def html_to_text(
 
 def html_to_text_with_elements(
     html_string: str,
-    interactive_elements: Optional[list[InteractiveElement]] = None,
+    interactive_elements: list[InteractiveElement] | None = None,
 ) -> tuple[str, list[RenderedInteractiveElement]]:
     """Convert HTML to text and return rendered interactive elements.
 

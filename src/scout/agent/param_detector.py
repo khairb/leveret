@@ -39,17 +39,17 @@ class FillValue:
     """A value the AI filled into a form element."""
 
     action: str  # fill, type, select_option, press_sequentially, keyboard.type
-    value: str   # the literal string value
-    line: int    # 1-based line number in the code
+    value: str  # the literal string value
+    line: int  # 1-based line number in the code
 
 
 @dataclass(frozen=True)
 class ParamMatch:
     """A URL query parameter whose value matches a form fill."""
 
-    param_name: str   # e.g. "ss"
+    param_name: str  # e.g. "ss"
     param_value: str  # raw value from the URL, e.g. "Berlin"
-    fill: FillValue   # the FillValue it matched
+    fill: FillValue  # the FillValue it matched
 
 
 @dataclass(frozen=True)
@@ -57,8 +57,8 @@ class DetectionResult:
     """Detection result — clean param matches and/or complex-encoded params."""
 
     url: str
-    matches: tuple[ParamMatch, ...]       # Tier 1: clean key=value matches
-    all_new_params: dict[str, list[str]]   # clean params only
+    matches: tuple[ParamMatch, ...]  # Tier 1: clean key=value matches
+    all_new_params: dict[str, list[str]]  # clean params only
     complex_params: dict[str, list[str]] = None  # Tier 2: JSON/encoded params
 
 
@@ -91,9 +91,9 @@ _DIRECT_ALT = "|".join(sorted(_DIRECT_METHODS, key=len, reverse=True))
 # page.fill("selector", "value")  —  captures value as groups 2/3
 _RE_DIRECT_FILL = re.compile(
     rf"page\.({_DIRECT_ALT})\(\s*"
-    rf"(?:'[^']*'|\"[^\"]*\")"        # first arg  (selector — skip)
-    rf"\s*,\s*"                        # comma
-    rf"(?:'([^']*)'|\"([^\"]*)\")",    # second arg (value  — capture)
+    rf"(?:'[^']*'|\"[^\"]*\")"  # first arg  (selector — skip)
+    rf"\s*,\s*"  # comma
+    rf"(?:'([^']*)'|\"([^\"]*)\")",  # second arg (value  — capture)
 )
 
 # --- Chain / locator / variable terminal calls -------------------------
@@ -126,12 +126,16 @@ _RE_KEYBOARD_TYPE = re.compile(
 #           page.fill("sel", inputs['key'])
 #           locator.fill(inputs["key"])
 #           page.fill("sel", str(inputs["key"]))
-_FILL_ACTIONS_ALT = "|".join(sorted(
-    _DIRECT_METHODS | _CHAIN_METHODS, key=len, reverse=True,
-))
+_FILL_ACTIONS_ALT = "|".join(
+    sorted(
+        _DIRECT_METHODS | _CHAIN_METHODS,
+        key=len,
+        reverse=True,
+    )
+)
 _RE_INPUTS_REF = re.compile(
     rf"\.({_FILL_ACTIONS_ALT})\("
-    rf"[^)]*?"                             # anything before the inputs ref
+    rf"[^)]*?"  # anything before the inputs ref
     rf"(?:str\()?\s*inputs\[(?:'([^']*)'|\"([^\"]*)\")\]",
 )
 
@@ -171,11 +175,13 @@ def extract_fill_values(
         value = m.group(2) or m.group(3)
         if not value:
             continue
-        results.append(FillValue(
-            action=m.group(1),
-            value=value,
-            line=_pos_to_line(code, m.start()),
-        ))
+        results.append(
+            FillValue(
+                action=m.group(1),
+                value=value,
+                line=_pos_to_line(code, m.start()),
+            )
+        )
         direct_spans.append((m.start(), m.end()))
 
     # ── Pass 2: .fill/type/select_option/press_sequentially("val")
@@ -192,19 +198,21 @@ def extract_fill_values(
         # didn't match, but the first arg is the selector, not a
         # fill value).
         dot_pos = m.start()
-        if dot_pos >= 4 and code[dot_pos - 4:dot_pos] == "page":
+        if dot_pos >= 4 and code[dot_pos - 4 : dot_pos] == "page":
             continue
         # Skip if preceded by "keyboard" — handled by Pass 4.
-        if dot_pos >= 8 and code[dot_pos - 8:dot_pos] == "keyboard":
+        if dot_pos >= 8 and code[dot_pos - 8 : dot_pos] == "keyboard":
             continue
         value = m.group(2) or m.group(3)
         if not value:
             continue
-        results.append(FillValue(
-            action=m.group(1),
-            value=value,
-            line=_pos_to_line(code, m.start()),
-        ))
+        results.append(
+            FillValue(
+                action=m.group(1),
+                value=value,
+                line=_pos_to_line(code, m.start()),
+            )
+        )
 
     # ── Pass 3: .select_option(value="x") / .select_option(label="x")
     for m in _RE_SELECT_KW.finditer(code):
@@ -219,11 +227,13 @@ def extract_fill_values(
         line = _pos_to_line(code, m.start())
         if any(r.value == value and r.line == line for r in results):
             continue
-        results.append(FillValue(
-            action="select_option",
-            value=value,
-            line=line,
-        ))
+        results.append(
+            FillValue(
+                action="select_option",
+                value=value,
+                line=line,
+            )
+        )
 
     # ── Pass 4: page.keyboard.type("val") ────────────────────────
     for m in _RE_KEYBOARD_TYPE.finditer(code):
@@ -232,11 +242,13 @@ def extract_fill_values(
         value = m.group(1) or m.group(2)
         if not value:
             continue
-        results.append(FillValue(
-            action="keyboard.type",
-            value=value,
-            line=_pos_to_line(code, m.start()),
-        ))
+        results.append(
+            FillValue(
+                action="keyboard.type",
+                value=value,
+                line=_pos_to_line(code, m.start()),
+            )
+        )
 
     # ── Pass 5: inputs["key"] references (resolved dynamically) ──
     # When the AI uses inputs["destination"] instead of a literal
@@ -256,24 +268,32 @@ def extract_fill_values(
             # Dedup: skip if a literal extraction already got this
             if any(r.value == resolved and r.line == line for r in results):
                 continue
-            results.append(FillValue(
-                action=action,
-                value=resolved,
-                line=line,
-            ))
+            results.append(
+                FillValue(
+                    action=action,
+                    value=resolved,
+                    line=line,
+                )
+            )
             logger.info(
-                "[param_detector]   resolved inputs[\"%s\"] → \"%s\" (line %d)",
-                key, resolved, line,
+                '[param_detector]   resolved inputs["%s"] → "%s" (line %d)',
+                key,
+                resolved,
+                line,
             )
 
     results.sort(key=lambda r: r.line)
     if results:
         logger.info(
-            "[param_detector] extract_fill_values: %d fill(s) found", len(results),
+            "[param_detector] extract_fill_values: %d fill(s) found",
+            len(results),
         )
         for fv in results:
             logger.info(
-                "[param_detector]   line %d: %s(\"%s\")", fv.line, fv.action, fv.value,
+                '[param_detector]   line %d: %s("%s")',
+                fv.line,
+                fv.action,
+                fv.value,
             )
     return results
 
@@ -285,16 +305,43 @@ def extract_fill_values(
 # Parameters that are tracking / session / cache-buster noise.
 _NOISE_PARAMS: set[str] = {
     # Analytics / ad tracking
-    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-    "fbclid", "gclid", "gclsrc", "dclid", "msclkid", "ttclid",
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "fbclid",
+    "gclid",
+    "gclsrc",
+    "dclid",
+    "msclkid",
+    "ttclid",
     # Referral / attribution
-    "ref", "referer", "referrer", "source",
+    "ref",
+    "referer",
+    "referrer",
+    "source",
     # Session / auth tokens
-    "sid", "session", "session_id", "sessionid", "ssid",
-    "token", "csrf", "csrf_token", "csrftoken", "nonce",
-    "auth", "auth_token",
+    "sid",
+    "session",
+    "session_id",
+    "sessionid",
+    "ssid",
+    "token",
+    "csrf",
+    "csrf_token",
+    "csrftoken",
+    "nonce",
+    "auth",
+    "auth_token",
     # Cache busters / timestamps
-    "_", "timestamp", "ts", "cb", "t", "v", "ver",
+    "_",
+    "timestamp",
+    "ts",
+    "cb",
+    "t",
+    "v",
+    "ver",
 }
 
 _NOISE_PREFIXES: tuple[str, ...] = ("utm_", "fb_", "_ga", "__", "pk_")
@@ -459,14 +506,19 @@ def detect_url_params(
             # Strategy 1: exact match against fill values
             if decoded in fill_lookup:
                 fv = fill_lookup[decoded]
-                matches.append(ParamMatch(
-                    param_name=param_name,
-                    param_value=pv,
-                    fill=fv,
-                ))
+                matches.append(
+                    ParamMatch(
+                        param_name=param_name,
+                        param_value=pv,
+                        fill=fv,
+                    )
+                )
                 logger.info(
-                    "[param_detector]   MATCH (exact): %s=%s ← %s(\"%s\")",
-                    param_name, pv, fv.action, fv.value,
+                    '[param_detector]   MATCH (exact): %s=%s ← %s("%s")',
+                    param_name,
+                    pv,
+                    fv.action,
+                    fv.value,
                 )
                 matched = True
                 break
@@ -477,14 +529,19 @@ def detect_url_params(
             # Require ≥4 chars to avoid spurious short-string matches.
             for norm_fill, fv in fill_lookup.items():
                 if len(norm_fill) >= 4 and norm_fill in decoded:
-                    matches.append(ParamMatch(
-                        param_name=param_name,
-                        param_value=pv,
-                        fill=fv,
-                    ))
+                    matches.append(
+                        ParamMatch(
+                            param_name=param_name,
+                            param_value=pv,
+                            fill=fv,
+                        )
+                    )
                     logger.info(
-                        "[param_detector]   MATCH (contains): %s=%s ← %s(\"%s\")",
-                        param_name, pv, fv.action, fv.value,
+                        '[param_detector]   MATCH (contains): %s=%s ← %s("%s")',
+                        param_name,
+                        pv,
+                        fv.action,
+                        fv.value,
                     )
                     matched = True
                     break
@@ -500,14 +557,18 @@ def detect_url_params(
                     value=inp_val,
                     line=0,
                 )
-                matches.append(ParamMatch(
-                    param_name=param_name,
-                    param_value=pv,
-                    fill=fv,
-                ))
+                matches.append(
+                    ParamMatch(
+                        param_name=param_name,
+                        param_value=pv,
+                        fill=fv,
+                    )
+                )
                 logger.info(
-                    "[param_detector]   MATCH (input): %s=%s ← inputs[\"%s\"]",
-                    param_name, pv, inp_key,
+                    '[param_detector]   MATCH (input): %s=%s ← inputs["%s"]',
+                    param_name,
+                    pv,
+                    inp_key,
                 )
                 matched = True
                 break
@@ -515,7 +576,8 @@ def detect_url_params(
         if not matched:
             logger.info(
                 "[param_detector]   no match: %s=%s",
-                param_name, param_values,
+                param_name,
+                param_values,
             )
 
     if not matches and not complex_params:
@@ -570,12 +632,10 @@ def format_hint(result: DetectionResult) -> str:
     so there is always at least one match.
     """
     lines: list[str] = [
-        "\n[URL PARAMETER DETECTION HINT] "
-        "After your form submission, the page navigated to:",
+        "\n[URL PARAMETER DETECTION HINT] After your form submission, the page navigated to:",
         f"  {result.url}",
         "",
-        "We checked this URL and found that some of your "
-        "form inputs appear as query parameters:",
+        "We checked this URL and found that some of your form inputs appear as query parameters:",
     ]
     for m in result.matches:
         lines.append(_format_match_line(m))
@@ -583,14 +643,9 @@ def format_hint(result: DetectionResult) -> str:
     # Show a few unmatched params as context (with "etc." to hint
     # there may be others without implying a specific count).
     matched_names = {m.param_name for m in result.matches}
-    unmatched = {
-        k: v for k, v in result.all_new_params.items()
-        if k not in matched_names
-    }
+    unmatched = {k: v for k, v in result.all_new_params.items() if k not in matched_names}
     if unmatched:
-        preview = ", ".join(
-            f"{k}={vs[0]}" for k, vs in list(unmatched.items())[:5]
-        )
+        preview = ", ".join(f"{k}={vs[0]}" for k, vs in list(unmatched.items())[:5])
         lines.append(f"  ({preview}, etc.)")
 
     lines.append(
@@ -613,8 +668,7 @@ def format_hint_complex(result: DetectionResult) -> str:
     embed the user's form inputs.
     """
     lines: list[str] = [
-        "\n[URL PARAMETER DETECTION HINT] "
-        "After your form submission, the page navigated to:",
+        "\n[URL PARAMETER DETECTION HINT] After your form submission, the page navigated to:",
         f"  {result.url}",
         "",
         "Your form inputs appear to be encoded in this URL. You may be "

@@ -105,7 +105,9 @@ def apply_tolerance(
 
 
 def _find_list_positions(
-    node: Node, data: Any, path: str,
+    node: Node,
+    data: Any,
+    path: str,
 ) -> list[tuple[str, int]]:
     """Find all ListNode positions in the tree with their item counts.
 
@@ -120,24 +122,21 @@ def _find_list_positions(
         if isinstance(node.item, (ListNode, ObjectNode)):
             for i, item in enumerate(items):
                 item_path = f"{path}[{i}]" if path else f"[{i}]"
-                positions.extend(
-                    _find_list_positions(node.item, item, item_path)
-                )
+                positions.extend(_find_list_positions(node.item, item, item_path))
 
     elif isinstance(node, ObjectNode):
         if isinstance(data, dict):
             for field_name, (field_node, _optional) in node.fields.items():
                 field_path = f"{path}.{field_name}" if path else field_name
                 field_data = data.get(field_name)
-                positions.extend(
-                    _find_list_positions(field_node, field_data, field_path)
-                )
+                positions.extend(_find_list_positions(field_node, field_data, field_path))
 
     return positions
 
 
 def _partition_and_count(
-    errors: list[RawError], list_path: str,
+    errors: list[RawError],
+    list_path: str,
 ) -> tuple[list[RawError], set[int]]:
     """Split errors and collect failed indices in a single pass.
 

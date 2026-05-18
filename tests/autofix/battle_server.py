@@ -25,7 +25,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from urllib.parse import unquote
 
-
 # ── Response data ────────────────────────────────────────────
 
 
@@ -303,7 +302,9 @@ class BattleServer:
     """
 
     def __init__(
-        self, host: str = "127.0.0.1", port: int = 0,
+        self,
+        host: str = "127.0.0.1",
+        port: int = 0,
     ) -> None:
         self._host = host
         self._port = port
@@ -346,7 +347,9 @@ class BattleServer:
     async def start(self) -> None:
         """Start the server."""
         self._server = await asyncio.start_server(
-            self._handle_client, self._host, self._port,
+            self._handle_client,
+            self._host,
+            self._port,
         )
         sockets = self._server.sockets
         if sockets:

@@ -39,11 +39,12 @@ import tempfile
 import textwrap
 import time
 import traceback
+from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any
 
 from patchright.async_api import (
     Browser,
@@ -98,11 +99,11 @@ class ExecutionResult:
     output: str = ""
     error: str = ""
     success: bool = True
-    snapshot: Optional[PageSnapshot] = None
+    snapshot: PageSnapshot | None = None
     hook_data: Any = None
     duration_ms: float = 0
     step: int = 0
-    diagnostics: Optional[TimeoutDiagnostics] = None
+    diagnostics: TimeoutDiagnostics | None = None
 
 
 @dataclass
@@ -167,18 +168,14 @@ class TimeoutDiagnostics:
             for log in self.console_logs[-20:]:
                 parts.append(f"  [{log.get('level', '?')}] {log.get('text', '')[:200]}")
         if self.pending_requests:
-            parts.append(
-                f"\n-- Pending network requests ({len(self.pending_requests)}) --"
-            )
+            parts.append(f"\n-- Pending network requests ({len(self.pending_requests)}) --")
             for req in self.pending_requests:
                 parts.append(
                     f"  {req.get('method', '?')} {req.get('url', '?')[:120]} "
                     f"[{req.get('resource_type', '?')}]"
                 )
         if self.failed_requests:
-            parts.append(
-                f"\n-- Failed network requests ({len(self.failed_requests)}) --"
-            )
+            parts.append(f"\n-- Failed network requests ({len(self.failed_requests)}) --")
             for req in self.failed_requests:
                 parts.append(
                     f"  {req.get('method', '?')} {req.get('url', '?')[:120]} "
@@ -244,7 +241,7 @@ class PageInstrumentation:
         self._inflight: dict[str, dict] = {}  # url+method → request info
         self._completed: list[dict] = []
         self._failed: list[dict] = []
-        self._page: Optional[Page] = None
+        self._page: Page | None = None
         self._attached = False
 
     def attach(self, page: Page) -> None:
@@ -277,7 +274,9 @@ class PageInstrumentation:
         """Return a timestamp marking the start of an execution step."""
         return time.monotonic()
 
-    def drain_since(self, step_start: float) -> tuple[list[dict], list[dict], list[dict], list[dict]]:
+    def drain_since(
+        self, step_start: float
+    ) -> tuple[list[dict], list[dict], list[dict], list[dict]]:
         """Return (console_logs, pending, completed, failed) since step_start.
 
         Also returns still-inflight requests as "pending".
@@ -287,10 +286,7 @@ class PageInstrumentation:
         failed = [r for r in self._failed if r.get("_mono", 0) >= step_start]
 
         # Anything still in _inflight that started after step_start is pending.
-        pending = [
-            r for r in self._inflight.values()
-            if r.get("_mono", 0) >= step_start
-        ]
+        pending = [r for r in self._inflight.values() if r.get("_mono", 0) >= step_start]
 
         # Strip internal monotonic timestamps from output copies.
         def _clean(items: list[dict]) -> list[dict]:
@@ -310,14 +306,16 @@ class PageInstrumentation:
     def _on_console(self, msg: ConsoleMessage) -> None:
         try:
             location = msg.location
-            self._console_logs.append({
-                "level": msg.type,
-                "text": msg.text,
-                "url": location.get("url", "") if location else "",
-                "line_number": location.get("lineNumber", 0) if location else 0,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "_mono": time.monotonic(),
-            })
+            self._console_logs.append(
+                {
+                    "level": msg.type,
+                    "text": msg.text,
+                    "url": location.get("url", "") if location else "",
+                    "line_number": location.get("lineNumber", 0) if location else 0,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "_mono": time.monotonic(),
+                }
+            )
         except Exception:
             pass
 
@@ -340,7 +338,6 @@ class PageInstrumentation:
             info = self._inflight.pop(key, None)
             if info:
                 info["duration_ms"] = (time.monotonic() - info["_mono"]) * 1000
-                response = request.response
                 info["status"] = None
                 # response is a coroutine in some cases — skip if so
                 self._completed.append(info)
@@ -351,13 +348,15 @@ class PageInstrumentation:
         try:
             key = f"{request.method}:{request.url}"
             info = self._inflight.pop(key, {})
-            info.update({
-                "url": request.url,
-                "method": request.method,
-                "resource_type": request.resource_type,
-                "error": request.failure or "unknown",
-                "_mono": time.monotonic(),
-            })
+            info.update(
+                {
+                    "url": request.url,
+                    "method": request.method,
+                    "resource_type": request.resource_type,
+                    "error": request.failure or "unknown",
+                    "_mono": time.monotonic(),
+                }
+            )
             self._failed.append(info)
         except Exception:
             pass
@@ -428,7 +427,7 @@ class LocalREPL(BaseREPL):
 
     def __init__(self) -> None:
         self._globals: dict[str, Any] = {"__builtins__": __builtins__}
-        self._active_stdout_buffer: Optional[io.StringIO] = None
+        self._active_stdout_buffer: io.StringIO | None = None
         self._function_sources: dict[str, str] = {}
 
     # ── Public interface ──
@@ -545,7 +544,7 @@ class LocalREPL(BaseREPL):
         variables defined inside the async wrapper would be lost.
         """
         # Snapshot current keys so we can detect new variables
-        keys_before = set(self._globals.keys())
+        set(self._globals.keys())
 
         # Build the async wrapper. We pass `__globals__` so the inner
         # function can both read from and write to our persistent namespace.
@@ -628,27 +627,27 @@ class BrowserManager:
             "user_agent": user_agent,
             "launch_args": launch_args or [],
         }
-        self._pw: Optional[Playwright] = None
-        self._browser: Optional[Browser] = None
-        self._context: Optional[BrowserContext] = None
-        self._page: Optional[Page] = None
-        self._overlay_page: Optional[Page] = None
-        self._profile_dir: Optional[str] = None
+        self._pw: Playwright | None = None
+        self._browser: Browser | None = None
+        self._context: BrowserContext | None = None
+        self._page: Page | None = None
+        self._overlay_page: Page | None = None
+        self._profile_dir: str | None = None
 
     @property
-    def page(self) -> Optional[Page]:
+    def page(self) -> Page | None:
         return self._page
 
     @property
-    def browser(self) -> Optional[Browser]:
+    def browser(self) -> Browser | None:
         return self._browser
 
     @property
-    def context(self) -> Optional[BrowserContext]:
+    def context(self) -> BrowserContext | None:
         return self._context
 
     @property
-    def overlay_page(self) -> Optional[Page]:
+    def overlay_page(self) -> Page | None:
         return self._overlay_page
 
     async def start(self) -> Page:
@@ -657,9 +656,7 @@ class BrowserManager:
         launcher = getattr(self._pw, self._config["browser_type"])
 
         # Strip the _demo sentinel before passing to Playwright.
-        self._demo = bool(
-            self._launch_options and self._launch_options.get("_demo")
-        )
+        self._demo = bool(self._launch_options and self._launch_options.get("_demo"))
 
         if self._launch_options is not None:
             opts = {k: v for k, v in self._launch_options.items() if k != "_demo"}
@@ -695,10 +692,12 @@ class BrowserManager:
         # the entire execution budget.  Legitimate interactions complete in
         # well under these limits; the agent can always pass an explicit
         # ``timeout`` kwarg to individual calls when more time is needed.
-        self._context.set_default_timeout(10_000)           # 10 s for most ops
-        self._context.set_default_navigation_timeout(15_000) # 15 s for goto/reload
+        self._context.set_default_timeout(10_000)  # 10 s for most ops
+        self._context.set_default_navigation_timeout(15_000)  # 15 s for goto/reload
 
-        self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()
+        self._page = (
+            self._context.pages[0] if self._context.pages else await self._context.new_page()
+        )
 
         # In demo mode: create a separate overlay window and position
         # both windows side-by-side (80% website, 20% overlay panel).
@@ -706,9 +705,7 @@ class BrowserManager:
             await self._setup_demo_windows()
         else:
             viewport = self._launch_options.get("viewport") if self._launch_options else None
-            await self._page.set_viewport_size(
-                viewport or self._config["viewport"]
-            )
+            await self._page.set_viewport_size(viewport or self._config["viewport"])
 
         return self._page
 
@@ -718,9 +715,7 @@ class BrowserManager:
 
         # Query actual screen size.
         try:
-            screen = await self._page.evaluate(
-                "({ w: screen.availWidth, h: screen.availHeight })"
-            )
+            screen = await self._page.evaluate("({ w: screen.availWidth, h: screen.availHeight })")
             layout = compute_demo_layout(screen["w"], screen["h"])
         except Exception:
             layout = compute_demo_layout(1920, 1080)
@@ -732,9 +727,7 @@ class BrowserManager:
 
         # Position and size the main (website) window.
         try:
-            await self._page.evaluate(
-                f"window.moveTo(0, 0); window.resizeTo({pw}, {ph})"
-            )
+            await self._page.evaluate(f"window.moveTo(0, 0); window.resizeTo({pw}, {ph})")
         except Exception:
             pass
 
@@ -747,21 +740,23 @@ class BrowserManager:
                 )
             raw_value = page_info.value
             logger.info(
-                "[demo] page_info.value type: %s", type(raw_value).__name__,
+                "[demo] page_info.value type: %s",
+                type(raw_value).__name__,
             )
-            if hasattr(raw_value, '__await__'):
+            if hasattr(raw_value, "__await__"):
                 self._overlay_page = await raw_value
             else:
                 self._overlay_page = raw_value
             logger.info(
                 "[demo] overlay window opened (%dx%d at x=%d)",
-                panelw, ph, panelx,
+                panelw,
+                ph,
+                panelx,
             )
             # Fine-tune position (window.open features can be imprecise).
             try:
                 await self._overlay_page.evaluate(
-                    f"window.moveTo({panelx}, 0); "
-                    f"window.resizeTo({panelw}, {ph})"
+                    f"window.moveTo({panelx}, 0); window.resizeTo({panelw}, {ph})"
                 )
             except Exception:
                 pass
@@ -769,8 +764,7 @@ class BrowserManager:
             # while the full overlay UI loads later.
             try:
                 await self._overlay_page.set_content(
-                    '<html><body style="background:#1c1c1e;margin:0">'
-                    '</body></html>',
+                    '<html><body style="background:#1c1c1e;margin:0"></body></html>',
                     wait_until="commit",
                 )
             except Exception:
@@ -778,7 +772,8 @@ class BrowserManager:
         except Exception as exc:
             # Fallback: open as a tab (functional, just not a separate window).
             logger.warning(
-                "Could not open overlay popup (%s) — falling back to tab", exc,
+                "Could not open overlay popup (%s) — falling back to tab",
+                exc,
             )
             try:
                 self._overlay_page = await self._context.new_page()
@@ -903,14 +898,14 @@ class ExecutionHistory:
     def append(self, result: ExecutionResult) -> None:
         self._entries.append(result)
         if len(self._entries) > self._max_size:
-            self._entries = self._entries[-self._max_size:]
+            self._entries = self._entries[-self._max_size :]
 
     @property
     def entries(self) -> list[ExecutionResult]:
         return list(self._entries)
 
     @property
-    def last(self) -> Optional[ExecutionResult]:
+    def last(self) -> ExecutionResult | None:
         return self._entries[-1] if self._entries else None
 
     def __len__(self) -> int:
@@ -989,20 +984,20 @@ class ScrapingRuntime:
     # ── Properties ──
 
     @property
-    def page(self) -> Optional[Page]:
+    def page(self) -> Page | None:
         """Direct page access for your system code (outside the agent)."""
         return self._browser_mgr.page
 
     @property
-    def browser(self) -> Optional[Browser]:
+    def browser(self) -> Browser | None:
         return self._browser_mgr.browser
 
     @property
-    def context(self) -> Optional[BrowserContext]:
+    def context(self) -> BrowserContext | None:
         return self._browser_mgr.context
 
     @property
-    def overlay_page(self) -> Optional[Page]:
+    def overlay_page(self) -> Page | None:
         """Separate browser page for the demo overlay (None when not in demo mode)."""
         return self._browser_mgr.overlay_page
 
@@ -1116,10 +1111,7 @@ class ScrapingRuntime:
                 timeout_limit=effective_timeout,
             )
             if self._diagnostics_dir:
-                diag_path = (
-                    self._diagnostics_dir
-                    / f"timeout_step_{self._step_counter}"
-                )
+                diag_path = self._diagnostics_dir / f"timeout_step_{self._step_counter}"
                 try:
                     saved = result.diagnostics.save(diag_path)
                     logger.info("Timeout diagnostics saved to %s", saved)
@@ -1162,9 +1154,7 @@ class ScrapingRuntime:
         )
 
         # Drain instrumentation data for this step.
-        console, pending, completed, failed = self._instrumentation.drain_since(
-            step_start
-        )
+        console, pending, completed, failed = self._instrumentation.drain_since(step_start)
         diag.console_logs = console
         diag.pending_requests = pending
         diag.completed_requests = completed
@@ -1179,9 +1169,7 @@ class ScrapingRuntime:
                 pass
 
             try:
-                diag.page_title = await asyncio.wait_for(
-                    page.title(), timeout=3.0
-                )
+                diag.page_title = await asyncio.wait_for(page.title(), timeout=3.0)
             except Exception:
                 pass
 
@@ -1204,7 +1192,7 @@ class ScrapingRuntime:
 
     # ── Helpers ──
 
-    def _get_live_page(self) -> Optional[Page]:
+    def _get_live_page(self) -> Page | None:
         """
         Safely retrieve the current page object.
 
