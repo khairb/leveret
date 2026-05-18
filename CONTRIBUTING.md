@@ -7,7 +7,7 @@ Thanks for your interest in contributing to Scout! This guide will get you up an
 1. **Clone the repo:**
 
    ```bash
-   git clone https://github.com/anthropics/scout.git
+   git clone https://github.com/mkhairbarghouth/scout.git
    cd scout
    ```
 
@@ -32,10 +32,10 @@ Thanks for your interest in contributing to Scout! This guide will get you up an
 ## Running Tests
 
 ```bash
-uv run pytest tests/ -x -q
+uv run pytest tests/ -x -q --ignore=tests/integration
 ```
 
-> **Note:** Tests in `tests/integration/` require API keys and are skipped in CI.
+> **Note:** Tests in `tests/integration/` require API keys and network access.
 > You can run unit tests without any credentials.
 
 ## Code Style
@@ -58,7 +58,7 @@ Keep PRs focused -- one feature or fix per PR is ideal.
 
 ## What to Work On
 
-- Check out issues labeled [**good first issue**](https://github.com/anthropics/scout/labels/good%20first%20issue) for a place to start.
+- Check out issues labeled [**good first issue**](https://github.com/mkhairbarghouth/scout/labels/good%20first%20issue) for a place to start.
 - The most valuable contribution is **trying Scout on real websites** and opening issues when something breaks. Include the URL, the task you tried, and what happened. This helps us find edge cases no test suite can cover.
 
 ## Bug Reports
@@ -75,4 +75,4 @@ The more detail you provide, the faster we can fix it.
 
 ## Questions?
 
-Open a [discussion](https://github.com/anthropics/scout/discussions) or ask in an issue. We're happy to help.
+Open a [discussion](https://github.com/mkhairbarghouth/scout/discussions) or ask in an issue. We're happy to help.

@@ -7,7 +7,7 @@ Scout is an AI agent that generates standalone Playwright (Patchright) web scrap
 ## Architecture
 
 - `src/scout/scraper.py` -- Main `Scraper` class and `ScraperResult`. Public API: `run()`, `async_run()`, `regenerate()`, `export()`. Handles script caching, validation, and auto-fix orchestration.
-- `src/scout/agent/` -- AI agent: LLM orchestration loop, prompt engineering, tool definitions (`python`, `zoom`, `analyze`), planning, and the Patchright API guide.
+- `src/scout/agent/` -- AI agent: LLM orchestration loop, prompt engineering, tool definitions (`python`, `last_resort_antibot_escape`), planning, show-page context management, and the Patchright API guide.
 - `src/scout/autofix/` -- Auto-regeneration system. Diagnoses failures (stale selectors vs. anti-bot vs. site down), decides whether to regenerate, and detects bot-blocking pages.
 - `src/scout/page/` -- HTML processing pipeline: sanitization (unstable CSS class removal, structural cleanup, repeating element truncation), HTML-to-text conversion (preserving interactive elements), sectioning (semantic blocks with IDs and roles), and interactive element detection (5-layer browser-side strategy).
 - `src/scout/schema/` -- Schema system: parsing user-defined schemas (`Field`, `Items`), compilation, validation against scraped data, tolerance levels.

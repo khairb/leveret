@@ -79,7 +79,7 @@ Initial public release.
   deduplicated and grouped by path pattern, so the agent sees
   `"[*].price — missing required field (4 of 25 items)"` instead of 25
   individual errors.
-- `Tolerance` levels (`strict`, `lenient`, `loose`) controlling how
+- `Tolerance` levels (`strict`, `balanced`, `lenient`) controlling how
   strictly results must match the schema.
 
 ### Auto-regeneration
