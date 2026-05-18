@@ -116,7 +116,7 @@ test_data = await page.evaluate(\"\"\"
 \"\"\", isolated_context=True)
 """
 
-EVALUATE_QSA_AIRBNB = """\
+EVALUATE_QSA_TRAVEL_LISTINGS = """\
 listings = await page.evaluate(\"\"\"
     () => {
         const cards = document.querySelectorAll('[data-testid="card-container"]');
@@ -161,7 +161,7 @@ await show_page(page)
 # ── Category: page.goto() ────────────────────────────────────────────
 
 SIMPLE_GOTO = """\
-await page.goto('https://www.ycombinator.com/companies/airbnb', wait_until='domcontentloaded', timeout=30000)
+await page.goto('https://www.example-directory.com/companies/acme-travel', wait_until='domcontentloaded', timeout=30000)
 await show_page(page)
 """
 
@@ -274,7 +274,7 @@ for page_num in range(1, 5):
 DETAIL_LOOP = """\
 results = []
 for link in company_links[:5]:
-    await page.goto(f'https://www.ycombinator.com{link}', wait_until='domcontentloaded')
+    await page.goto(f'https://www.example-directory.com{link}', wait_until='domcontentloaded')
     data = await page.evaluate(\"\"\"
         () => ({
             name: document.querySelector('h1')?.innerText?.trim() || '',
@@ -288,7 +288,7 @@ for link in company_links[:5]:
 # ── Category: goto + click (2-step) ──────────────────────────────────
 
 GOTO_THEN_CLICK = """\
-await page.goto('https://www.airbnb.de/s/Berlin/homes', wait_until='domcontentloaded')
+await page.goto('https://www.example-travel.com/s/Berlin/homes', wait_until='domcontentloaded')
 await page.wait_for_timeout(2000)
 await page.click('#didomi-notice-agree-button')
 await page.wait_for_timeout(1000)
@@ -509,9 +509,9 @@ class TestEvaluateQuerySelectorAll:
         assert "a.hnuser" in selectors
         assert all(r.action_category == "passive" for r in results)
 
-    def test_evaluate_qsa_airbnb(self):
-        """Airbnb card extraction with data-testid selectors."""
-        results = extract_selectors(EVALUATE_QSA_AIRBNB)
+    def test_evaluate_qsa_travel_listings(self):
+        """Travel listing card extraction with data-testid selectors."""
+        results = extract_selectors(EVALUATE_QSA_TRAVEL_LISTINGS)
         selectors = {r.selector for r in results}
         assert '[data-testid="card-container"]' in selectors
         assert '[data-testid="listing-card-title"]' in selectors

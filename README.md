@@ -46,11 +46,11 @@ The file Scout writes is a plain Python function you can read, edit, and commit 
 
 ## It handles more than simple pages
 
-The example above is easy. Here's the kind of task Scout is built for — searching Airbnb for apartments in Berlin with specific dates, guests, and filters:
+The example above is easy. Here's the kind of task Scout is built for — searching a travel site for apartments in Berlin with specific dates, guests, and filters:
 
 ```python
 scraper = Scraper(
-    "https://www.airbnb.de/",
+    "https://www.example-travel.com/",
     "Find apartments in Berlin, April 18 – May 19 2026, "
     "2 adults, 2 children, 1 baby. "
     "Filter for washing machine, TV, and WiFi. "
@@ -64,14 +64,14 @@ scraper = Scraper(
         "rating": str,
         "url": Field(str, min_length=1),
     }),
-    script="scrapers/airbnb_berlin.py",
+    script="scrapers/travel_berlin.py",
 )
 
 result = scraper.run()
 print(f"{len(result.data)} apartments")  # apartments across multiple pages
 ```
 
-One call. The agent dismisses the cookie banner, types "Berlin" into the search bar, picks the dates from the calendar, clicks the guest stepper buttons, applies the amenity filters, extracts the listings, paginates through the results, and returns everything — validated against your schema. The generated script is saved to `scrapers/airbnb_berlin.py`. Run it tomorrow without the AI.
+One call. The agent dismisses the cookie banner, types "Berlin" into the search bar, picks the dates from the calendar, clicks the guest stepper buttons, applies the amenity filters, extracts the listings, paginates through the results, and returns everything — validated against your schema. The generated script is saved to `scrapers/travel_berlin.py`. Run it tomorrow without the AI.
 
 The agent can work through pagination (numbered pages, "load more" buttons, infinite scroll), filtering and search forms, navigating from listing pages into detail pages, and multi-step interactions that require clicking, waiting, and extracting in sequence. When a selector misses, it inspects the page at the point of failure to see what's actually there and tries again. Generation takes thirty seconds to ten minutes depending on the site. Set `headless=False` to watch it work.
 

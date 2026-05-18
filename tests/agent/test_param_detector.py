@@ -147,7 +147,7 @@ results = await page.query_selector_all('.result-card')
 """
 
 FRAME_LOCATOR_CHAIN = """\
-await page.frame_locator('#booking-frame').locator('#dest').fill('Rome')
+await page.frame_locator('#search-frame').locator('#dest').fill('Rome')
 """
 
 NTH_LOCATOR = """\
@@ -397,22 +397,22 @@ class TestExtractFillValues:
 #  Test data — URL parameter detection
 # ═══════════════════════════════════════════════════════════════════════
 
-_BOOKING_BEFORE = "https://www.booking.com/"
-_BOOKING_AFTER = (
-    "https://www.booking.com/searchresults.html"
+_HOTELS_BEFORE = "https://www.example-hotels.com/"
+_HOTELS_AFTER = (
+    "https://www.example-hotels.com/searchresults.html"
     "?ss=Berlin&checkin=2026-06-01&checkout=2026-06-05&group_adults=2"
 )
 
-_BOOKING_FILLS = [
+_HOTELS_FILLS = [
     FillValue("fill", "Berlin", 1),
     FillValue("fill", "2026-06-01", 2),
     FillValue("fill", "2026-06-05", 3),
     FillValue("select_option", "2", 4),
 ]
 
-_AMAZON_BEFORE = "https://www.amazon.com/"
-_AMAZON_AFTER = "https://www.amazon.com/s?k=laptop+stand&ref=nb_sb_noss"
-_AMAZON_FILLS = [FillValue("fill", "laptop stand", 1)]
+_SHOP_BEFORE = "https://www.example-shop.com/"
+_SHOP_AFTER = "https://www.example-shop.com/s?k=laptop+stand&ref=nb_sb_noss"
+_SHOP_FILLS = [FillValue("fill", "laptop stand", 1)]
 
 _SPA_BEFORE = "https://app.example.com/"
 _SPA_AFTER = "https://app.example.com/#/search?q=Berlin&type=hotels"
@@ -434,11 +434,11 @@ _ENCODED_FILLS = [
 class TestDetectUrlParams:
     """Tests for detect_url_params()."""
 
-    def test_booking_full_match(self):
+    def test_hotels_full_match(self):
         result = detect_url_params(
-            _BOOKING_BEFORE,
-            _BOOKING_AFTER,
-            _BOOKING_FILLS,
+            _HOTELS_BEFORE,
+            _HOTELS_AFTER,
+            _HOTELS_FILLS,
         )
         assert result is not None
         assert len(result.matches) == 4
@@ -448,23 +448,23 @@ class TestDetectUrlParams:
         assert "checkout" in matched_params
         assert "group_adults" in matched_params
 
-    def test_booking_value_mapping(self):
+    def test_hotels_value_mapping(self):
         result = detect_url_params(
-            _BOOKING_BEFORE,
-            _BOOKING_AFTER,
-            _BOOKING_FILLS,
+            _HOTELS_BEFORE,
+            _HOTELS_AFTER,
+            _HOTELS_FILLS,
         )
         assert result is not None
         by_param = {m.param_name: m for m in result.matches}
         assert by_param["ss"].fill.value == "Berlin"
         assert by_param["checkin"].fill.value == "2026-06-01"
 
-    def test_amazon_with_noise_filtering(self):
-        """Amazon adds ref= which should be filtered as noise."""
+    def test_shop_with_noise_filtering(self):
+        """Shop search adds ref= which should be filtered as noise."""
         result = detect_url_params(
-            _AMAZON_BEFORE,
-            _AMAZON_AFTER,
-            _AMAZON_FILLS,
+            _SHOP_BEFORE,
+            _SHOP_AFTER,
+            _SHOP_FILLS,
         )
         assert result is not None
         assert len(result.matches) == 1
@@ -486,9 +486,9 @@ class TestDetectUrlParams:
     def test_plus_encoded_spaces(self):
         """'laptop stand' should match 'laptop+stand'."""
         result = detect_url_params(
-            _AMAZON_BEFORE,
-            _AMAZON_AFTER,
-            _AMAZON_FILLS,
+            _SHOP_BEFORE,
+            _SHOP_AFTER,
+            _SHOP_FILLS,
         )
         assert result is not None
         assert result.matches[0].fill.value == "laptop stand"
@@ -620,15 +620,15 @@ class TestFormatHint:
 
     def test_basic_hint_format(self):
         result = detect_url_params(
-            _BOOKING_BEFORE,
-            _BOOKING_AFTER,
-            _BOOKING_FILLS,
+            _HOTELS_BEFORE,
+            _HOTELS_AFTER,
+            _HOTELS_FILLS,
         )
         assert result is not None
         hint = format_hint(result)
         assert "[URL PARAMETER DETECTION HINT]" in hint
         assert "page navigated to:" in hint
-        assert _BOOKING_AFTER in hint
+        assert _HOTELS_AFTER in hint
         assert '"Berlin"' in hint
         assert "→  ss" in hint
         assert "page.goto()" in hint
@@ -655,7 +655,7 @@ class TestFormatHint:
 class TestFullPipeline:
     """End-to-end tests: code → fill extraction → URL detection → hint."""
 
-    def test_booking_flow(self):
+    def test_hotels_flow(self):
         code = """\
 await page.fill('#bigsearch-query-location-input', 'Berlin')
 await page.fill('#checkin', '2026-06-01')
@@ -667,8 +667,8 @@ await page.click('button[type="submit"]')
         assert len(fills) == 4
 
         result = detect_url_params(
-            "https://www.booking.com/",
-            "https://www.booking.com/searchresults.html"
+            "https://www.example-hotels.com/",
+            "https://www.example-hotels.com/searchresults.html"
             "?ss=Berlin&checkin=2026-06-01&checkout=2026-06-05"
             "&group_adults=2&no_rooms=1",
             fills,
@@ -679,7 +679,7 @@ await page.click('button[type="submit"]')
         assert "ss=Berlin" in hint
         assert "no_rooms=1" in hint  # unmatched but shown
 
-    def test_amazon_flow(self):
+    def test_shop_flow(self):
         code = """\
 await page.locator('#twotabsearchtextbox').fill('laptop stand')
 await page.locator('#nav-search-submit-button').click()
@@ -689,14 +689,14 @@ await page.locator('#nav-search-submit-button').click()
         assert fills[0].value == "laptop stand"
 
         result = detect_url_params(
-            "https://www.amazon.com/",
-            "https://www.amazon.com/s?k=laptop+stand&ref=nb_sb_noss",
+            "https://www.example-shop.com/",
+            "https://www.example-shop.com/s?k=laptop+stand&ref=nb_sb_noss",
             fills,
         )
         assert result is not None
         assert result.matches[0].param_name == "k"
 
-    def test_airbnb_flow(self):
+    def test_rentals_flow(self):
         code = """\
 await page.get_by_placeholder('Search destinations').fill('Berlin')
 await page.get_by_role('button', name='Search').click()
@@ -705,8 +705,8 @@ await page.get_by_role('button', name='Search').click()
         assert len(fills) == 1
 
         result = detect_url_params(
-            "https://www.airbnb.com/",
-            "https://www.airbnb.com/s/Berlin/homes?query=Berlin&checkin=2026-06-01",
+            "https://www.example-rentals.com/",
+            "https://www.example-rentals.com/s/Berlin/homes?query=Berlin&checkin=2026-06-01",
             fills,
         )
         assert result is not None
@@ -728,8 +728,8 @@ await page.click('#submit')
         )
         assert result is None
 
-    def test_booking_real_flow_with_inputs(self):
-        """Real-world Booking.com flow: AI fills form using inputs dict
+    def test_hotels_real_flow_with_inputs(self):
+        """Real-world hotel search flow: AI fills form using inputs dict
         across multiple code blocks, then clicks submit separately.
         Accumulated fills should match the resulting URL params."""
         inputs = {
@@ -770,14 +770,14 @@ await page.wait_for_load_state("domcontentloaded")
 
         # URL after submit
         url_after = (
-            "https://www.booking.com/searchresults.html"
+            "https://www.example-hotels.com/searchresults.html"
             "?ss=Barcelona%2C+Spain"
             "&checkin=2026-10-06&checkout=2026-10-10"
             "&group_adults=2&no_rooms=1"
             "&label=gen173nr&sid=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
         )
         result = detect_url_params(
-            "https://www.booking.com/",
+            "https://www.example-hotels.com/",
             url_after,
             all_fills,
         )
@@ -794,7 +794,7 @@ await page.wait_for_load_state("domcontentloaded")
 #  Tier 2 — Complex-encoded URL parameters
 # ═══════════════════════════════════════════════════════════════════════
 
-_ZILLOW_JSON_STATE = (
+_REALTY_JSON_STATE = (
     '{"isMapVisible":true,"mapBounds":{"north":40.06,"south":39.48,'
     '"east":-104.33,"west":-105.36},"filterState":{"sort":{"value":'
     '"globalrelevanceex"},"price":{"min":400000,"max":700000}},'
@@ -806,12 +806,14 @@ _ZILLOW_JSON_STATE = (
 class TestTier2ComplexParams:
     """Tests for Tier 2: complex-encoded URL parameter detection."""
 
-    def test_zillow_json_returns_tier2(self):
-        """Zillow's JSON blob should produce a Tier 2 result, not None."""
+    def test_realty_json_returns_tier2(self):
+        """Realty site's JSON blob should produce a Tier 2 result, not None."""
         fills = [FillValue("fill", "Denver, CO", 1)]
-        url_after = f"https://www.zillow.com/denver-co/?searchQueryState={_ZILLOW_JSON_STATE}"
+        url_after = (
+            f"https://www.example-realty.com/denver-co/?searchQueryState={_REALTY_JSON_STATE}"
+        )
         result = detect_url_params(
-            "https://www.zillow.com/",
+            "https://www.example-realty.com/",
             url_after,
             fills,
         )
@@ -822,12 +824,14 @@ class TestTier2ComplexParams:
         assert result.complex_params is not None
         assert "searchQueryState" in result.complex_params
 
-    def test_zillow_json_hint_format(self):
+    def test_realty_json_hint_format(self):
         """Tier 2 hint should show the URL and observational guidance."""
         fills = [FillValue("fill", "Denver, CO", 1)]
-        url_after = f"https://www.zillow.com/denver-co/?searchQueryState={_ZILLOW_JSON_STATE}"
+        url_after = (
+            f"https://www.example-realty.com/denver-co/?searchQueryState={_REALTY_JSON_STATE}"
+        )
         result = detect_url_params(
-            "https://www.zillow.com/",
+            "https://www.example-realty.com/",
             url_after,
             fills,
         )
@@ -835,7 +839,7 @@ class TestTier2ComplexParams:
         hint = format_hint_complex(result)
         assert "[URL PARAMETER DETECTION HINT]" in hint
         assert "page navigated to:" in hint
-        assert "zillow.com" in hint
+        assert "example-realty.com" in hint
         assert "encoded in this URL" in hint
         assert "observe how the URL changes" in hint
 

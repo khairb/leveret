@@ -168,20 +168,20 @@ class TestExecTimeout_FunctionDefCall:
         t = _t(code)
         assert t > 20.0, f"predicted {t}s but execution exceeded 20s"
 
-    def test_idealista_scrape_function_20s(self):
+    def test_realestate_scrape_function_20s(self):
         """Source: benchmark/traces/run_2026-05-10_14-46-45
         Exceeded: 20.0s
         Root cause: scrape() function navigates to detail pages in loop.
         """
         code = """
         result = await scrape(page,
-            'https://www.idealista.com/en/alquiler-viviendas/madrid-madrid/',
+            'https://www.example-realestate.com/en/alquiler-viviendas/madrid-madrid/',
             mock_checkpoint)
         """
         t = _t(code)
         assert t > 20.0, f"predicted {t}s but execution exceeded 20s"
 
-    def test_idealista_scrape_function_120s(self):
+    def test_realestate_scrape_function_120s(self):
         """Source: benchmark/traces/run_2026-05-10_14-46-45
         Exceeded: 120.0s (agent retried with explicit timeout=120)
 
@@ -207,7 +207,7 @@ class TestExecTimeout_FunctionDefCall:
         }
         code = """
         result = await scrape(page,
-            'https://www.idealista.com/en/alquiler-viviendas/madrid-madrid/',
+            'https://www.example-realestate.com/en/alquiler-viviendas/madrid-madrid/',
             mock_checkpoint)
         """
         # Without context: only 1 await → BASELINE (30s) — would fail
@@ -218,7 +218,7 @@ class TestExecTimeout_FunctionDefCall:
         t = predict_timeout(textwrap.dedent(code).strip(), function_sources=fn_sources)
         assert t > 120.0, f"predicted {t}s but execution exceeded 120s"
 
-    def test_airbnb_full_scrape_function(self):
+    def test_travel_full_scrape_function(self):
         """Source: traces/run_2026-04-20_01-04-54
         Error: Locator.click timed out inside the function body (30s function timeout)
         Root cause: heavy scrape() function body not scored.
@@ -252,7 +252,7 @@ class TestExecTimeout_FunctionDefCall:
                 await page.wait_for_function("() => true", timeout=20000)
             return all_items
 
-        result = await scrape(page, "https://www.airbnb.de/",
+        result = await scrape(page, "https://www.example-travel.com/",
                               lambda *a, **kw: None)
         """
         t = _t(code)
@@ -290,7 +290,7 @@ class TestExecTimeout_InlineLoops:
         # 84.6 > 20, so this should PASS (prediction IS adequate for 5 iterations)
         assert t > 20.0, f"predicted {t}s but execution exceeded 20s"
 
-    def test_airbnb_card_extraction_while_loop(self):
+    def test_travel_card_extraction_while_loop(self):
         """Source: traces/run_2026-04-20_16-15-22
         Exceeded: 20.0s
         Root cause: while loop with nested for loop doing per-card locator calls.
@@ -313,7 +313,7 @@ class TestExecTimeout_InlineLoops:
                     price_text = await card.locator('span.atm_rq_glywfm').inner_text()
                     rating_text = await card.locator('span.atm_mj_glywfm').first.inner_text()
                     url = await card.locator('a[aria-labelledby^="title_"]').first.get_attribute('href')
-                    full_url = "https://www.airbnb.de" + url if url.startswith('/') else url
+                    full_url = "https://www.example-travel.com" + url if url.startswith('/') else url
                     all_apartments.append({"title": title, "url": full_url})
                 except Exception as e:
                     continue
@@ -585,7 +585,7 @@ class TestPW_WrongPaginationSelector:
         t = _t(code)
         assert t >= BASELINE
 
-    def test_idealista_pagina_2(self):
+    def test_realestate_pagina_2(self):
         """Source: benchmark/traces/run_2026-05-09_23-57-52"""
         code = """
         await page.click('a[href*="pagina=2"]')
@@ -595,10 +595,10 @@ class TestPW_WrongPaginationSelector:
         t = _t(code)
         assert t >= BASELINE
 
-    def test_indeed_page_2(self):
+    def test_jobs_page_2(self):
         """Source: traces/run_2026-05-09_11-11-33"""
         code = """
-        next_page_url = "https://www.indeed.com/jobs?q=python+developer&l=New+York&start=10"
+        next_page_url = "https://www.example-jobs.com/jobs?q=python+developer&l=New+York&start=10"
         await page.goto(next_page_url, wait_until="domcontentloaded")
         await page.wait_for_selector('a.jcs-JobTitle', timeout=15_000)
         """
@@ -1082,7 +1082,7 @@ class TestPW_NavigationTimeout:
     def test_networkidle_after_goto(self):
         """Source: traces/run_2026-04-19_15-18-09"""
         code = """
-        url = "https://www.airbnb.de/s/Berlin/homes?check_in=2026-04-20&check_out=2026-05-19"
+        url = "https://www.example-travel.com/s/Berlin/homes?check_in=2026-04-20&check_out=2026-05-19"
         await page.goto(url, wait_until="domcontentloaded")
         await page.wait_for_load_state("networkidle")
         await show_page(page)
@@ -1106,7 +1106,7 @@ class TestPW_NavigationTimeout:
 class TestPW_InnerTextMissing:
     """inner_text / text_content / get_attribute on wrong selectors."""
 
-    def test_idealista_advertiser(self):
+    def test_realestate_advertiser(self):
         """Source: benchmark/traces/run_2026-05-10_14-34-55"""
         code = """
         import re
@@ -1454,7 +1454,7 @@ class TestPW_BackNavigation:
         # evaluate(3) + range(3)*(click(5)+wait_load(8)+wait(0.5)) = 3 + 3*13.5 = 43.5 * 1.2 = 52.2
         assert t >= 52.0
 
-    def test_idealista_listing_click(self):
+    def test_realestate_listing_click(self):
         """Source: benchmark/traces/run_2026-05-09_19-40-07"""
         code = """
         await page.click('a[href="/en/inmueble/111422734/"]')

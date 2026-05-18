@@ -37,3 +37,8 @@ temp/
 benchmark/
 scripts/
 my-notes*
+
+# Private/local files — prefix with "local_" to auto-ignore
+# Use for enterprise-specific tests, examples, fixtures, etc.
+local_*
+**/local_*

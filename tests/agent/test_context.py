@@ -163,7 +163,7 @@ class TestPageViewStubCollapse:
 
     def test_stub_preserves_url(self):
         """The stub should include the full URL from the header."""
-        url = "https://www.airbnb.de/s/Berlin?checkin=2026-04-20&adults=2"
+        url = "https://www.example-travel.com/s/Berlin?checkin=2026-04-20&adults=2"
         messages = [
             _make_page_view_result(
                 9,
@@ -378,7 +378,7 @@ class TestBuildPageViewStub:
         assert "52 sections" in stub  # 2 headers + 50 omitted
 
     def test_no_sections(self):
-        page_view = "=== Page State #1 | https://x.com ==="
+        page_view = "=== Page State #1 | https://example-social.com ==="
         stub = _build_page_view_stub(page_view)
         assert "[stub]" in stub
         assert "0 sections" in stub
