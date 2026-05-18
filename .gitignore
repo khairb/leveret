@@ -35,4 +35,5 @@ test_outputs/
 # Development artifacts
 temp/
 benchmark/
+scripts/
 my-notes*
