@@ -5,42 +5,47 @@
 <h1 align="center">Scout</h1>
 
 <p align="center">
-  <em>You describe the data. The agent writes the scraper.<br>You run it forever — without the AI.</em>
-</p>
-
-<p align="center">
   <a href="https://pypi.org/project/scout/"><img src="https://img.shields.io/pypi/v/scout.svg" alt="PyPI"></a>
   <a href="https://pypi.org/project/scout/"><img src="https://img.shields.io/pypi/pyversions/scout.svg" alt="Python versions"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
 </p>
 
----
+Most AI scraping tools call the model on every request. Scout calls it once.
+
+On the first run, an AI agent opens a browser, figures out the page, and writes a plain Python script. After that, it's a Python file running under the hood, not an LLM. If the site changes and the script breaks, Scout rewrites it.
+
+- **Stop paying per page.** The AI runs once. Every run after that is free.
+- **Stop maintaining scrapers.** When a site changes and the script breaks, Scout rewrites it — automatically, in production.
+- **Stop debugging a black box.** The generated script is plain Python. Read it, edit it, commit it to git.
+
+```bash
+pip install scout
+patchright install chromium
+export ANTHROPIC_API_KEY=sk-ant-...  # or any other provider
+```
 
 ```python
-from scout import Scraper, Field, Items
+from scout import Scraper
 
 scraper = Scraper(
-    "https://news.ycombinator.com",
-    "Extract the top stories",
-    schema=Items({
-        "title": str,
-        "url": str,
-        "score": Field(int, min=0),
-        "author": str,
-    }, min_items=10),
-    script="scrapers/hn.py",
+    "https://www.example-travel.com/",
+    "Find apartments in Berlin, April 18 – May 19 2026, "
+    "2 adults, 2 children. "
+    "Extract all apartments from all pages.",
+    schema=[{"title": str, "price": str, "rating": str, "url": str}],
+    script="scrapers/travel_berlin.py",
+    model="anthropic:claude-haiku-4-5",  # or openai, google, groq, deepseek, mistral...
+    auto_regenerate=True,  # site changed? Scout rewrites the script automatically
 )
 
-# First run — the agent opens a browser, explores the page, writes a scraper (~60s)
+# First run — the agent navigates, filters, paginates, and writes the script (~60s)
 result = scraper.run()
 
-# Every run after — loads the saved script from disk, no AI involved (~3s)
+# Every run after — just executes the Python file (~3s)
 result = scraper.run()
 ```
 
-The first `run()` costs one API call. Every `run()` after that is free — it loads a plain Python file from disk and executes it. No model in the loop. No per-request bill.
-
-The file Scout writes is a plain Python function you can read, edit, and commit to git. If you uninstall Scout, your scrapers keep working.
+The agent dismisses cookie banners, types into search bars, picks dates, applies filters, paginates through results — whatever the task needs. You describe what you want in plain English. Scout figures out the rest.
 
 ---
 
